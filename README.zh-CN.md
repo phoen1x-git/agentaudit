@@ -49,6 +49,23 @@ Agent 代码里的危险调用（`eval` / `subprocess` / `open` / `requests` …
 
 ---
 
+## 它的产出长什么样？
+
+三份产物，按代价从低到高：
+
+| 产物 | 谁生成 | 是什么 |
+|---|---|---|
+| `param_taint_probe.md` | `tools/param_taint_criteria.py` | 逐条判「参数可不可控」——**零成本**，在任何 LLM 调用之前跑 |
+| `findings.tsv` | `app/run_round.py` | 原始候选表（22 列，一条候选一行） |
+| `report_draft.md` | `app/make_report.py` | 给人看的草稿，只收 `vuln` 那几条 |
+
+★ **完整示例见 [`examples/`](examples/)**（合成数据）。示例里的 4 条正好覆盖扫描器要区分开的
+四种结果：`vuln`、`not_vuln`（外面控制不了）、`not_vuln`（被校验器挡住）、
+以及 **`needs_human`**（来源无法确定）。
+最后这种才是重点 —— **一个只会输出「是/不是」的扫描器，是在对自己的把握程度撒谎。**
+
+---
+
 ## 安装
 
 需要 **Python 3.10+**，以及 [CodeQL CLI](https://github.com/github/codeql-cli-binaries)。
@@ -122,6 +139,7 @@ python app/run_round.py --tag my-round --targets-file core/config/targets.yml
 core/     判据内核（静态前端 / 判定层 / 可达性 / 污点追踪 / CodeQL 查询）
 tools/    可复用工具（选靶 / 备料 / 各判据 / 自检）
 app/      一键入口与流程编排
+examples/ 合成示例产出（见上）
 ```
 
 ---

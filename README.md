@@ -53,6 +53,24 @@ select targets → fetch & build DBs → static frontend (CodeQL) → reachabili
 
 ---
 
+## What does the output look like?
+
+Three artefacts, in increasing order of cost:
+
+| Artefact | Produced by | What it is |
+|---|---|---|
+| `param_taint_probe.md` | `tools/param_taint_criteria.py` | per-candidate verdict on controllability — **free**, runs before any LLM call |
+| `findings.tsv` | `app/run_round.py` | the raw candidate table (22 columns, one row per candidate) |
+| `report_draft.md` | `app/make_report.py` | the human-facing draft, only for `vuln` rows |
+
+★ **See [`examples/`](examples/) for a full synthetic sample** — the four rows there cover
+the four outcomes the scanner distinguishes: `vuln`, `not_vuln` (not externally
+controllable), `not_vuln` (blocked by a validator), and **`needs_human`** (origin
+undeterminable). That last one is the point: a scanner that only ever outputs
+`vuln` / `not_vuln` is lying about its own certainty.
+
+---
+
 ## Install
 
 Requires **Python 3.10+** and the
@@ -128,9 +146,10 @@ These are deliberate trade-offs, not bugs. They are written down because
 ## Repository layout
 
 ```
-core/     the criteria kernel (static frontend / triage / reachability / taint tracing / CodeQL queries)
-tools/    reusable tooling (target selection / fetching / individual criteria / self-checks)
-app/      one-shot entry points and orchestration
+core/      the criteria kernel (static frontend / triage / reachability / taint tracing / CodeQL queries)
+tools/     reusable tooling (target selection / fetching / individual criteria / self-checks)
+app/       one-shot entry points and orchestration
+examples/  synthetic sample output (see above)
 ```
 
 ---
