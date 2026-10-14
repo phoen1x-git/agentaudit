@@ -154,6 +154,52 @@ def write_report(path, res: dict) -> None:
     path.write_text(render_md(res), encoding="utf-8")
 
 
+# --------------------------------- Optional fix-up A: unknown-source downgrade
+# ★ 依据（重复运行实测）：把一批"补了调用方上下文"的条目换缓存标签复判三轮，
+#   从 `needs_human` 翻成 `vuln` 的 8 条里**三轮全稳只有 4/8** ——
+#   而**不稳的几乎全是 `arg_source=unknown` 那一档**。
+#
+# ★ 为什么是"降级"而不是"按 vuln 处理"：
+#   `unknown` 的字面含义是「**判定层看不到这个值从哪来**」。
+#   既然看不到来源，就**不能断言"外部可控"** —— 正确答案是「待定，给人看」，
+#   而不是替它猜一个。（同 `apply_downgrade`：不编我们并不掌握的结论。）
+#
+# ★ 为什么不是降成 `not_vuln`：我们**没有**证据说"它不是洞"，
+#   只有证据说"**判得稳不稳**"。降成 `not_vuln` 会把可能真存在的洞埋掉。
+#
+# ★ Only the reporting verdict (`ai_verdict`) changes; the original one stays in
+#   `ai_reason` and `verdicts.json`, so nothing is lost.
+UNKNOWN_TOKENS = ("", "unknown", "none", "null", "n/a", "unknown_source")
+
+
+def _is_unknown_source(x) -> bool:
+    return (getattr(x, "arg_source", "") or "").strip().lower() in UNKNOWN_TOKENS
+
+
+def apply_unknown_downgrade(findings, *, only_verdict: str = "vuln") -> list[dict]:
+    """把「判 `vuln` 但实参来源未知」的条目降级为 `needs_human`。**幂等。**
+
+    返回改动清单（`from` / `to` / `reason`），供日志使用。
+    """
+    changed: list[dict] = []
+    for x in findings or []:
+        if getattr(x, "ai_verdict", "") != only_verdict:
+            continue
+        if not _is_unknown_source(x):
+            continue
+        raw = (getattr(x, "arg_source", "") or "").strip()
+        changed.append({"project": x.project, "file": x.sink_uri, "line": x.sink_line,
+                        "sink": x.sink_func, "from": x.ai_verdict, "to": "needs_human",
+                        "reason": "argument source unknown (unknown-downgrade)"})
+        x.ai_verdict = "needs_human"
+        x.ai_reason = ("[unknown-source downgrade] arg_source was "
+                       f"`{raw or '(empty)'}`, i.e. the triage stage could not see where "
+                       "this value comes from. Repeats of this bucket are only stable about "
+                       "one time in three, so it must not be reported as-is. "
+                       "Original reason: " + (x.ai_reason or "")[:120])
+    return changed
+
+
 # ---------------------------------------------------------------- 可选处置
 def apply_downgrade(findings, res: dict) -> list[dict]:
     """把「同形态、结论不同」的组**整组降级为 needs_human**。

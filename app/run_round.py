@@ -124,6 +124,12 @@ def main() -> int:
     ap.add_argument("--consistency-downgrade", action="store_true",
                     help="downgrade findings whose verdict flips within a shape group to "
                          "needs_human (conservative; off by default because it changes verdicts)")
+    ap.add_argument("--no-unknown-downgrade", action="store_true",
+                    help="skip the unknown-source downgrade (on by default): a finding judged "
+                         "vuln but whose arg_source is unknown/empty is downgraded to "
+                         "needs_human. Repeat runs show that bucket is stable only about one "
+                         "time in three, so it should not be reported as-is. Only the reporting "
+                         "verdict changes; the original one stays in verdicts.json")
     ap.add_argument("--no-upstream", action="store_true",
                     help="skip the end-of-round upstream check (default: on). Checks only "
                          "vuln candidates, writes upstream.json as evidence, never changes a verdict")
@@ -256,6 +262,27 @@ def main() -> int:
             CS.write_report(rd / "consistency.md", cres)
             lg.log("[consistency] -> consistency.md")
 
+        # ---- Unknown-source downgrade (ON by default; --no-unknown-downgrade to skip) ----
+        # A finding judged vuln whose arg_source is unknown/empty is only stable about one
+        # time in three across repeats, so it is not safe to report as-is. Downgrading to
+        # needs_human is the conservative direction and keeps the original verdict in
+        # ai_reason / verdicts.json.
+        n_unknown_dg = 0
+        if not args.no_unknown_downgrade and all_findings:
+            from core import consistency as CS2
+            ch_unknown = CS2.apply_unknown_downgrade(all_findings)
+            n_unknown_dg = len(ch_unknown)
+            if ch_unknown:
+                from collections import Counter as _Counter2
+                lg.log(f"[unknown-downgrade] {n_unknown_dg} vuln candidate(s) -> needs_human "
+                       "(arg_source unknown)")
+                lg.log("[unknown-downgrade] by project "
+                       + str(dict(_Counter2(c["project"] for c in ch_unknown))))
+            else:
+                lg.log("[unknown-downgrade] nothing to do (no vuln with unknown arg_source)")
+        elif args.no_unknown_downgrade:
+            lg.log("[unknown-downgrade] skipped (--no-unknown-downgrade)")
+
         R.write_findings(rd / "findings.tsv", all_findings)
         R.write_verdicts(rd / "verdicts.json", all_findings)
         R.write_findings_json(rd / "findings.json", all_findings)
@@ -272,6 +299,13 @@ def main() -> int:
         "kernel_stamp": _cfg_stamp(),
         "per_project": per_project,
         "n_findings": len(all_findings),
+        "unknown_downgrade": {
+            "enabled": not args.no_unknown_downgrade,
+            "n_downgraded": n_unknown_dg,
+            "note": "vuln candidates whose arg_source is unknown/empty are downgraded to "
+                    "needs_human; only the reporting verdict changes and the original one "
+                    "stays in verdicts.json",
+        },
         "duality_enabled": not args.no_duality,
         "llm_calls": llm_calls,
         "llm_cache_hits": llm_cache_hits,

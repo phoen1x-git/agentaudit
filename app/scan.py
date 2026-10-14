@@ -219,6 +219,11 @@ def main() -> int:
                     help="where to write the round (default: ./out)")
     ap.add_argument("--llm", action="store_true",
                     help="triage the candidates with an LLM (spends API credits; off by default)")
+    ap.add_argument("--no-unknown-downgrade", action="store_true",
+                    help="skip the unknown-source downgrade (on by default with --llm): a "
+                         "candidate judged vuln whose arg_source is unknown/empty becomes "
+                         "needs_human, because that bucket is only stable about one time in "
+                         "three across repeats")
     ap.add_argument("--no-codeql", action="store_true",
                     help="force the offline AST-only mode even if CodeQL is available")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language")
@@ -317,11 +322,26 @@ def main() -> int:
         _log(f"[diff] {len(changed)} file(s) changed since {a.diff} -> "
              f"{before} candidates filtered down to {len(findings)}")
 
+    # Unknown-source downgrade: a candidate judged vuln whose argument source is unknown is
+    # only stable about one time in three across repeats. Conservative by design; the
+    # original verdict is preserved in ai_reason / verdicts.json.
+    n_unknown_dg = 0
+    if a.llm and findings and not a.no_unknown_downgrade:
+        from core import consistency as CS
+        n_unknown_dg = len(CS.apply_unknown_downgrade(findings))
+        if n_unknown_dg:
+            _log(f"[unknown-downgrade] {n_unknown_dg} vuln candidate(s) -> needs_human "
+                 "(arg_source unknown)")
+
     meta_extra = {
         "scanner": "codeql" if mode == "full" else "ast-only",
         "source_root": str(src),
         "project": project,
         "llm_triage": bool(a.llm),
+        "unknown_downgrade": {
+            "enabled": bool(a.llm) and not a.no_unknown_downgrade,
+            "n_downgraded": n_unknown_dg,
+        },
     }
     if a.diff:
         meta_extra["diff_ref"] = a.diff
