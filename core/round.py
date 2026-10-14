@@ -1,13 +1,14 @@
-"""内核 · 一轮的落盘。
+"""Kernel: writing a round to disk.
 
-★ 轮次目录 = 只读快照。确认靠人改 findings.tsv 的最后一列，
-   累积进 confirmations.json（本轮不做合并，先留占位）。
+A round directory is a read-only snapshot. Confirmation is done by a human editing the last
+column of `findings.tsv`; the results accumulate in `confirmations.json`.
 
-产出：
-    out/round-YYYYMMDD/
-        findings.tsv      一条一行，最后一列 verdict 留人工填
-        scan.log          哪个项目跑成/没跑成、为什么（失败要出声）
-        meta.json         规则版本戳 / 用时 / 目标池 / LLM 花费
+Layout:
+    out/round-<tag>/
+        findings.tsv     one row per candidate; the last column is for a human to fill in
+        findings.json    the same rows plus the long fields (guards, argument sources)
+        scan.log         which project ran, which did not, and why (failures are loud)
+        meta.json        version stamps / duration / costs
 """
 from __future__ import annotations
 
@@ -49,7 +50,8 @@ def write_findings_json(path: Path, findings: list[F.Finding]) -> None:
     for fd in findings:
         row = fd.to_row()
         row["guards_list"] = list(fd.guards)
-        row["arg_sources"] = list(fd.arg_sources)      # ★★ 关键补字段
+        row["arg_sources"] = list(fd.arg_sources)      # the structured list, as described above
+        row["src_root"] = fd.src_root                  # so a reader can show the source lines
         d[fd.fingerprint] = row
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=1)

@@ -128,6 +128,34 @@ def fetch_repo(repo: str, dst_root: Path) -> Path:
     return dst
 
 
+def changed_files(src: Path, ref: str) -> set[str]:
+    """Files changed since `ref`, as posix paths relative to `src` (tracked + untracked)."""
+    if not shutil.which("git"):
+        raise SystemExit("--diff needs git on PATH")
+    top = subprocess.run(["git", "-C", str(src), "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if top.returncode != 0:
+        raise SystemExit(f"--diff needs a git checkout: {src}\n{(top.stderr or '').strip()}")
+    # git reports paths relative to the repository root, not to src.
+    prefix = os.path.relpath(src.resolve(), Path(top.stdout.strip()).resolve())
+    prefix = "" if prefix == "." else prefix.replace("\\", "/") + "/"
+
+    out: set[str] = set()
+    for cmd in (["git", "-C", str(src), "diff", "--name-only", ref],
+                ["git", "-C", str(src), "ls-files", "--others", "--exclude-standard"]):
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if p.returncode != 0:
+            raise SystemExit(f"--diff failed: {' '.join(cmd[3:])}\n{(p.stderr or '').strip()}")
+        for x in (p.stdout or "").splitlines():
+            x = x.strip().replace("\\", "/")
+            if not x:
+                continue
+            if prefix and not x.startswith(prefix):
+                continue
+            out.add(x[len(prefix):] if prefix else x)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="scan a target with one command")
     src_grp = ap.add_mutually_exclusive_group(required=True)
@@ -142,6 +170,13 @@ def main() -> int:
     ap.add_argument("--no-codeql", action="store_true",
                     help="force the offline AST-only mode even if CodeQL is available")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language")
+    ap.add_argument("--diff", nargs="?", const="HEAD~1", default="",
+                    metavar="REF",
+                    help="only report candidates in files changed since REF (default HEAD~1); "
+                         "the source tree must be a git checkout")
+    ap.add_argument("--fail-on", default="none", choices=["none", "any", "vuln"],
+                    help="exit non-zero when a candidate is reported (any) or when one was "
+                         "triaged vuln (vuln); default: always exit 0")
     a = ap.parse_args()
 
     if a.demo:
@@ -205,12 +240,23 @@ def main() -> int:
         llm_cost = round(LJ.LC.USAGE.cny, 4)
         _log(f"[llm] {llm_calls} calls, {llm_cost} CNY")
 
+    changed: set[str] = set()
+    if a.diff:
+        changed = changed_files(src, a.diff)
+        before = len(findings)
+        findings = [f for f in findings if f.sink_uri.replace("\\", "/") in changed]
+        _log(f"[diff] {len(changed)} file(s) changed since {a.diff} -> "
+             f"{before} candidates filtered down to {len(findings)}")
+
     meta_extra = {
         "scanner": "codeql" if mode == "full" else "ast-only",
         "source_root": str(src),
         "project": project,
         "llm_triage": bool(a.llm),
     }
+    if a.diff:
+        meta_extra["diff_ref"] = a.diff
+        meta_extra["diff_files"] = sorted(changed)
     ast_scan.write_round(Path(a.out), tag, findings, meta_extra=meta_extra,
                          keep_sarif=str(sarif_out) if mode == "full" else None)
     _log(f"[out] {len(findings)} candidates -> {rd}")
@@ -230,6 +276,18 @@ def main() -> int:
     if (rd / "results.sarif").exists():
         _log(f"  sarif   {rd / 'results.sarif'}")
     _log("=" * 74)
+
+    if a.fail_on == "any" and findings:
+        _log(f"[fail-on] {len(findings)} candidate(s) reported -> exit 1")
+        return 1
+    if a.fail_on == "vuln":
+        vulns = [f for f in findings if (f.ai_verdict or "").strip() == "vuln"]
+        if vulns:
+            _log(f"[fail-on] {len(vulns)} candidate(s) triaged vuln -> exit 1")
+            return 1
+        if not a.llm:
+            _log("[fail-on] note: no triage ran this round, so `vuln` can never be set; "
+                 "use --llm, or --fail-on any")
     return 0
 
 

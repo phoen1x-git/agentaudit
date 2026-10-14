@@ -2,10 +2,21 @@
 
 [English](README.md) | **中文**
 
+<!-- 推到 GitHub 之后把下面的 OWNER/REPO 换成真实地址，或者直接删掉这两行。
+     CI 跑过一次之后徽章就会变绿。 -->
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
 **给 AI Agent 做代码审计。** 静态分析 + LLM 复核的扫描器：在 LLM / Agent 代码里找出危险调用点，
 并且在**拿不准的时候直接说「我不知道」**。
 
 输出的是**候选清单**，不是「已确认的漏洞清单」。
+
+| | |
+|---|---|
+| 规则 | 一个 YAML 里 52 条危险调用规则，外加几类非调用检查（[CONFIGURING.md](CONFIGURING.md)） |
+| 自测 | 10 套规则自测，34 个测试（[CHANGELOG.md](CHANGELOG.md)） |
+| 试一下 | `python app/scan.py --demo` —— 不用 CodeQL、不用 API key、不用下载 |
+| 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) |
 
 ---
 
@@ -147,6 +158,26 @@ python app/scan.py --path ./myproject --llm
 开跑之前会先印出候选条数和硬上限（`AF_LLM_MAX_CNY`，默认 30 元），跑完报实际花费。
 不加 `--llm` 就只有候选清单、没有判定 —— 报告会**如实这么说**，不会暗示已经判过。
 
+### 看「为什么这条会被标出来」
+
+```bash
+python app/explain.py out/round-my-round --index 3
+```
+
+会打印被标记那一行的上下文源码、能走到它的调用链、这条路上有哪些 if 守卫、
+以及那个危险实参是从哪来的 —— 查不出来就明说「本次扫描没能确定」。
+**相信或否掉一条候选之前，先看这个。**
+
+### 当门禁用
+
+```bash
+python app/scan.py --path ./myproject --fail-on any        # 报了候选就退 1
+python app/scan.py --path ./myproject --llm --fail-on vuln # 只有判成 vuln 才退 1
+python app/scan.py --path ./myproject --diff origin/main   # 只看改动过的文件
+```
+
+`--diff` 要求源码是一份 git 检出，用途是「这个 PR 有没有引入新东西」，**不是**做全量审计。
+
 ### 手动跑流水线
 
 `app/scan.py` 用的就是同一套引擎，也可以逐段驱动（扫一整批目标时用这个）：
@@ -238,12 +269,24 @@ python app/make_index.py  out/round-my-round --lang zh
 ## 仓库结构
 
 ```
-core/      内核（静态前端 / 复核 / 可达性 / 污点追踪 / CodeQL 查询）
-tools/     可复用工具（选择目标 / 下载 / 各项检查 / 自测）
-app/       入口（scan.py 扫单个目标，run_all.py 扫一批）
-demo/      故意有洞的示例项目，给 --demo 用
-examples/  合成示例输出
+core/            内核（静态前端 / 复核 / 可达性 / 污点追踪 / CodeQL 查询）
+core/config/     规则：sinks.yml、sources.yml、filters.yml —— 见 CONFIGURING.md
+tools/           可复用工具（选择目标 / 下载 / 各项检查 / 自测）
+app/             入口（scan.py 扫单个目标，run_all.py 扫一批，explain.py 解释一条）
+demo/            故意有洞的示例项目，给 --demo 用
+examples/        合成示例输出
+tests/           CI 跑的测试
+scripts/         setup.sh
 ```
+
+## 文档
+
+| | |
+|---|---|
+| [CONFIGURING.md](CONFIGURING.md) | 规则字段说明，以及怎么加你自己的危险函数 |
+| [LIMITATIONS.md](LIMITATIONS.md) | 它抓不到什么 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 怎么跑测试、怎么扩 |
+| [CHANGELOG.md](CHANGELOG.md) | 改了什么 |
 
 ---
 

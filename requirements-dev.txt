@@ -1,0 +1,2 @@
+# Development dependencies (not needed to run a scan).
+pytest>=7.4

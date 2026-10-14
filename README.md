@@ -2,10 +2,21 @@
 
 **English** | [中文](README.zh-CN.md)
 
+<!-- Replace OWNER/REPO below with the real location once this repo is pushed, or delete the
+     line. The badge goes green as soon as CI has run once. -->
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
 **Code audit for AI agents.** A static-analysis + LLM-triage scanner that finds
 dangerous call sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
 
 The output is a list of **candidates** to review, not a list of confirmed vulnerabilities.
+
+| | |
+|---|---|
+| Rules | 52 dangerous-call rules in one YAML file, plus the non-call checks ([CONFIGURING.md](CONFIGURING.md)) |
+| Self-tests | 10 rule suites, 34 tests ([CHANGELOG.md](CHANGELOG.md#unreleased)) |
+| Try it | `python app/scan.py --demo` — no CodeQL, no API key, no downloads |
+| What it misses | [LIMITATIONS.md](LIMITATIONS.md) |
 
 ---
 
@@ -79,6 +90,11 @@ are only compared when they used the same settings.
 
 Beyond sinks, the kernel also checks authentication consistency across a file's endpoints,
 strong/weak form coexistence within one function, and reachability from an entry point.
+[`LIMITATIONS.md`](LIMITATIONS.md) lists what none of this covers.
+
+Adding your own dangerous function is a few lines of YAML — see
+[CONFIGURING.md](CONFIGURING.md) for the field reference and
+`python tools/validate_config.py` to check your edit.
 
 ---
 
@@ -156,6 +172,27 @@ The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 3
 before it starts, and reports what it actually spent afterwards. Without `--llm` you get the
 candidate list with no verdicts — the report says so rather than implying anything was judged.
 
+### Seeing why something was reported
+
+```bash
+python app/explain.py out/round-my-round --index 3
+```
+
+Prints the source around the flagged line, the call chain that reaches it, the guards on that
+path, and where the dangerous argument comes from — or that the scan could not determine it.
+This is the command to run before believing or dismissing a candidate.
+
+### Using it as a gate
+
+```bash
+python app/scan.py --path ./myproject --fail-on any        # exit 1 if anything is reported
+python app/scan.py --path ./myproject --llm --fail-on vuln # exit 1 only on a `vuln` verdict
+python app/scan.py --path ./myproject --diff origin/main   # only files changed since a ref
+```
+
+`--diff` needs the source tree to be a git checkout, and is meant for "did this pull request
+introduce anything", not for a full audit.
+
 ### The manual pipeline
 
 `app/scan.py` wraps the same engine that can be driven stage by stage, which is what you want
@@ -224,6 +261,9 @@ These are deliberate trade-offs, not bugs.
 - **The offline mode finds less.** Without CodeQL there is no inter-procedural reachability
   and no framework modelling, so the candidate list is shorter. Each round records its mode.
 
+The long version of this list, including the patterns the analysis cannot see at all and the
+kinds of false positive to expect, is in **[LIMITATIONS.md](LIMITATIONS.md)**.
+
 ---
 
 ## Configuration
@@ -251,12 +291,24 @@ Secrets are always read from files or environment variables, never committed.
 ## Repository layout
 
 ```
-core/      the kernel (static frontend, triage, reachability, taint tracing, CodeQL queries)
-tools/     reusable tooling (target selection, fetching, individual checks, self-tests)
-app/       entry points (scan.py for one target, run_all.py for a batch)
-demo/      a deliberately vulnerable sample project, for `--demo`
-examples/  synthetic sample output
+core/            the kernel (static frontend, triage, reachability, taint tracing, CodeQL queries)
+core/config/     the rules: sinks.yml, sources.yml, filters.yml  -- see CONFIGURING.md
+tools/           reusable tooling (target selection, fetching, individual checks, self-tests)
+app/             entry points (scan.py for one target, run_all.py for a batch, explain.py)
+demo/            a deliberately vulnerable sample project, for `--demo`
+examples/        synthetic sample output
+tests/           the test suite CI runs
+scripts/         setup.sh
 ```
+
+## Documentation
+
+| | |
+|---|---|
+| [CONFIGURING.md](CONFIGURING.md) | the rule fields, and how to add your own dangerous function |
+| [LIMITATIONS.md](LIMITATIONS.md) | what the tool does not find |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to run and extend the tests |
+| [CHANGELOG.md](CHANGELOG.md) | what changed |
 
 ---
 

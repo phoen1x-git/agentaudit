@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Syntax
+        run: python -m compileall -q app core tools demo tests
+
+      - name: Validate the rule configuration
+        run: python tools/validate_config.py
+
+      - name: Rule self-tests
+        run: python tools/run_selftests.py
+
+      - name: Scan the bundled sample project
+        run: python app/scan.py --demo --tag ci
+
+      - name: Tests
+        run: python -m pytest -q

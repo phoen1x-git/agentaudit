@@ -1,0 +1,11 @@
+# Normalise line endings in the repository so the same bytes come out everywhere.
+* text=auto
+
+# Shell scripts and the Dockerfile must keep LF, otherwise they are not runnable on
+# Linux/macOS after a checkout on Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Example output is part of the documentation; do not let git rewrite it.
+examples/** -text
+*.sarif -text

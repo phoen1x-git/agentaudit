@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 venv/
 
+# test artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+
 # data and results: local scan output, fetched sources, databases
 data/
 out/
