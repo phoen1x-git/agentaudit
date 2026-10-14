@@ -1,0 +1,43 @@
+# ★ 由 tools/import_tp2x_sources.py 从 data/vendor_taintp2x/llms_sources.pysa 生成，不要手改。
+#
+# 来源：TaintP2X（ICSE 2026）LLM source 定义，Apache-2.0。原文件 94 条 def。
+# 用法：AF_SOURCES_FILE=core/config/sources_tp2x.yml（不设 = 基线 A 组，行为完全不变）
+#
+# ★ 结构说明见脚本头部：独特名裸加；通用名必须带 obj_names（接收者末段属性名，精确匹配）。
+# ★ 已知近似：TaintP2X 是「全限定名 / 类型级」定义，我们只能做「语法级」——
+#   QL 侧用 Attribute.getName() 取接收者链的**末段属性名**：
+#   client.chat.completions.create(...) → 末段属性名 completions → 命中。
+
+version: 1
+updated: 2026-10-12
+
+sources:
+  - id: llm-sdk-unique
+    kind: method
+    names: [_generate, achat, acreate, async_run, chat_stream, createChatCompletion, createChatCompletionAsync, create_async, generate_content, generate_content_async, generate_message, generate_text, generate_text_async, initiate_chat, invoke_function, invoke_prompt, publish_message, solve_task, stream_chat]
+
+  - id: llm-sdk-call
+    kind: method
+    obj_names: [Generation, AsyncGeneration]
+    names: [call]
+
+  - id: llm-sdk-create
+    kind: method
+    obj_names: [completions, ChatCompletion, Completion, AsyncChatCompletion, messages, async_completions]
+    names: [create]
+
+  - id: llm-sdk-execute
+    kind: method
+    obj_names: [Task]
+    names: [execute]
+
+  - id: llm-sdk-query
+    kind: method
+    obj_names: [as_chat_engine]
+    names: [query]
+
+  - id: llm-sdk-run
+    kind: method
+    obj_names: [Pipeline, Agent, HuggingFaceTGIGenerator, OllamaGenerator, OpenAIGenerator, BabyAGI, Environment, DialogueAgent, replicate]
+    names: [run]
+

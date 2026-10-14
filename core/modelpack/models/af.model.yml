@@ -1,0 +1,48 @@
+# ★ af 的 MaD（Models as Data）模型 —— 2026-10-13 建立，机制与语法**均已实测通过**
+#
+# ══ 一、实测通过的做法（踩了 4 个坑才走通，别改）══════════════════════
+#  1. 必须是「model pack」而不是单个 `.yml`：
+#       qlpack.yml → library:true + extensionTargets + dataExtensions（本目录已就位）
+#  2. ★★ **必须放进 CodeQL 的包目录**才认：`~/.codeql/packages/<scope>/<name>/<version>/`
+#       ⚠️ 试过且**都不行**：放 `core/ql/` + `--search-path`；`codeql pack install <本地目录>`
+#          （它走 registry，本地包无依赖 ⇒ "Nothing to install"）。
+#  3. 跑查询时加 `--model-packs=af/python-model-pack`
+#  4. 验证时**换新查询文件名**（同名会命中 bqrs 缓存，看到旧结果 —— 踩过）；
+#     探针查询要有 `@kind problem`（`@kind table` 无效）。
+#
+# ══ 二、语法（★ 实测结论，`Member[...]` 链）════════════════════════════
+#  ★★ `type` 必须是**类全限定名**，不是模块名。实测只有这一种匹配：
+#        ['openai.OpenAI', 'Member[chat].Member[completions].Member[create].ReturnValue', ...]
+#     命中的节点（CodeQL 自己打印的）：
+#        moduleImport("openai").getMember("OpenAI").getReturn()
+#          .getMember("chat").getMember("completions").getMember("create").getReturn()
+#     在真靶 `sampletoolkit/profiling/chatagent_overhead.py:86-88` 命中 ✅
+#     ❌ 三种**未匹配**的写法（别用）：`['openai', 'Member[OpenAI].Member[...]']` /
+#        `['openai.resources.chat.completions.Completions', 'Member[create]...']` /
+#        `['openai', 'Member[chat]...']`
+#  ⚠️ 一次批量试了 anthropic / google / langchain 的 8 种候选写法，**在 sampletoolkit db 上都未命中**
+#     —— 可能是那些库在 sampletoolkit 里的调用形态不同（未逐个排查）。**填之前必须在真靶 db 上验。**
+#
+# ══ 三、★★ 但现在写了还"吃不到"（重要，见 docs/212 §2.4c）══════════════
+#  · `summaryModel` → 可能自动生效（我们的 `TaintTracking::Global` 吃框架 summary）。**未验证**。
+#  · `sourceModel` / `sinkModel` → ★ **不会自动生效**：`core/gen_ql.py` 的
+#    `srcKindCfg` / `isSinkArgCfg` 是**自定义谓词，不读 MaD**。
+#    ⇒ 要用上，得**同时改 QL** 去读 `ModelOutput::getASourceNode(...)`。
+#    ★ 这反而是个改进方向：MaD 带**类型约束**（`openai.OpenAI`），
+#      比我们 `sources.yml` 的裸方法名精确得多，不会误伤 `Model.objects.create()`。
+#
+# ══ 四、★★ 不用重建库 ═══════════════════════════════════════════════
+#  模型在**查询编译时**注入 —— 上面那次验证跑的是**几个月前建的 sampletoolkit db**，照样生效。
+#  ⇒ 补模型可**直接作用于已有的 22 个靶库**，成本极低。
+
+extensions:
+  - addsTo:
+      pack: codeql/python-all
+      extensible: sourceModel
+    data:
+      # ★ 实测通过（sampletoolkit db 上命中）：OpenAI 官方 SDK 的 chat completions
+      - ['openai.OpenAI', 'Member[chat].Member[completions].Member[create].ReturnValue', 'llm-output']
+  - addsTo:
+      pack: codeql/python-all
+      extensible: summaryModel
+    data: []

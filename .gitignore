@@ -1,0 +1,29 @@
+# ── 与本工具无关的运行产物（★ 一律不进版本库）────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ★ 数据与结果：含「扫了哪些靶、哪些点位」这类**未披露信息**
+data/
+out/
+logs/
+_targets/
+*.sqlite
+*.db
+
+# ★ 密钥与关注名单：**不进版本库**
+.env
+*.key
+*.token
+.github_token
+.deepseek_key
+opensource_targets.txt
+AF_TARGET_MAP.json
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

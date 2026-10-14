@@ -1,0 +1,50 @@
+# 内核 · 不可信源头清单（source registry，开关 dataflow-argsource）
+#
+# 用途：给**跨过程污点分析**（`core/ql/argsource*`）提供「哪些东西算不可信输入」。
+#   → 解决的问题（docs/108）：判定层要回答"这个 sink 的实参从哪来"，但**静态前端从没给它这个数据**，
+#     于是它在「诚实写 unknown」和「猜一个」之间横跳（arg_source 稳定率仅 0.25）。
+#   → 这个配置 + 数据流查询 = 把"实参从哪来"变成**可引用的证据**，而不是让模型猜。
+#
+# 与 sinks.yml 一样：`extra` 为空时，查询只报"实参来自函数参数"这一档（最保守），
+# 不引入任何启发式 → 保证"开关关掉 = 基线"。
+#
+# 字段：
+#   kind:
+#     method     —— 调用**任意对象**的这些方法，其返回值算不可信
+#                   （例：self.llm.chat(...) / client.invoke(...)）
+#     attr       —— **属性访问**（不是调用），例：request.args / request.json
+#     name       —— 裸函数名，例：input()
+#     obj_method —— 指定对象名的调用，例：os.environ.get(...)（本轮未启用）
+#
+# ★ 为什么不直接用"所有函数参数"当源头：那等于把整个项目都算不可信，
+#   会让每条 finding 都变成 vuln（刻度失控）。参数只作为**中间节点**，
+#   最终仍要追到真正的不可信来源（或如实报"追不到"）。
+
+version: 1
+updated: 2026-10-09
+
+sources:
+  # ---------- LLM 客户端调用（返回模型输出）----------
+  # ⚠️ 按**方法名**近似，必然有误伤（例：requests 的 .get 不在此列，但某个
+  #    ORM 也可能有 .create）。→ 所以数据流结果只作为**提示**喂给判定层，
+  #    由判定层结合代码确认；不直接据此下结论。
+  - id: llm-client
+    kind: method
+    names: [chat, invoke, generate, completion, complete, predict, ask]
+
+  # ---------- Web / 请求输入 ----------
+  - id: web-request
+    kind: attr
+    obj_suffix: request
+    names: [args, json, form, values, data, files, headers, cookies]
+
+  # ---------- 标准输入 ----------
+  - id: stdin
+    kind: name
+    names: [input]
+
+  # ---------- 命令行参数 ----------
+  - id: argv
+    kind: attr
+    obj_suffix: sys
+    names: [argv]

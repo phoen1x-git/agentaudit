@@ -1,0 +1,309 @@
+"""内核 · CodeQL 静态前端。
+
+职责（只有这一件事）：
+    已建好的 CodeQL 库  ──跑规则──▶  SARIF  ──解析──▶  Finding 列表
+
+★ 这一层**不判断漏洞**。它只负责"把源码里的可疑调用点找出来"。
+★ 内核的一份代码：A1 全开跑；B 论文靠开关的组合跑对比。这里的开关见 core/config/。
+
+用法（内核内部）：
+    from core.static_frontend import run_db_to_findings
+    fnd = run_db_to_findings(db_dir, project="sampledelegate", on_log=print)
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Callable, Optional
+
+from . import finding as F
+from . import cfg as CFG
+
+# ----------------------------------------------------------------------------
+# CodeQL 可执行文件定位（默认在本项目 _tools 下；可用环境变量覆盖）
+# ----------------------------------------------------------------------------
+_HERE = Path(__file__).resolve().parent          # .../个人项目_全自动挖掘/core
+_PROJ = _HERE.parent                              # .../个人项目_全自动挖掘
+_WORKSPACE = _PROJ.parent                         # 工作区根（项目目录的上一级）
+
+DEFAULT_CODEQL = _WORKSPACE / "_tools" / "codeql" / "codeql.exe"
+# ★★ 优先用**我们自己的包**（core/ql，由 `core/gen_ql.py` 从 sinks.yml 生成）。
+#    没有它才退回论文原包 —— 那时 sinks.yml 只是个摆设。
+_KERNEL_QL = _PROJ / "core" / "ql"
+DEFAULT_QL_DIR = _KERNEL_QL if _KERNEL_QL.exists() else (_WORKSPACE / "agentfuzz-official" / "ql")
+QUERIES = [
+    "get_callchain_and_location.ql",   # py-qs/caller
+    "get_if.ql",                        # py-qs/bb-l7
+    "get_dataflow_str_constraint.ql",   # py-qs/str-constraint
+]
+# ★ 我们自带的跨过程实参来源查询（开关 dataflow-argsource）。
+#   单独跑、单独解析 —— 它的输出格式与上面三条完全不同（见 core/ql_src/）。
+ARG_QUERY = "get_arg_source.ql"
+
+
+def codeql_exe() -> str:
+    return os.environ.get("AF_CODEQL", str(DEFAULT_CODEQL))
+
+
+def ql_dir() -> str:
+    return os.environ.get("AF_QL_DIR", str(DEFAULT_QL_DIR))
+
+
+def argsrc_enabled() -> bool:
+    """开关 dataflow-argsource（默认开；`--no-dataflow` 会设环境变量关掉）。"""
+    return os.environ.get("AF_NO_DATAFLOW", "0") != "1"
+
+
+# ----------------------------------------------------------------------------
+# 1) 跑查询 → SARIF
+# ----------------------------------------------------------------------------
+def run_analyze(db_dir: str, sarif_out: str, on_log: Callable[[str], None] = print,
+                queries: Optional[list[str]] = None) -> bool:
+    """对已建的 CodeQL 库跑规则，输出 SARIF。返回是否成功。"""
+    exe = codeql_exe()
+    ql = ql_dir()
+    if not os.path.exists(exe):
+        on_log(f"[FAIL] 找不到 codeql: {exe}")
+        return False
+    names = QUERIES if queries is None else queries
+    qpaths = [os.path.join(ql, q) for q in names]
+    missing = [q for q in qpaths if not os.path.exists(q)]
+    if missing:
+        on_log(f"[FAIL] 缺规则文件: {missing}")
+        return False
+    cmd = [exe, "database", "analyze", db_dir, *qpaths,
+           "--format=sarif-latest", f"--output={sarif_out}", f"--search-path={ql}"]
+    on_log("[cmd] " + " ".join(f'"{c}"' if " " in c else c for c in cmd[1:]))
+    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if p.returncode != 0:
+        on_log(f"[FAIL] codeql 退出码 {p.returncode}")
+        tail = (p.stdout or "")[-1500:] + (p.stderr or "")[-1500:]
+        on_log(tail)
+        return False
+    on_log("[ok] SARIF 已生成 " + sarif_out)
+    return True
+
+
+# ----------------------------------------------------------------------------
+# 1b) 跨过程实参来源 → {(相对路径, 行): [ {i, kind, src_file, src_line, src_text} ]}
+# ----------------------------------------------------------------------------
+def run_and_parse_argsrc(db_dir: str, project: str,
+                         on_log: Callable[[str], None] = print) -> dict:
+    """跑 get_arg_source.ql 并把结果按 (相对路径, sink行) 索引。
+
+    ★ 失败/关闭时返回空 dict —— **不抛异常**：这是"附加证据"，不该让整轮挂掉。
+    """
+    if not argsrc_enabled():
+        return {}
+    ql = ql_dir()
+    if not os.path.exists(os.path.join(ql, ARG_QUERY)):
+        on_log(f"[argsrc] 跳过：包里没有 {ARG_QUERY}（用 --no-dataflow 可显式关）")
+        return {}
+    tmp = os.path.join(tempfile.gettempdir(), f"af_{project}_argsrc.sarif")
+    if not run_analyze(db_dir, tmp, on_log, queries=[ARG_QUERY]):
+        on_log("[argsrc] ★ 查询失败 → 本轮没有实参来源证据（判定层会照旧标 unknown）")
+        return {}
+    prefix = _read_src_prefix(db_dir)
+    idx: dict = {}
+    try:
+        j = json.load(open(tmp, encoding="utf-8"))
+    except OSError:
+        return {}
+    for run in j.get("runs", []):
+        for r in run.get("results", []):
+            pl = ((r.get("locations") or [{}])[0].get("physicalLocation") or {})
+            uri = (pl.get("artifactLocation") or {}).get("uri", "")
+            line = (pl.get("region") or {}).get("startLine", 0)
+            rel = _rel(uri, prefix) if os.path.isabs(uri) else uri
+            parts = ((r.get("message") or {}).get("text") or "").split("@@")
+            if len(parts) < 7:
+                continue
+            idx.setdefault((rel, int(line)), []).append({
+                "i": int(parts[1]) if parts[1].isdigit() else -1,
+                "kind": parts[0],
+                "arg_line": int(parts[2]) if parts[2].isdigit() else 0,
+                "arg_text": parts[3],
+                "src_file": parts[4],
+                "src_line": int(parts[5]) if parts[5].isdigit() else 0,
+                "src_text": parts[6],
+            })
+    on_log(f"[argsrc] 实参来源证据：{sum(len(v) for v in idx.values())} 行，"
+           f"覆盖 {len(idx)} 个 sink 位置")
+    return idx
+
+
+# ----------------------------------------------------------------------------
+# 2) SARIF → Finding
+# ----------------------------------------------------------------------------
+_DEPTH_RE = re.compile(r"^\[?(\d+)#")
+
+
+def _read_src_prefix(db_dir: str) -> str:
+    """从 codeql-database.yml 读源码根（用于把绝对路径转相对路径）。"""
+    yml = Path(db_dir) / "codeql-database.yml"
+    try:
+        for line in yml.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.strip().startswith("sourceLocationPrefix:"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
+def _rel(abs_path: str, prefix: str) -> str:
+    p = abs_path.replace("\\", "/")
+    if prefix:
+        pfx = prefix.replace("\\", "/").rstrip("/")
+        if p.startswith(pfx):
+            p = p[len(pfx):]
+    return p.lstrip("/")
+
+
+def _parse_chain(msg: str) -> dict:
+    """解析 message.text（论文自定义的序列化调用链）。
+
+    形如：
+      caller      : 1#f1@a.py->requests.get@<abs>$$120:24$$120:40
+      bb-l7       : [1#f1@a.py->requests.get@<abs>$$..$$..@@f1#<abs>#118:8#118:10->main#...](1)
+    返回 depth / entry / sink_func / sink_file / sink_line / guards
+    """
+    out = {"depth": 0, "entry": "", "sink_func": "", "sink_file": "",
+           "sink_line": 0, "guards": [], "chain": ""}
+    if not msg:
+        return out
+    line = msg.split("\n", 1)[0].strip()          # 只取第一条变体
+    m = _DEPTH_RE.match(line)
+    if m:
+        out["depth"] = int(m.group(1))
+        line = line[m.end():]
+    # 拆 链条 @@ 守卫
+    if "@@" in line:
+        chain_part, guard_part = line.split("@@", 1)
+    else:
+        chain_part, guard_part = line, ""
+    chain_part = chain_part.split("](", 1)[0].rstrip("]")
+    out["chain"] = chain_part
+    hops = [h for h in chain_part.split("->") if h]
+    if hops:
+        # 第一跳 = 入口函数
+        out["entry"] = hops[0].split("@", 1)[0]
+        # 最后一跳 = sink：func@abs$$sl:sc$$el:ec
+        tail = hops[-1]
+        if "@" in tail:
+            fn, loc = tail.rsplit("@", 1)
+            out["sink_func"] = fn
+            if "$$" in loc:
+                absf = loc.split("$$", 1)[0]
+                nums = loc.split("$$", 1)[1]
+                out["sink_file"] = absf
+                out["sink_line"] = int(nums.split(":", 1)[0]) if nums[:1].isdigit() else 0
+    # 守卫（if 测试点）：★ 保留【完整路径】，审阅页才能把真实的那几行贴出来给人看
+    guards = []
+    for g in guard_part.split("->"):
+        g = g.split("](", 1)[0].rstrip("]")
+        if "#" in g:
+            frags = g.split("#")
+            pos = frags[1:]                      # [abs路径, "行:列", "行:列"]
+            if len(pos) >= 2:
+                guards.append(f"{pos[0]}#{pos[1]}")
+    out["guards"] = guards
+    return out
+
+
+def parse_sarif(sarif_path: str, project: str) -> list[F.Finding]:
+    j = json.load(open(sarif_path, encoding="utf-8"))
+    out: list[F.Finding] = []
+    for run in j.get("runs", []):
+        for r in run.get("results", []):
+            rule = r.get("ruleId", "")
+            msg = (r.get("message") or {}).get("text", "")
+            ch = _parse_chain(msg)
+            loc0 = (r.get("locations") or [{}])[0].get("physicalLocation", {})
+            uri0 = (loc0.get("artifactLocation") or {}).get("uri", "")
+            reg0 = loc0.get("region", {}) or {}
+            # sink 位置：优先用链条尾（caller 规则的 loc0 指向的是 source，不是 sink）
+            sink_uri = ch["sink_file"] or uri0
+            sink_line = ch["sink_line"] or int(reg0.get("startLine") or 0)
+            fd = F.Finding(
+                project=project,
+                rule=rule,
+                sink_func=ch["sink_func"] or rule,
+                sink_uri=sink_uri,
+                sink_line=sink_line,
+                sink_col=int(reg0.get("startColumn") or 0),
+                entry=ch["entry"],
+                depth=ch["depth"],
+                guards=ch["guards"],
+                chain=ch["chain"],
+            )
+            out.append(fd)
+    return out
+
+
+# ----------------------------------------------------------------------------
+# 3) 后处理：转相对路径 / 路径过滤 / 读源码片段 / 指纹
+# ----------------------------------------------------------------------------
+def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
+             on_log: Callable[[str], None] = print,
+             argsrc: Optional[dict] = None) -> list[F.Finding]:
+    prefix = _read_src_prefix(db_dir)
+    kept: list[F.Finding] = []
+    dropped = 0
+    with_src = 0
+    for fd in findings:
+        rel = _rel(fd.sink_uri, prefix) if os.path.isabs(fd.sink_uri) else fd.sink_uri
+        fd.sink_uri = rel
+        if CFG.path_is_filtered(rel, filters):
+            dropped += 1
+            continue
+        fd.src_root = prefix
+        fd.snippet = _read_line(prefix, rel, fd.sink_line)
+        fd.fingerprint = F.make_fingerprint(fd.project, rel, fd.sink_func, fd.snippet)
+        if argsrc:
+            hit = argsrc.get((rel, fd.sink_line)) or argsrc.get((fd.sink_uri, fd.sink_line))
+            if hit:
+                fd.arg_sources = hit
+                with_src += 1
+        kept.append(fd)
+    if dropped:
+        on_log(f"[filter] 路径过滤掉了 {dropped} 条（开关 path-filter）")
+    if argsrc:
+        on_log(f"[argsrc] {with_src} 条 finding 拿到了实参来源证据")
+    return kept
+
+
+def _read_line(prefix: str, rel: str, line: int) -> str:
+    if not prefix or not rel or not line:
+        return ""
+    p = Path(prefix) / rel
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as fh:
+            for i, s in enumerate(fh, 1):
+                if i == line:
+                    return s.rstrip("\n")
+    except OSError:
+        return ""
+    return ""
+
+
+# ----------------------------------------------------------------------------
+# 4) 一次到位
+# ----------------------------------------------------------------------------
+def run_db_to_findings(db_dir: str, project: str,
+                       on_log: Callable[[str], None] = print) -> list[F.Finding]:
+    filters = CFG.load_filters()
+    tmp = os.path.join(tempfile.gettempdir(), f"af_{project}.sarif")
+    if not run_analyze(db_dir, tmp, on_log):
+        # ★★ 查询失败**必须抛出去**，绝不能当成"0 命中"。
+        #    实测踩到：CodeQL 的 IMB 缓存目录被另一个进程锁住 → 退出码 2 →
+        #    却记成"命中 0 条"，在基准上表现为**假漏检**（凭空压低召回率）。
+        #    这是同一类"失败伪装成结论"的问题（参 docs/114 的截断坑）。
+        raise RuntimeError(f"CodeQL 分析失败（{project}）：查询没跑成，不是『没有结果』")
+    raw = parse_sarif(tmp, project)
+    on_log(f"[parse] 原始结果 {len(raw)} 条")
+    argsrc = run_and_parse_argsrc(db_dir, project, on_log)
+    return finalize(raw, db_dir, filters, on_log, argsrc=argsrc)
