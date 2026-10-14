@@ -3,15 +3,16 @@
 > The verdicts in this report were produced by **AI-assisted triage**. Every inference below is phrased as a question and **exploitability is unverified**. Treat the entries as **candidates**, not as confirmed vulnerabilities.
 
 - Round: `demo_round`  |  generated: 2026-01-01T00:00:00
-- Rule stamps: `rubric=ab12cd3` `sinks=ef45ab6` `filters=90cd12e`
+- Rule stamps: `filters.yml=90cd12e` `rubric=ab12cd3` `sinks.yml=ef45ab6`
 - Triage cost this run: 0.42 CNY (14 calls / 3 served from cache). To quote a per-batch price, use the first uncached run, not a cached one that reports 0.
+- Produced by: **codeql** (see the README for what each mode covers)
 - Candidates 4 -> triaged `vuln` **1** (the rest are not_vuln / needs_human and are not listed here)
 
 ## Summary
 
-| # | Project | Location | Type | Confidence | Upstream |
-|---|---|---|---|---|---|
-| 1 | demo-agent | `src/tools/shell_tool.py:31` | command execution | 0.78 | not checked |
+| # | Rule | Project | Location | Type | Confidence | Upstream |
+|---|---|---|---|---|---|---|
+| 1 | `py-qs/caller` | demo-agent | `src/tools/shell_tool.py:31` | command execution | 0.78 | not checked |
 
 > Every line above is a **fact**. Whether to disclose is a human decision, not the tool's; but before acting, each entry still has to answer: **is it still there? has anyone reported it? will the maintainers fix it?**
 
@@ -21,7 +22,7 @@
 
 ## 1. demo-agent - `src/tools/shell_tool.py:31` - command execution
 
-**Fingerprint**: `demo-agent/src/tools/shell_tool.py:4f2a91c7de` (for deduplication -- do **not** key on line numbers, they drift)
+**Rule**: `py-qs/caller`  |  **Fingerprint**: `demo-agent/src/tools/shell_tool.py:4f2a91c7de` (for deduplication -- do **not** key on line numbers, they drift)
 **AI verdict**: `vuln`  confidence 0.78  (designed feature: yes; exceeds intended scope: yes)
 
 ### Verified (source was read)
