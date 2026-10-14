@@ -234,6 +234,9 @@ def main() -> int:
                          "(repeatable), e.g. --ignore 'vendor/**'")
     ap.add_argument("--serve", action="store_true",
                     help="after the scan, serve the round directory on localhost")
+    ap.add_argument("--no-sarif", action="store_true",
+                    help="do not write agentaudit.sarif (relative paths only, "
+                         "for a code-scanning UI)")
     ap.add_argument("--no-log", action="store_true",
                     help="do not append to the local statistics log (see tools/scan_log.py)")
     a = ap.parse_args()
@@ -333,6 +336,12 @@ def main() -> int:
         cmd = [sys.executable, str(ROOT / "app" / script), str(rd), *args]
         subprocess.run(cmd, check=False)
 
+    if not a.no_sarif:
+        rc = subprocess.run([sys.executable, str(ROOT / "tools" / "to_sarif.py"), str(rd)],
+                            check=False).returncode
+        if rc != 0:
+            _log("[sarif] not written (see the message above); the rest of the round is fine")
+
     # Logged last, so the elapsed time means the same thing as the "done in" line below.
     if not a.no_log:
         _write_stats_log(mode=mode, findings=findings, src=src, ignore=a.ignore,
@@ -344,8 +353,10 @@ def main() -> int:
     _log(f"  report  {rd / 'report_draft.md'}")
     _log(f"  index   {rd / 'index.html'}")
     _log(f"  table   {rd / 'findings.tsv'}")
+    if (rd / "agentaudit.sarif").exists():
+        _log(f"  sarif   {rd / 'agentaudit.sarif'}")
     if (rd / "results.sarif").exists():
-        _log(f"  sarif   {rd / 'results.sarif'}")
+        _log(f"  raw     {rd / 'results.sarif'}  (the CodeQL frontend's own output)")
     _log("=" * 74)
 
     if a.serve and a.fail_on == "none":

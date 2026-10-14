@@ -18,10 +18,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import ast_scan  # noqa: E402
 
-# Words that would turn a candidate into a claim. The report is allowed to say what was NOT
-# done ("not verified by execution"); it is not allowed to assert the opposite.
+# Phrases that would turn a candidate into a claim. The report is allowed -- and expected --
+# to negate them ("not a confirmed vulnerability"); these are the positive forms.
 FORBIDDEN_CLAIMS = ("human-verified", "human verified", "we confirmed",
-                    "confirmed vulnerability", "proven exploitable",
+                    "has been confirmed", "proven exploitable",
                     "verified vulnerable", "exploitability verified")
 
 

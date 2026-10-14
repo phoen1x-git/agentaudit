@@ -179,7 +179,14 @@ Output lands in `out/round-<tag>/`:
 | `report_draft.md` | the write-up, one section per candidate |
 | `index.html` | sortable / searchable table of every candidate |
 | `findings.tsv` | the raw candidate table |
-| `results.sarif` | standard SARIF, for GitHub Code Scanning or an editor (full mode only) |
+| `agentaudit.sarif` | the candidates as SARIF 2.1.0, for a code-scanning UI or an editor |
+| `results.sarif` | the CodeQL frontend's own raw output (full mode only) |
+
+The SARIF export uses **relative paths only** — no absolute path and no `originalUriBaseIds`
+— so a file uploaded from your machine does not carry your filesystem layout. Every result is
+`level: warning` and the triage verdict travels in `properties`, because SARIF levels are read
+by tools that never see the caveats. Rows already triaged `not_vuln` are left out; add
+`--all` to `agentaudit sarif` to include them.
 
 ### Two modes
 

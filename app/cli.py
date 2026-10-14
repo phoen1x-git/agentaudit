@@ -34,6 +34,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "serve": ("app/serve.py", "serve a round directory on localhost"),
     "report": ("app/make_report.py", "render the report draft for a round"),
     "index": ("app/make_index.py", "render the HTML index for a round"),
+    "sarif": ("tools/to_sarif.py", "export a round as SARIF 2.1.0"),
     "round": ("app/run_round.py", "run one scan round over a target table"),
     "all": ("app/run_all.py", "prepare -> scan -> report, resumable"),
     "selftest": ("tools/run_selftests.py", "run the rule self-tests"),

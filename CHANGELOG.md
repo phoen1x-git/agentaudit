@@ -10,6 +10,12 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Added
 
+- **SARIF 2.1.0 export of the scanner's own findings** (`tools/to_sarif.py`, written to
+  `agentaudit.sarif` on every scan). Previously SARIF was only ever *read* — the CodeQL
+  frontend's output — so a round could not be viewed in a code-scanning UI. The export uses
+  relative paths only (no absolute path, no `originalUriBaseIds`), marks every result
+  `warning`, carries the verdict in `properties`, and leaves out rows already triaged
+  `not_vuln` unless `--all` is given.
 - **A local scan log, and an optional way to share it** (`tools/scan_log.py`). Every scan
   appends counts only — files, candidates, the split across checks and verdicts, elapsed time,
   version, and hashes of the rule configuration. Source, paths, project names, snippets and
