@@ -98,6 +98,59 @@ python tools/run_selftests.py        # 全部自测（10 套，纯内存用例�
 
 ## 快速开始
 
+一条命令就能扫——不用先准备目标清单，也不用自己建库：
+
+```bash
+python app/scan.py --demo                  # 仓库里自带的示例项目
+python app/scan.py --path ./myproject      # 扫本地已有的一个项目
+python app/scan.py --repo owner/name       # 拉一个 GitHub 仓库来扫
+```
+
+产物在 `out/round-<tag>/`：
+
+| 文件 | 是什么 |
+|---|---|
+| `report_draft.md` | 报告草稿，一条候选一节 |
+| `index.html` | 可排序 / 可搜索的候选表 |
+| `findings.tsv` | 原始候选表 |
+| `results.sarif` | 标准 SARIF，可进 GitHub Code Scanning 或编辑器（仅 full 模式） |
+
+### 两种模式
+
+| 模式 | 需要什么 | 能找出什么 |
+|---|---|---|
+| **full** | CodeQL CLI | CodeQL 查询 **+** AST 检查；会写 SARIF |
+| **offline** | 什么都不用 | 只有 AST 检查 |
+
+没装 CodeQL 时，它会**明说**并退回 offline 模式。每轮用的是哪种模式会记进 `meta.json`、
+并印在报告开头 —— 因为两者能找出的东西不一样。`--no-codeql` 可以强制走 offline。
+
+### Docker
+
+不想自己装 CodeQL，就用镜像（已经打进去了）：
+
+```bash
+docker build -t agentaudit .
+docker run --rm agentaudit                                             # 扫自带示例
+docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
+    agentaudit --path /scan/myproj --tag myproj --out /scan/out
+```
+
+### LLM 复核默认**关**
+
+它要花 API 的钱，所以只在你明确要求时才跑：
+
+```bash
+python app/scan.py --path ./myproject --llm
+```
+
+开跑之前会先印出候选条数和硬上限（`AF_LLM_MAX_CNY`，默认 30 元），跑完报实际花费。
+不加 `--llm` 就只有候选清单、没有判定 —— 报告会**如实这么说**，不会暗示已经判过。
+
+### 手动跑流水线
+
+`app/scan.py` 用的就是同一套引擎，也可以逐段驱动（扫一整批目标时用这个）：
+
 ```bash
 # 1) 离线自测（免费）
 python tools/run_selftests.py
@@ -155,6 +208,8 @@ python app/make_index.py  out/round-my-round --lang zh
 - **重新生成 CodeQL 查询需要 AgentFuzz 的参考包。** 只有「重新生成」才需要它；
   仓库里已提交的 `core/ql/*.ql` 不需要（用 `AF_PAPER_QL` 指定路径）。
 - **每一条发现都需要人工确认。** 工具产出的是**候选**，不是结论。
+- **offline 模式能找出的东西更少。** 没有 CodeQL 就没有跨过程可达性、也没有框架建模，
+  候选清单会更短。每轮都会记下自己用的是哪种模式。
 
 ---
 
@@ -168,8 +223,9 @@ python app/make_index.py  out/round-my-round --lang zh
 | `GITHUB_KEY_FILE` | GitHub token 文件路径（提高 API 限额） | `~/.github_token` |
 | `AF_LLM_MAX_CNY` | **单次运行的硬上限**（到限即停并报数） | `30` |
 | `AF_JUDGE_MT` | 复核层最大输出 token | `8000` |
-| `AF_CODEQL` | CodeQL CLI 路径 | `./_tools/codeql/codeql(.exe)` |
+| `AF_CODEQL` | CodeQL CLI 路径 | `./_tools/codeql/codeql[.exe]` |
 | `AF_PAPER_QL` | AgentFuzz 参考 QL 包路径 | `./agentfuzz-official/ql` |
+| `AF_SRC_DIR` / `AF_DB_DIR` | 源码 / 库放在哪 | `./_targets/src`、`./_targets/db` |
 | `AF_TARGET_MAP` | JSON 映射 `{"短名": "源码根目录"}` | 读 `core/config/targets*.yml` |
 | `AF_SINKS_FS` / `_PATH` / `_HTTP` / `_DYNIMP` | 打开额外的 sink 组 | 关 |
 | `AF_SINKS_EXTRA` | 是否启用 `source: extra` 的条目 | `1` |
@@ -184,7 +240,8 @@ python app/make_index.py  out/round-my-round --lang zh
 ```
 core/      内核（静态前端 / 复核 / 可达性 / 污点追踪 / CodeQL 查询）
 tools/     可复用工具（选择目标 / 下载 / 各项检查 / 自测）
-app/       一键入口与编排
+app/       入口（scan.py 扫单个目标，run_all.py 扫一批）
+demo/      故意有洞的示例项目，给 --demo 用
 examples/  合成示例输出
 ```
 

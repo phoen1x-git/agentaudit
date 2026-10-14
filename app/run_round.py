@@ -31,12 +31,18 @@ from core import round as R                             # noqa: E402
 
 
 def load_targets(path: str | None = None) -> dict:
-    """Load the target table. Default `core/config/targets.yml`, override with --targets-file."""
+    """Load the target table.
+
+    Default `core/config/targets.yml`, override with --targets-file. A missing file is not an
+    error here (a fresh clone has none); main() reports it properly.
+    """
     import yaml
     p = Path(path) if path else (ROOT / "core" / "config" / "targets.yml")
     if not p.is_absolute():
         p = ROOT / p
-    cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
+    if not p.exists():
+        return {}
+    cfg = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     out = {}
     for name, t in (cfg.get("targets") or {}).items():
         out[name] = {
@@ -140,6 +146,12 @@ def main() -> int:
     global TARGETS
     if args.targets_file:
         TARGETS = load_targets(args.targets_file)
+    if not TARGETS:
+        default = ROOT / "core" / "config" / "targets.yml"
+        print(f"[FATAL] no targets to scan (looked at {args.targets_file or default})")
+        print("        copy core/config/targets.example.yml to core/config/targets.yml and fill it in,")
+        print("        or for a single project use: python app/scan.py --path ./myproject")
+        return 2
     want = [s.strip() for s in args.only.split(",") if s.strip()] or list(TARGETS)
     rd = R.new_round_dir(Path(args.out), args.tag)
     t0 = time.time()

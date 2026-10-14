@@ -50,11 +50,11 @@ pip install -r requirements.txt
 ### Smoke test (offline, no API key, no CodeQL)
 
 ```bash
-python tools/param_taint_criteria.py --selftest      # the criterion answers labelled cases
 python tools/run_selftests.py                        # the whole self-test suite
 ```
 
-These run in seconds and are the fastest way to confirm the setup works.
+These run in seconds and confirm the checks behave as their labelled cases expect —
+the fastest way to know the setup is sane before scanning anything.
 
 ---
 
@@ -105,9 +105,65 @@ select targets -> fetch & build CodeQL DBs -> static frontend (CodeQL)
 
 ## Quick start
 
+Scan something with one command — no target list and no database to build by hand:
+
+```bash
+python app/scan.py --demo                  # the bundled sample project
+python app/scan.py --path ./myproject      # a project already on disk
+python app/scan.py --repo owner/name       # fetch a GitHub repo and scan it
+```
+
+Output lands in `out/round-<tag>/`:
+
+| File | What it is |
+|---|---|
+| `report_draft.md` | the write-up, one section per candidate |
+| `index.html` | sortable / searchable table of every candidate |
+| `findings.tsv` | the raw candidate table |
+| `results.sarif` | standard SARIF, for GitHub Code Scanning or an editor (full mode only) |
+
+### Two modes
+
+| Mode | Needs | Finds |
+|---|---|---|
+| **full** | the CodeQL CLI | the CodeQL queries *and* the AST checks; writes SARIF |
+| **offline** | nothing at all | the AST checks only |
+
+If the CodeQL CLI is not installed the run says so and uses the offline mode instead. Which
+mode produced a round is recorded in `meta.json` and printed at the top of the report, because
+the two do not find the same things. `--no-codeql` forces the offline mode.
+
+### Docker
+
+If you would rather not install CodeQL yourself, the image has it baked in:
+
+```bash
+docker build -t agentaudit .
+docker run --rm agentaudit                                             # bundled sample
+docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
+    agentaudit --path /scan/myproj --tag myproj --out /scan/out
+```
+
+### LLM triage is off by default
+
+It spends API credits, so it only runs when you ask for it:
+
+```bash
+python app/scan.py --path ./myproject --llm
+```
+
+The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 30 CNY)
+before it starts, and reports what it actually spent afterwards. Without `--llm` you get the
+candidate list with no verdicts — the report says so rather than implying anything was judged.
+
+### The manual pipeline
+
+`app/scan.py` wraps the same engine that can be driven stage by stage, which is what you want
+when scanning a whole batch of targets:
+
 ```bash
 # 1) offline self-check (free)
-python tools/param_taint_criteria.py --selftest
+python tools/run_selftests.py
 
 # 2) select targets (needs a GitHub token)
 python tools/target_screener.py fetch
@@ -165,6 +221,8 @@ These are deliberate trade-offs, not bugs.
 - **Regenerating the CodeQL queries needs the AgentFuzz reference pack.** It is only needed
   for regeneration; the committed `core/ql/*.ql` work without it (`AF_PAPER_QL` to point at it).
 - **Every finding needs human confirmation.** The tool produces **candidates**, not conclusions.
+- **The offline mode finds less.** Without CodeQL there is no inter-procedural reachability
+  and no framework modelling, so the candidate list is shorter. Each round records its mode.
 
 ---
 
@@ -178,8 +236,9 @@ Secrets are always read from files or environment variables, never committed.
 | `GITHUB_KEY_FILE` | path to a GitHub token file (raises API limits) | `~/.github_token` |
 | `AF_LLM_MAX_CNY` | **hard per-run spend cap**; the run stops and reports when reached | `30` |
 | `AF_JUDGE_MT` | max output tokens for the triage layer | `8000` |
-| `AF_CODEQL` | path to the CodeQL CLI | `./_tools/codeql/codeql(.exe)` |
+| `AF_CODEQL` | path to the CodeQL CLI | `./_tools/codeql/codeql[.exe]` |
 | `AF_PAPER_QL` | path to the AgentFuzz reference QL pack | `./agentfuzz-official/ql` |
+| `AF_SRC_DIR` / `AF_DB_DIR` | where fetched sources / databases live | `./_targets/src`, `./_targets/db` |
 | `AF_TARGET_MAP` | JSON map `{"short-name": "source root"}` | read from `core/config/targets*.yml` |
 | `AF_SINKS_FS` / `_PATH` / `_HTTP` / `_DYNIMP` | enable extra sink groups | off |
 | `AF_SINKS_EXTRA` | include the `source: extra` entries at all | `1` |
@@ -194,7 +253,8 @@ Secrets are always read from files or environment variables, never committed.
 ```
 core/      the kernel (static frontend, triage, reachability, taint tracing, CodeQL queries)
 tools/     reusable tooling (target selection, fetching, individual checks, self-tests)
-app/       one-shot entry points and orchestration
+app/       entry points (scan.py for one target, run_all.py for a batch)
+demo/      a deliberately vulnerable sample project, for `--demo`
 examples/  synthetic sample output
 ```
 

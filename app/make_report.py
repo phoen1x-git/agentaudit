@@ -39,8 +39,10 @@ S = {
                       "({calls} calls / {hits} served from cache). To quote a per-batch price, "
                       "use the first uncached run, not a cached one that reports 0."),
         "counts": "Candidates {total} -> triaged `vuln` **{n}** (the rest are not_vuln / needs_human and are not listed here)",
+        "counts_all": "All **{total}** candidates are listed (no LLM triage was run, so none of them carry a verdict yet)",
+        "counts_untriaged": "Candidates {total} -> **{n}** never triaged",
         "summary": "## Summary",
-        "tbl_head": "| # | Project | Location | Type | Confidence | Upstream |",
+        "tbl_head": "| # | Rule | Project | Location | Type | Confidence | Upstream |",
         "upstream_unknown": "not checked",
         "upstream_ok": "no anomaly",
         "upstream_archived": "repo archived",
@@ -102,11 +104,24 @@ S = {
         "kind_net": "outbound request (possible SSRF)",
         "kind_db": "database execution",
         "kind_other": "dangerous call",
+        "kind_unauth": "unauthenticated route",
+        "kind_authincons": "authentication inconsistent within the file",
+        "kind_argsrc": "argument source not determinable",
+        "kind_cooc": "untrusted input and dangerous call in one expression",
+        "kind_dual": "strong/weak form side by side",
         "fix_exec": "run in a restricted subprocess/container, or limit the available modules and builtins",
         "fix_cmd": "avoid shell=True; whitelist or strictly escape the arguments",
         "fix_net": "whitelist target hosts; explicitly refuse private / link-local / cloud-metadata ranges",
         "fix_db": "use parameterised queries; restrict the statement types that can run",
         "fix_other": "(to be written)",
+        "fix_unauth": "require the same dependency the neighbouring routes use, or mark the route public explicitly",
+        "fix_authincons": "make every route in the file declare its auth (or declare the public ones)",
+        "fix_argsrc": "trace where the value comes from; if it is model output, treat it as untrusted input",
+        "fix_cooc": "separate the read from the use, and validate before the dangerous call",
+        "fix_dual": "use the constraining form on both paths",
+        "rule_hdr": "Rule",
+        "scanner_line": "Produced by: **{scanner}** (see the README for what each mode covers)",
+        "no_verdict": "not triaged (no LLM run for this round)",
     },
     "zh": {
         "title": "# 报告草稿（自动生成）· **未经实跑验证**",
@@ -118,8 +133,10 @@ S = {
         "cost_line": ("本轮判定花费 {cost} 元（{calls} 次调用 / {hits} 次命中缓存）。"
                       "若要报『判定一批多少钱』，用**首次未命中**那一轮的值，不要用命中缓存那轮的 0。"),
         "counts": "候选总数 {total} → 判成 vuln **{n}** 条（其余为 not_vuln / needs_human，不在本报告）",
+        "counts_all": "列出全部 **{total}** 条候选（本轮未跑 LLM 复核，所以都还没有判定）",
+        "counts_untriaged": "候选总数 {total} → **{n}** 条从未复核",
         "summary": "## 汇总",
-        "tbl_head": "| # | 项目 | 位置 | 类型 | 置信度 | 上游 |",
+        "tbl_head": "| # | 规则 | 项目 | 位置 | 类型 | 置信度 | 上游 |",
         "upstream_unknown": "未查询",
         "upstream_ok": "无异常",
         "upstream_archived": "仓库已归档",
@@ -177,11 +194,24 @@ S = {
         "kind_net": "出网请求（可能 SSRF）",
         "kind_db": "数据库执行",
         "kind_other": "危险调用",
+        "kind_unauth": "路由无鉴权",
+        "kind_authincons": "同文件内鉴权不一致",
+        "kind_argsrc": "实参来源无法判定",
+        "kind_cooc": "外部输入与危险调用在同一表达式",
+        "kind_dual": "强弱写法并存",
         "fix_exec": "把执行放进受限子进程/容器，或限制可用模块与内置函数",
         "fix_cmd": "避免 shell=True；对参数做白名单或严格转义",
         "fix_net": "目标地址走白名单；显式拒绝内网 / 链路本地 / 云元数据地址段",
         "fix_db": "参数化查询；限制可执行的语句类型",
         "fix_other": "（待补）",
+        "fix_unauth": "挂上和相邻路由相同的鉴权依赖，或明确声明该路由为公开",
+        "fix_authincons": "让文件里每个路由都显式声明自己的鉴权（公开的也要声明）",
+        "fix_argsrc": "追一下这个值从哪来；如果来自模型输出，就按不可信输入处理",
+        "fix_cooc": "把读取和使用拆开，在危险调用前先校验",
+        "fix_dual": "两条路径都用带约束的那个写法",
+        "rule_hdr": "规则",
+        "scanner_line": "由 **{scanner}** 模式产出（各模式覆盖什么见 README）",
+        "no_verdict": "未复核（本轮没有跑 LLM）",
     },
 }
 
@@ -191,7 +221,20 @@ SRC_ZH = {"llm_output": "大模型的输出", "user_input": "用户输入", "too
           "memory": "跨轮记忆", "config": "配置文件", "constant": "写死的常量"}
 
 
-def _kind(sink: str, t: dict) -> tuple[str, str]:
+# Checks whose "sink" is not a call name; classify them by rule instead.
+RULE_KIND = {
+    "ast/unauth-endpoint": ("kind_unauth", "fix_unauth"),
+    "ast/inconsistent-auth": ("kind_authincons", "fix_authincons"),
+    "ast/arg-source-unknown": ("kind_argsrc", "fix_argsrc"),
+    "ast/input-to-sink": ("kind_cooc", "fix_cooc"),
+    "ast/duality": ("kind_dual", "fix_dual"),
+}
+
+
+def _kind(sink: str, rule: str, t: dict) -> tuple[str, str]:
+    mapped = RULE_KIND.get((rule or "").strip())
+    if mapped:
+        return t[mapped[0]], t[mapped[1]]
     s = (sink or "").lower()
     if "exec" in s or "eval" in s:
         return t["kind_exec"], t["fix_exec"]
@@ -279,6 +322,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("round_dir", nargs="?", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language (default: en)")
+    ap.add_argument("--select", default="vuln", choices=["vuln", "all", "untriaged"],
+                    help="which rows to write up: only those triaged vuln (default), every "
+                         "candidate, or those that were never triaged")
     a = ap.parse_args()
     t = S[a.lang]
     src_map = SRC_EN if a.lang == "en" else SRC_ZH
@@ -293,37 +339,56 @@ def main() -> int:
     meta = json.load(open(rd / "meta.json", encoding="utf-8")) if (rd / "meta.json").exists() else {}
     up = json.load(open(rd / "upstream.json", encoding="utf-8")) if (rd / "upstream.json").exists() else {}
 
-    reps = [r for r in rows if r.get("ai_verdict") == "vuln"]
+    if a.select == "vuln":
+        reps = [r for r in rows if (r.get("ai_verdict") or "").strip() == "vuln"]
+        counts = t["counts"].format(total=len(rows), n=len(reps))
+    elif a.select == "untriaged":
+        reps = [r for r in rows if not (r.get("ai_verdict") or "").strip()]
+        counts = t["counts_untriaged"].format(total=len(rows), n=len(reps))
+    else:
+        reps = list(rows)
+        counts = t["counts_all"].format(total=len(rows))
     stamp = meta.get("kernel_stamp", {})
+    stamp_txt = " ".join(f"`{k}={v}`" for k, v in sorted(stamp.items()) if v) or "-"
     L = [
         t["title"], "",
         t["disclaimer"], "",
         f"- {t['round']}: `{rd.name}`  |  {t['generated']}: {meta.get('generated_at', '?')}",
-        f"- {t['stamps']}: `rubric={stamp.get('rubric', '?')}` `sinks={stamp.get('sinks.yml', '?')}` "
-        f"`filters={stamp.get('filters.yml', '?')}`",
+        f"- {t['stamps']}: {stamp_txt}",
         "- " + t["cost_line"].format(cost=meta.get("llm_cost_cny", "?"),
                                      calls=meta.get("llm_calls", 0), hits=meta.get("llm_cache_hits", 0)),
-        "- " + t["counts"].format(total=len(rows), n=len(reps)),
+        "- " + t["scanner_line"].format(scanner=meta.get("scanner", "?")),
+        "- " + counts,
         "",
         t["summary"], "",
         t["tbl_head"],
-        "|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|",
     ]
     for i, r in enumerate(reps, 1):
-        kind, _ = _kind(r.get("sink", ""), t)
+        kind, _ = _kind(r.get("sink", ""), r.get("rule", ""), t)
         u = up.get(r["fingerprint"], {})
-        L.append(f"| {i} | {r['project']} | `{r['file']}:{r['line']}` | {kind} | "
-                 f"{r.get('conf', '')} | {_upstream_verdict_short(u, t)} |")
+        conf = r.get("conf") or ""
+        try:
+            conf_txt = f"{float(conf):.2f}" if conf not in ("", "0.0", "0") else "-"
+        except ValueError:
+            conf_txt = str(conf)
+        L.append(f"| {i} | `{r.get('rule', '')}` | {r['project']} | `{r['file']}:{r['line']}` | {kind} | "
+                 f"{conf_txt} | {_upstream_verdict_short(u, t)} |")
     L += ["", t["closing_rule"], "", "---", "", t["detail"], ""]
 
     for i, r in enumerate(reps, 1):
-        kind, fixdir = _kind(r.get("sink", ""), t)
+        kind, fixdir = _kind(r.get("sink", ""), r.get("rule", ""), t)
         j = verd.get(r["fingerprint"], {})
+        verdict_line = (
+            f"**{t['judge']}**: `{r.get('ai_verdict')}`  {t['conf']} {r.get('conf')}  "
+            f"({t['by_design']}: {r.get('by_design')}; {t['scope']}: {r.get('scope_exceeds')})"
+            if (r.get("ai_verdict") or "").strip() else
+            f"**{t['judge']}**: {t['no_verdict']}")
         L += [
             f"## {i}. {r['project']} - `{r['file']}:{r['line']}` - {kind}", "",
-            f"**{t['fingerprint']}**: `{r['fingerprint']}` ({t['fingerprint_note']})",
-            f"**{t['judge']}**: `{r.get('ai_verdict')}`  {t['conf']} {r.get('conf')}  "
-            f"({t['by_design']}: {r.get('by_design')}; {t['scope']}: {r.get('scope_exceeds')})",
+            f"**{t['rule_hdr']}**: `{r.get('rule', '')}`  |  **{t['fingerprint']}**: `{r['fingerprint']}` "
+            f"({t['fingerprint_note']})",
+            verdict_line,
             "", t["verified_h"], "", "```python",
             f"{r['line']}: {r.get('snippet', '')}", "```", "",
             t["fact"].format(sink=r.get("sink"), line=r["line"]), "",

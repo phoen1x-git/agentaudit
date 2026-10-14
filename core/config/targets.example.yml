@@ -1,0 +1,23 @@
+# Example target table. Copy to `core/config/targets.yml` and fill in your own targets.
+#
+#   cp core/config/targets.example.yml core/config/targets.yml
+#
+# Paths are relative to the project root (or absolute). `db` must be a CodeQL database
+# directory, i.e. one containing `codeql-database.yml`; `src` is the checked-out source.
+# `src` is optional and only used by the strong/weak-form check.
+#
+# For a single project you usually do not need this file at all:
+#     python app/scan.py --path ./myproject
+#
+# Note: this file is committed on purpose, so keep it free of anything you would not publish.
+
+targets:
+  sample-agent:
+    repo: sample-org/sample-agent          # optional; used by the health gate and the upstream check
+    src: _targets/src/sample-agent
+    db: _targets/db/sample-agent-db
+
+  sample-toolkit:
+    repo: sample-org/sample-toolkit
+    src: _targets/src/sample-toolkit
+    db: _targets/db/sample-toolkit-db

@@ -1,0 +1,12 @@
+.git
+.gitignore
+.workbuddy
+out
+data
+logs
+_targets
+__pycache__
+*.py[cod]
+.venv
+venv
+examples

@@ -33,7 +33,8 @@ WS = ROOT.parent
 SRC_ROOT = Path(os.environ.get("AF_SRC_DIR") or (ROOT / "_targets" / "src"))
 DB_ROOT = Path(os.environ.get("AF_DB_DIR") or (ROOT / "_targets" / "db"))
 POOL = ROOT / "data" / "target_pool"
-CODEQL = Path(os.environ.get("AF_CODEQL") or (ROOT / "_tools" / "codeql" / "codeql.exe"))
+CODEQL = Path(os.environ.get("AF_CODEQL") or (ROOT / "_tools" / "codeql" /
+                                              ("codeql.exe" if os.name == "nt" else "codeql")))
 
 
 def _safe(repo: str) -> str:

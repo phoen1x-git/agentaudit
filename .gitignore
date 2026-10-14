@@ -22,6 +22,10 @@ _targets/
 opensource_targets.txt
 AF_TARGET_MAP.json
 
+# the real target table: it names the repos you actually scan.
+# the format is documented in core/config/targets.example.yml (which IS committed).
+core/config/targets.yml
+
 # local assistant workspace
 .workbuddy/
 

@@ -38,7 +38,8 @@ import fetch_target_sources as F  # noqa: E402  复用 fetch_tarball / count_py
 HOME = os.path.dirname(ROOT)                                  # parent of the project (used for disk checks)
 SRC = os.environ.get("AF_SRC_DIR") or os.path.join(ROOT, "_targets", "src")
 DB = os.environ.get("AF_DB_DIR") or os.path.join(ROOT, "_targets", "db")
-CODEQL = os.environ.get("AF_CODEQL") or os.path.join(ROOT, "_tools", "codeql", "codeql.exe")
+CODEQL = os.environ.get("AF_CODEQL") or os.path.join(
+    ROOT, "_tools", "codeql", "codeql.exe" if os.name == "nt" else "codeql")
 SCREENED = os.path.join(ROOT, "data", "target_pool", "screened.json")
 REPORT = os.path.join(ROOT, "data", "target_pool", "new_targets_prepare_report.json")
 
