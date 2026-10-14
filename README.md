@@ -1,127 +1,142 @@
 # agent-scanner
 
-**A taint-style vulnerability scanner for LLM / Agent applications.**
-Static analysis (CodeQL) + LLM-assisted triage, with an explicit emphasis on **honest
-uncertainty** — the checker is designed to say *"I don't know"* instead of guessing.
+**English** | [中文](README.zh-CN.md)
 
-> 面向 **LLM / Agent 应用**的污点式漏洞扫描器：静态分析（CodeQL）选出候选点位，
-> 再用 LLM 辅助判定。**它明确区分「确认」和「不知道」**，绝不把猜测写成结论。
->
-> ⚠️ 当前**只支持 Python**；LLM 判定有已知噪声，见下方 [Known limitations](#known-limitations)。
+A taint-style vulnerability scanner for **LLM / Agent applications**.
+Static analysis (CodeQL) selects candidate sites; an LLM assists with triage.
+
+Its distinguishing design goal is **honest uncertainty**: the scanner is built to say
+*"I don't know"* instead of guessing, and to make that verdict a first-class outcome
+rather than an embarrassment to be papered over.
+
+> ⚠️ Python only at the moment. The LLM triage layer has known noise — see
+> [Known limitations](#known-limitations).
 
 ---
 
 ## Why another scanner?
 
-Agent 应用的危险调用（`eval` / `subprocess` / `open` / `requests` …）**不是简单的数据流问题**：
+Dangerous calls in agent code (`eval`, `subprocess`, `open`, `requests`, …) are **not**
+a plain data-flow problem. Whether a given `eval(...)` is a vulnerability depends on
+**three** questions, and classic taint analysis only answers the first one:
 
-一段代码里有 `eval(...)`，它到底是不是漏洞，取决于**三件事**，而传统污点分析只答第一件：
-
-| # | 问题 | 例子（都是**误报**） |
+| # | Question | Example (both of these are **false positives**) |
 |---|---|---|
-| ① | 有个危险调用吗？ | —— 静态分析能答 |
-| ② | 它的参数**外面能控制**吗？ | 参数是**本地枚举**出来的目录名 |
-| ③ | 参数**能带着 payload 走到 sink** 吗？ | 中途有 **Validator** 把它降级成了 `None` |
+| ① | Is there a dangerous call? | — static analysis can answer this |
+| ② | Is its argument **externally controlled**? | the argument is a directory name **enumerated locally** |
+| ③ | Does the argument **survive to the sink**? | a **validator** midway reduces it to `None` |
 
-本项目把 ②③ 也做成了**可运行的判据**（`tools/param_taint_criteria.py`），
-并把「判定层说不知道」当成**一等公民**去处理，而不是硬凑一个结论。
+This project turns ② and ③ into **runnable criteria**
+(`tools/param_taint_criteria.py`), and treats *"the triage layer doesn't know"*
+as something to report, not something to hide.
 
 ---
 
 ## Pipeline
 
 ```
-选靶 → 备料(下载+建库) → 静态前端(CodeQL) → 可达性预筛 → 追入口 → 参数贯通性
-   → LLM 判定 → 三关复核 → 实跑验证 → 出材料
+select targets → fetch & build DBs → static frontend (CodeQL) → reachability triage
+   → entry-point tracing → parameter-taint criterion → LLM triage
+   → three-gate review → hands-on verification → report material
 ```
 
-| 阶段 | 入口 | 说明 |
+| Stage | Entry point | What it does |
 |---|---|---|
-| 选靶 | `tools/target_screener.py` | 按 star / 活跃度 / 「是不是 Agent」筛仓库 |
-| 备料 | `tools/prepare_new_targets.py` | 下载源码 + 建 CodeQL 库；**可断点续跑** |
-| 静态前端 | `core/static_frontend.py` | CodeQL 查询 + SARIF 解析 |
-| 可达性预筛 | `tools/reachability_triage.py` | 判「外面调不调得到」 |
-| 追入口 | `tools/find_entries_for_suspects.py` | 往上找调用方，看挂没挂暴露标记 |
-| **参数贯通性** | `tools/param_taint_criteria.py` | 判「参数可不可控 / 中途有没有校验」 |
-| LLM 判定 | `core/llm_judge.py` | 五个维度：`verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
-| 一键跑 | `app/run_all.py` | prepare → scan → report |
+| Select targets | `tools/target_screener.py` | filter repos by stars / activity / "is this an agent?" |
+| Fetch & build | `tools/prepare_new_targets.py` | download sources + build CodeQL databases; **resumable** |
+| Static frontend | `core/static_frontend.py` | run CodeQL queries, parse SARIF |
+| Reachability | `tools/reachability_triage.py` | can the sink be reached from outside? |
+| Entry tracing | `tools/find_entries_for_suspects.py` | walk up to callers, look for exposure markers |
+| **Parameter taint** | `tools/param_taint_criteria.py` | is the argument controllable / is it constrained en route? |
+| LLM triage | `core/llm_judge.py` | five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
+| One-shot run | `app/run_all.py` | prepare → scan → report |
 
 ---
 
 ## Install
 
-需要 **Python 3.10+**，以及 [CodeQL CLI](https://github.com/github/codeql-cli-binaries)。
+Requires **Python 3.10+** and the
+[CodeQL CLI](https://github.com/github/codeql-cli-binaries).
 
 ```bash
 pip install -r requirements.txt
 
-# CodeQL：下载后解压，让 core/static_frontend.py 能找到它
-#   默认找 <workspace>/_tools/codeql/codeql(.exe)，也可用环境变量指定
+# CodeQL: unpack it somewhere the frontend can find it.
+# Default lookup: <workspace>/_tools/codeql/codeql(.exe) — override for your layout.
 ```
 
-### 配置（**密钥一律走环境变量 / 文件，不进版本库**）
+### Configuration
 
-| 环境变量 | 用途 | 默认 |
+**Secrets are always read from files/env vars and never committed.**
+
+| Env var | Purpose | Default |
 |---|---|---|
-| `DEEPSEEK_KEY_FILE` | LLM 判定的 key 文件路径 | `~/.deepseek_key` |
-| `GITHUB_KEY_FILE` | GitHub token 文件路径（提高 API 额度） | `~/.github_token` |
-| `AF_LLM_MAX_CNY` | **单次运行的金额硬上限**（防失控保险丝，到限硬停报数） | `30` |
-| `AF_TARGET_MAP` | `{"短名": "源码根"}` 的 JSON 映射 | 从 `core/config/targets*.yml` 读 |
-| `AF_JUDGE_MT` | 判定层最大输出 token | `8000` |
+| `DEEPSEEK_KEY_FILE` | path to the LLM API key file | `~/.deepseek_key` |
+| `GITHUB_KEY_FILE` | path to a GitHub token file (raises API limits) | `~/.github_token` |
+| `AF_LLM_MAX_CNY` | **hard per-run spend cap** (fuse against runaway loops; stops and reports) | `30` |
+| `AF_TARGET_MAP` | JSON map `{"short-name": "source root"}` | read from `core/config/targets*.yml` |
+| `AF_JUDGE_MT` | max output tokens for the triage layer | `8000` |
 
 ---
 
 ## Quick start
 
 ```bash
-# 1) 冒烟：判据自测（不联网、不花钱）
+# 1) Smoke test: criterion self-check (offline, free)
 python tools/param_taint_criteria.py --selftest
 
-# 2) 选靶（需要 GitHub token）
+# 2) Select targets (needs a GitHub token)
 python tools/target_screener.py fetch
 python tools/target_screener.py screen
 
-# 3) 备料：下载 + 建库（可反复重启，已完成的会跳过）
+# 3) Fetch sources + build CodeQL DBs (restartable; finished work is skipped)
 python tools/prepare_new_targets.py --status
 python tools/prepare_new_targets.py
 
-# 4) 单轮扫描
+# 4) Run one round
 python app/run_round.py --tag my-round --targets-file core/config/targets.yml
 ```
 
-★ **跑之前先看钱**：判定层会消耗 LLM 额度。
-脚本会在开始时打印**预估花费**，并且 `AF_LLM_MAX_CNY` 到限会**硬停**。
+★ **Mind the cost.** The triage layer spends LLM credits. Scripts print an **estimated
+cost** up front, and `AF_LLM_MAX_CNY` **hard-stops** the run when the cap is reached.
 
 ---
 
 ## Known limitations
 
-**这些是设计上的取舍，不是 bug —— 写出来是因为「诚实标注不确定性」比「假装准确」有用。**
+These are deliberate trade-offs, not bugs. They are written down because
+**stating uncertainty plainly is more useful than pretending to be precise.**
 
-- ★ **只支持 Python**：静态前端绑在 CodeQL 的 Python 包上（`--language=python`）。
-  判据逻辑本身不绑语言，但换语言要重做前端。
-- ★ **LLM 判定有噪声**：同一条候选跑三遍，**约四分之一会改口**；
-  「完美稳定」往往是**缓存假象**（复判必须换 `--tag`）。
-- ★ **`arg_source=unknown` 的 `vuln` 不可信** —— 那意味着「模型自己也不知道参数从哪来」。
-  本项目的候选筛选会把这一档**默认降级**。
-- ⚠️ **「找不到调用方」≠「不可达」**：只做了按名匹配，跨文件 / 动态调用 / 反射会漏。
-- ⚠️ **框架中介**：`import` 指向的实现在 `site-packages`（不在靶目录）⇒ 静态看不到它。
-- ⚠️ **报告里的每条候选都需要人工确认**。工具产出的是**候选**，不是结论。
+- ★ **Python only.** The static frontend is bound to CodeQL's Python pack
+  (`--language=python`). The criteria themselves are language-agnostic, but a new
+  language means rebuilding the frontend.
+- ★ **The LLM triage layer is noisy.** Re-run the same candidate three times and
+  **roughly a quarter of the verdicts change**. "Perfectly stable" results are often a
+  **caching artifact** — always change `--tag` when re-judging.
+- ★ **`arg_source=unknown` verdicts are not trustworthy.** That value means the model
+  itself does not know where the argument comes from. The candidate filter
+  **downgrades this bucket by default**.
+- ⚠️ **"No caller found" ≠ "unreachable."** Only name-based matching is done;
+  cross-file, dynamic dispatch and reflection are missed.
+- ⚠️ **Framework mediation.** When an `import`ed implementation lives in
+  `site-packages` (not in the scanned tree), static analysis cannot see it.
+- ⚠️ **Every finding needs human confirmation.** The tool produces **candidates**,
+  not conclusions.
 
 ---
 
-## Repo layout
+## Repository layout
 
 ```
-core/     判据内核（静态前端 / 判定层 / 可达性 / 污点追踪 / CodeQL 查询）
-tools/    可复用工具（选靶 / 备料 / 各判据 / 校验器）
-app/      一键入口与流程编排
+core/     the criteria kernel (static frontend / triage / reachability / taint tracing / CodeQL queries)
+tools/    reusable tooling (target selection / fetching / individual criteria / self-checks)
+app/      one-shot entry points and orchestration
 ```
 
 ---
 
 ## License
 
-MIT —— 见 [LICENSE](LICENSE)。
+MIT — see [LICENSE](LICENSE).
 
-> ★ 请仅用于**你有权测试**的目标。
+> ★ Please use it only against targets **you are authorised to test**.
