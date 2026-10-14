@@ -6,13 +6,13 @@
   `inconsistent_auth` 报「同文件里有的端点有鉴权、有的没有」，
   但它**不知道项目的意图**。实测发现有的项目会写
   「鉴权契约测试」，明确声明某些端点**就是公开的**
-  （如 ii-agent 的 `assert_auth_contract(router, public={("GET","/templates/{id}")})`）。
-  → 判据推测意图，项目测试陈述意图。**冲突时以项目自己的声明为准。**
+  （如 sample-cli-app 的 `assert_auth_contract(router, public={("GET","/templates/{id}")})`）。
+  → 规则推测意图，项目测试陈述意图。**冲突时以项目自己的声明为准。**
 
 三步：
   1. 扫描被测项目的测试代码，找「公开端点声明」模式
      （assert_auth_contract / public= / PUBLIC_ROUTES / @public 等）
-  2. 把声明的公开路径与判据命中做交集
+  2. 把声明的公开路径与规则命中做交集
   3. 交集里的 = 已声明公开（很可能是误报）；不在交集的 = 需人工核实
 """
 import json, os, re, sys
@@ -50,7 +50,7 @@ def slug(repo):
     ★ 命名规则（实测确认，别再猜）：
         `f__` + owner + `_` + repo + `__` + 路径
         - 路径里的 `/` 全部换成 `_`
-        - **owner/repo 里的连字符原样保留**（`Intelligent-Internet_ii-agent`）
+        - **owner/repo 里的连字符原样保留**（`sample-org_sample-cli-app`）
       所以这里只把 `/` 换成 `_`，**不能连字符一起换** ——
       换了会一个文件都匹配不上，而且表现为「未找到声明」这种
       看起来像"项目没写声明"的假象。
@@ -137,7 +137,7 @@ def main():
         decl = find_declarations(repo)
         n = (best[repo]["cells"]["inconsistent_auth"] or {}).get("n", 0)
         print()
-        print("● %s   cov=%.0f%%  判据命中 %s 处" % (repo, cov * 100, n))
+        print("● %s   cov=%.0f%%  规则命中 %s 处" % (repo, cov * 100, n))
         if not decl:
             print("   未找到公开端点声明 → **需人工核实**")
             need_manual.append(repo)
@@ -152,14 +152,14 @@ def main():
     print()
     print("=" * 74)
     print("汇总：%d 个项目" % len(targets))
-    print("  找到公开声明 → 判据命中很可能是误报 : %d" % len(declared_public))
+    print("  找到公开声明 → 规则命中很可能是误报 : %d" % len(declared_public))
     for r in declared_public:
         print("      %s" % r)
     print("  无声明 → 仍需人工核实                : %d" % len(need_manual))
     for r in need_manual:
         print("      %s" % r)
     print()
-    print("★ 判据不能知道项目意图；有测试/契约声明时以声明为准。")
+    print("★ 规则不能知道项目意图；有测试/契约声明时以声明为准。")
     print("★ 没有声明也不等于有洞 —— 先看服务层有没有归属校验，再定性。")
 
 

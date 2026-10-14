@@ -1,6 +1,6 @@
 """对「存疑」档候选：**静态往上找调用方**，看能不能追出真正的入口。
 
-★★ 为什么需要（这是 `docs/236` 第 1 条「把存疑 259 条变小」的零成本实现）：
+★★ 为什么需要：
 
   `tools/reachability_triage.py` 把 330 条分成「可达 / 存疑 / 不可达」，其中
   **259 条「存疑」** —— 它的判词是 `why`：「没看到 @tool / get_tools / HTTP 装饰器 / 微服务注册」。
@@ -35,10 +35,10 @@ import resolve_needs_human_callers as R  # noqa: E402  复用 find_callers
 TRIAGE = os.path.join(ROOT, "data", "target_pool", "reachability_triage.json")
 OUT = os.path.join(ROOT, "data", "target_pool", "suspect_entry_probe.md")
 
-# ★ 靶源码根目录（与 prepare_tp2x_targets 的落盘位置一致；找不到就跳过并如实报出来）
+# ★ 目标源码根目录（与 prepare_tp2x_targets 的落盘位置一致；找不到就跳过并如实报出来）
 SRC_ROOTS = [
     os.path.join(ROOT, "..", "_targets", "tp2x_src"),
-    os.path.join(ROOT, "..", "_targets", "a1src"),
+    os.path.join(ROOT, "..", "_targets", "src"),
 ]
 
 # ★★ 测试代码识别（2026-10-14 加）—— 起因：实测发现 `find_callers` 找出来的"调用方"
@@ -160,7 +160,7 @@ def main() -> int:
     if tot["no_src"]:
         L.append(f"- ⚠️ 因找不到源码根而跳过：**{tot['no_src']}** 条")
     L.append("")
-    L.append("★ 口径提醒：**「找不到调用方」不等于「不可达」** —— "
+    L.append("★ 约定提醒：**「找不到调用方」不等于「不可达」** —— "
              "它只说明**按名字匹配**的 AST 追不到（跨文件 / 动态调用 / 同名会漏）。")
 
     md = "\n".join(L) + "\n"

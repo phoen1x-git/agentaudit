@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """自测：第 9 种鉴权写法 —— **router 级 dependencies**。
 
-★★ 这个盲区为什么最危险（rhesis-ai/rhesis 实测）：
-    router = RhesisRouter(prefix="/services",
+★★ 这个盲区为什么最危险（sample-org/sample-api 实测）：
+    router = ApiRouter(prefix="/services",
                           dependencies=[Depends(require_current_user_or_token)])
     @router.get("/github/contents")
     def get_github_contents(repo_url: str): ...
-  → 判据只看「端点自己」，会把这个文件里**每一个**端点都判成"无鉴权"。
-  → 实测 trinity 11 处、rhesis 2 处，全是 100% 假阳性。
+  → 规则只看「端点自己」，会把这个文件里**每一个**端点都判成"无鉴权"。
+  → 实测 sampleagent 11 处、sample 2 处，全是 100% 假阳性。
 
 ★ 为什么漏了这么久：第 8 种写法（类型别名）的注释里我写了
   "签名里一个 Depends 字都没有" → 我以为已覆盖"Depends 不在签名里"，
@@ -42,8 +42,8 @@ CASES = [
      "from fastapi import APIRouter, Depends\n"
      "router = APIRouter(dependencies=[Depends(auth)])\n",
      {"router"}),
-    ("★★ 自定义子类 RhesisRouter（真实形态）",
-     "router = RhesisRouter(prefix='/s', "
+    ("★★ 自定义子类 ApiRouter（真实形态）",
+     "router = ApiRouter(prefix='/s', "
      "dependencies=[Depends(require_current_user_or_token)])\n",
      {"router"}),
     ("带 prefix 和 tags 也算",
@@ -113,8 +113,8 @@ n_inc = res["inconsistent_auth"]["n_hits"]
 n_un = res["unauth_endpoint"]["n_hits"]
 chk("inconsistent_auth（router 级鉴权后应全有 → 0）", n_inc, 0)
 chk("unauth_endpoint（同上）", n_un, 0)
-print("     判据标签:", res["inconsistent_auth"]["label"])
-print("     判据标签:", res["unauth_endpoint"]["label"])
+print("     规则标签:", res["inconsistent_auth"]["label"])
+print("     规则标签:", res["unauth_endpoint"]["label"])
 
 print()
 print("失败 %d" % BAD)

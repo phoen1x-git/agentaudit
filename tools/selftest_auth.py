@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-inconsistent_auth 判据的 7 档标准答案 —— 改判据后必须跑这个。
+inconsistent_auth 规则的 7 档标准答案 —— 改规则后必须跑这个。
 
 ★ 为什么要「双向」验证：
-  只测「该报的报了」不够 —— 判据也可能因为收得太紧，
+  只测「该报的报了」不够 —— 规则也可能因为收得太紧，
   把**该报的也一起压下去**，而数字看起来是「误报减少了」。
   必须同时包含反向档（state 但无 401→ 不算鉴权），
   才能发现「修过头」。
@@ -17,11 +17,11 @@ inconsistent_auth 判据的 7 档标准答案 —— 改判据后必须跑这个
 
 ★★ 补第 6 种写法时（10-05 上午）又栽了一次，这次栽在**标准答案本身**：
   我写的第 9 档是「a 和 b 都调 _fmt(request)」，期望报 1。
-  但 a、b 都被判成无鉴权 → 「全都不一致」不成立 → 判据不报，
-  **判据是对的，档位是错的**。
+  但 a、b 都被判成无鉴权 → 「全都不一致」不成立 → 规则不报，
+  **规则是对的，档位是错的**。
   → 教训：**反向档自己必须构成「不一致」**。
     一个「全部同样」的样本测不出修没修过头 ——
-    判据把所有人都判成有鉴权、或都判成没鉴权，都能让它「通过」。
+    规则把所有人都判成有鉴权、或都判成没鉴权，都能让它「通过」。
 """
 import ast
 import sys
@@ -184,7 +184,7 @@ async def a(request: Request, u=Depends(get_current_user)):
 @r.get("/b")
 async def b(request: Request):
     return {"q": _check_quota(request)}
-''', 1, "★ 402 是计费不是鉴权（判据只认 401/403）→ b 该报，"
+''', 1, "★ 402 是计费不是鉴权（规则只认 401/403）→ b 该报，"
         "防把「任何 raise HTTPException」都当成鉴权"),
 
     ("13 ★包装函数读身份但从不拒绝（反向档）", '''
@@ -202,7 +202,7 @@ async def b(request: Request):
 
     # ★★★★★ 第 14 档（10-05 06:55 补）：第 7 种写法「类型别名注入」
     #  这一档**需要第二个文件**—— 别名定义在 dependencies 里，路由文件只 import。
-    #  实测 abilityai/trinity：整个 client_portal/router.py 因此全被判成"无鉴权"，
+    #  实测 sample-org/sample-agent：整个 client_portal/router.py 因此全被判成"无鉴权"，
     #  而"同文件内 1/5 有鉴权"那个 1 引爆点带出 4 处误报。
     #  ★ 也正因为它是跨文件的，我第一版实现写成了单文件扫 → 等于没修。
     #    所以这一档专门用来卡住"必须跨文件"这个性质。
@@ -234,7 +234,7 @@ MULTI_FILE_CASES = {len(CASES) - 1}
 
 def main():
     print("=" * 66)
-    print("inconsistent_auth 判据 ·%d 档标准答案" % len(CASES))
+    print("inconsistent_auth 规则 ·%d 档标准答案" % len(CASES))
     print("=" * 66)
     ok = True
     for idx, case in enumerate(CASES):
@@ -267,7 +267,7 @@ def main():
     if ok:
         print("全部 %d 档通过 ✓  可以出结论了" % len(CASES))
         return 0
-    print("★ 有失败 —— 不要据此出结论，先修判据")
+    print("★ 有失败 —— 不要据此出结论，先修规则")
     return 1
 
 

@@ -4,7 +4,7 @@ For each candidate repo, asks:
   - does it have a SECURITY.md / security policy?   (reporting channel exists?)
   - when was the last issue/PR closed?               (does a human act on issues?)
   - how many open issues?                            (backlog)
-This is 口径① from docs/124 ("会不会回信") — measurable before download.
+This is 约定① from  ("会不会回信") — measurable before download.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def main() -> None:
 
     rows.sort(key=lambda x: (x["days_since_last_closed"] if x["days_since_last_closed"] is not None else 9999))
 
-    print("\n===== 回应速度（口径①）=====")
+    print("\n===== 回应速度（约定①）=====")
     print(f"{'repo':42} {'SEC.md':>6} {'上次关issue':>11} {'c90':>4} {'exec':>5} {'stars':>6}")
     for x in rows:
         d = x["days_since_last_closed"]

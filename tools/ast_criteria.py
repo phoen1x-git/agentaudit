@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-AST 级漏洞判据（跨 token 关联版）
+AST 级漏洞规则（跨 token 关联版）
 ==================================
 
 为什么要重写
 ------------
-`run_criteria.py` 的注入面判据是正则版，为了补两处漏报
+`run_criteria.py` 的注入面规则是正则版，为了补两处漏报
 （`cursor.execute("..."+uid)`、`open(os.path.join(base, filename))`）
 连改三轮，每轮修好上轮、弄坏下轮 —— 这是"该停手换路子"的信号。
 
@@ -22,7 +22,7 @@ AST 级漏洞判据（跨 token 关联版）
     cursor.execute(f"...{req.id}")    ← 拼进 SQL，要看
   AST 版能判断这个 f-string 的**去向**是不是危险调用。
 
-判据口径
+规则约定
 --------
   code_exec_sink        代码执行点（eval/exec/subprocess/pexpect…）
   injection_surface     注入面：外部输入直落执行点 / SQL / 路径
@@ -55,7 +55,7 @@ EXEC_FUNCS = {
     #   cloudpickle/dill/marshal 的 `loads` 行为一致 —— 都执行 __reduce__。
     #   ★ 为什么漏：找SampleOrch 漏洞时，`load_obj` 里的 `cloudpickle.loads`
     #   正好在 `open(path)` 之后，★ 视觉上被「读文件」盖住了；
-    #   而清单里只有 `pickle.loads`，★ 于是所有判据都漏了它。
+    #   而清单里只有 `pickle.loads`，★ 于是所有规则都漏了它。
     #   ★ 实测本批漏了 5 处（SampleAgentX / SampleOrch）。
     #   ★★ 教训：**清单要按「语义组」维护，不是逐个词打补丁**。
     "cloudpickle.loads", "cloudpickle.load",
@@ -111,7 +111,7 @@ AUTH_WORDS = {"login_required", "require_auth", "verify_token",
               "current_user", "get_current_user", "is_admin",
               "check_access", "permission_required",
               # ★★ 补词（SampleSDK 逼出来的）：这一组在实际项目里很常见，
-              #   漏了它们会让「认证鉴权痕迹」判据输出 0，
+              #   漏了它们会让「认证鉴权痕迹」规则输出 0，
               #   而0 在报告里长得和「确实没有鉴权」一模一样 —— 假阴性。
               #   与 samplecli 的 pexpect.spawn、SampleDelegate 的 samplesdk 装饰器同类。
               "auth_header", "authorization", "api_key", "apikey",
@@ -160,7 +160,7 @@ DANGEROUS_ALL = EXEC_FUNCS | CLIENT_FUNCS
 #       输出上限/进程组终止），却因形参名叫 `args` 被判成「输入直落」3 处。
 #       →病根：把「变量名长得像用户输入」当成「它就是用户输入」。
 #   (2) ★★ 六项目高覆盖对比时，「输入×危险共现」0/5 全部未检出，
-#       看起来像「这类漏洞真的不存在」。用已知答案一验才发现是**判据太钝**：
+#       看起来像「这类漏洞真的不存在」。用已知答案一验才发现是**规则太钝**：
 #       SampleSDK 真实代码里是
 #           client = AsyncOpenAI(api_key=runtime_params["api_key"],
 #                                 base_url=runtime_params["base_url"])
@@ -222,7 +222,7 @@ HARMLESS_IMPORT = re.compile(
 
 # ★★ 这些对象的 .exec()/.execute() 是 **ORM /数据库查询**，不是执行代码
 #   实测踩过：SQLAlchemy 的 `session.exec(stmt)` / `db.exec(stmt)`，
-#   因为判据「只取名字最后一段」拿到 `exec` → 被当成 Python 的 exec() 报成执行点。
+#   因为规则「只取名字最后一段」拿到 `exec` → 被当成 Python 的 exec() 报成执行点。
 #   而真正的 exec() 是**裸调用**（没有对象前缀）。
 #   → 必须区分「谁的 exec」。ORM 会话/连接的 exec 不算执行点。
 ORM_OBJECTS = {
@@ -251,7 +251,7 @@ def _is_framework_method(nm):
       - 裸调用 `compile(src, "f", "exec")` → 真的是 Python 内建 → 要报
       - 带前缀 `graph_builder.compile(x)`      → LangGraph 构图 → 不报
       - `re.compile(p)`                      → 正则编译 → 不报（已在 SAFE_PREFIXES）
-    → 所以判据是「**带对象前缀**就不算内建」。
+    → 所以规则是「**带对象前缀**就不算内建」。
     ★ 我第一次把这里写反了（裸调用反而被排除），
       靠双向验证抓出来：真 exec/eval/compile 从 4 处掉到 2 处。
     """
@@ -427,7 +427,7 @@ def _src(node, full_text):
 
     ★★★★★★ 性能（10-07 修）：原来签名是 `(node, code_lines)`，
       内部每次都 `"\n".join(code_lines)`。
-      实测 dataelement/Clawith 的 `agent_tools.py`：
+      实测 a large sample project 的 `agent_tools.py`：
       **108 万字符 / 28028 行 / 133754 个 AST 节点**
       → 每个节点 join 一次 28 万行，拼接总量 ~1.6e11 字符，
         **单文件 analyze 跑 90 秒还没完**。
@@ -448,7 +448,7 @@ def _src(node, full_text):
 # ★★★★★ 第 3 种鉴权写法的词根表（2026-10-05 06:58 修正）
 #   形如 require_admin_header(x, y) / verify_token(token) / check_permission(...)
 #
-#   ★★ 把 `ensure` 从表里去掉了：实测 trinity 里
+#   ★★ 把 `ensure` 从表里去掉了：实测 sampleagent 里
 #   `asyncio.ensure_future(...)` 命中它 → 端点被误判成"有鉴权"，
 #   而它成了「同文件内 1/N」的引爆点，一次带出 4 处假阳性。
 #   `ensure_*` 是 asyncio/断言的常用前缀，而没有任何项目拿它命名鉴权函数。
@@ -496,7 +496,7 @@ _ALL_MODULE_SRC = ""
 #
 #   ★ 这不是微优化，是**能不能跑完的问题**：
 #   `_ALL_MODULE_SRC` 是全项目源码拼起来的大字符串。
-#   实测 dataelement/Clawith（597 个 py）：**865 万字符**。
+#   实测 a large sample project（597 个 py）：**865 万字符**。
 #   `_collect_auth_aliases` 对它跑一次 = 0.16 秒。
 #   而 `_find_unauth_endpoints` 是**按文件**调的
 #   → 595 个业务文件里每个重算一次 ≈ **92 秒**，
@@ -516,7 +516,7 @@ def _auth_aliases():
       **期望 1 实得 0，测试直接把这个 bug 抓出来了。**
       这是自测的价值：性能优化改坏了机制，被自动发现。
 
-    ★ 判据不能靠「调用方记得填两个变量」——
+    ★ 规则不能靠「调用方记得填两个变量」——
       那样每加一个调用点就是一个漏。
       改成「缓存空就现算」，漏填也能得到正确结果，
       只是慢一点（回到修改前的行为，不会错）。
@@ -542,7 +542,7 @@ def _auth_aliases():
 def _collect_auth_aliases(all_src):
     """★★ 收集「鉴权依赖的类型别名」（第 7 种写法）。
 
-    真实形态（abilityai/trinity  实测）：
+    真实形态（sample-org/sample-agent  实测）：
         # src/backend/dependencies.py
         OwnedAgentByName = Annotated[str, Depends(get_owned_agent_by_name)]
         CurrentUser       = Annotated[User, Depends(get_current_user)]
@@ -559,7 +559,7 @@ def _collect_auth_aliases(all_src):
         2) X = Depends(...)                （FastAPI 官方推荐写法）
 
     ★★★★★ 3) `type X = ...`（PEP 695，Python 3.12 起的官方类型别名语法）
-       # ascending-llc/jarvis-registry 实测（10-05 08:0x）：
+       # ascending-llc/sampleagent2-registry 实测（10-05 08:0x）：
        #   registry/src/registry/auth/dependencies.py:40
        #   type CurrentUser = Annotated[UserContextDict, Depends(get_current_user)]
        #   → 原正则一个别名都收不到（名字前面多了个 `type `）
@@ -589,7 +589,7 @@ def _collect_auth_aliases(all_src):
 
 
 def analyze(text, path="<file>"):
-    """★ 对一段源码跑全部 AST 判据。返回 {判据: {...}}。"""
+    """★ 对一段源码跑全部 AST 规则。返回 {规则: {...}}。"""
     empty = lambda label: {"label": label, "hits": [], "n_hits": 0,
                            "hit_files": []}
     out = {
@@ -605,7 +605,7 @@ def analyze(text, path="<file>"):
     try:
         tree = ast.parse(text)
     except SyntaxError as e:
-        # ★ 解析失败就说失败，不假装扫过（教训：判据坏了，数字全是废的）
+        # ★ 解析失败就说失败，不假装扫过（教训：规则坏了，数字全是废的）
         return out, "parse_error:%s" % (e.msg,)
     lines = text.splitlines()
 
@@ -617,7 +617,7 @@ def analyze(text, path="<file>"):
         #   `seg` 算出来一次都没被读。
         #   ★ 而这一行是**性能杀手**：_src 内部 `"\n".join(code_lines)`
         #     对**每个** AST 节点重拼一次全文。
-        #     实测 Clawith 的 agent_tools.py（108 万字符/ 133754 节点）
+        #     实测 a large sample project 的 agent_tools.py（108 万字符/ 133754 节点）
         #     → 拼接总量 ~1.6e11 字符，单文件 analyze 90 秒没跑完。
         #   → 直接删掉。删之前先确认过 `seg` 真的没被用到
         #     （grep `\bseg\b` 只在下面另一个函数的局部作用域出现过）。
@@ -705,7 +705,7 @@ def analyze(text, path="<file>"):
         #     SampleSDK 的真实洞是
         #         AsyncOpenAI(api_key=runtime_params["api_key"],
         #                     base_url=runtime_params["base_url"])
-        #     而 `AsyncOpenAI` 原本不在任何危险点词表里 → 整条判据失灵。
+        #     而 `AsyncOpenAI` 原本不在任何危险点词表里 → 整条规则失灵。
         #     ★ Agent 项目每个都在调 LLM SDK，**漏这一类等于漏掉整个生态**。
         if not _is_safe_call(nm) and \
                 (nm in CLIENT_FUNCS or base_nm in CLIENT_FUNCS):
@@ -784,12 +784,12 @@ def analyze(text, path="<file>"):
 
 # ★★ 对外端点鉴权检查
 #
-# ★ 这条判据是被SampleSDK 逼出来的：
+# ★ 这条规则是被SampleSDK 逼出来的：
 #   实测它的 server/app.py 有 124 个调用，其中 app.post×6 / app.get×3
 #   —— **全是对外 HTTP 端点，而全文件找不到任何鉴权痕迹**。
-#   我原有的 4 条判据此时全部输出「0 处」，看起来像"这项目没问题"，
+#   我原有的 4 条规则此时全部输出「0 处」，看起来像"这项目没问题"，
 #   实际上它是最值得看的一个。
-#   → 教训：**判据集没覆盖到的维度，不会报错，只会安静地返回 0**。
+#   → 教训：**规则集没覆盖到的维度，不会报错，只会安静地返回 0**。
 #     0 处有两种含义（「查过确实没有」/「压根没查这条」），
 #     报告里必须能区分，否则就成了假阴性。
 #
@@ -813,14 +813,14 @@ ROUTE_DECO = re.compile(r"^@(app|router|api|blueprint|bp|application|server)\."
 #
 #   实测踩过：某项目 admin 端点全是第3 种写法
 #   （`require_admin_header(x_astra_admin_token, x_astra_session)`），
-#   我的判据只认Depends → 报了 6 处「未鉴权」，实际全都有鉴权。
+#   我的规则只认Depends → 报了 6 处「未鉴权」，实际全都有鉴权。
 #   → 这是「按名字/按模式判断」的又一次失手：**鉴权可以是任意函数调用**。
 AUTH_HINT = re.compile(
     r"(Depends\s*\(|require_auth|login_required|verify_token|"
     r"current_user|get_current_user|check_permission|authenticate|"
     r"oauth|jwt|bearer|api_key|apikey|permission|authorize|verify_)", re.I)
 
-# ★★★ 第 4 种鉴权写法：中间件注入型（判据此前一个都认不出来）
+# ★★★ 第 4 种鉴权写法：中间件注入型（规则此前一个都认不出来）
 #   身份不在签名里、也不调鉴权函数，而是从 request.state 读 + 抛 401/403：
 #       user_id = getattr(request.state, "user_id", None)
 #       if not user_id: raise HTTPException(401, "未登录")
@@ -840,7 +840,7 @@ AUTH_DENY = re.compile(r"HTTPException\s*\(\s*(401|403)", re.I)
 #   （实测踩过：dynamiq 里 response_json.get("exports", ...) 和
 #     error_message = search_result.get("request_info", ...)
 #     都被报成「未鉴权端点」—— 原因是这一版只要看到 `.get(` 就去匹配路由。
-#     → 教训：判据必须在**结构位置**上成立，不能靠字面相似。
+#     → 教训：规则必须在**结构位置**上成立，不能靠字面相似。
 ROUTE_BASES = {"app", "router", "api", "blueprint", "bp", "application",
                "server", "application_router", "api_router", "web", "api_v1",
                "router_v1", "route", "urls"}
@@ -848,7 +848,7 @@ ROUTE_BASES = {"app", "router", "api", "blueprint", "bp", "application",
 ROUTE_VERBS = ("get", "post", "put", "delete", "patch", "route", "websocket",
                "head", "options")
 
-# ★★ 本来就不该有鉴权的端点 —— 判据报出来是**噪音**，不是发现
+# ★★ 本来就不该有鉴权的端点 —— 规则报出来是**噪音**，不是发现
 #   实测：某项目 `/register`、`/login`、`/health` 全被报成「未鉴权端点」，
 #   读代码才确认它们的鉴权是**完整的**（业务端点都挂了
 #   `Depends(get_current_user)`），而注册/登录/健康检查本来就不需要 token。
@@ -872,7 +872,7 @@ NO_AUTH_WEAK = re.compile(
     r"^[^/]*(?:/[^/]+)*/(info|version|status|ready|readiness|liveness|"
     r"health|ping|index|home|schema|spec)$", re.I)
 
-#★★★★★ 协议性公开（第 8 类豁免，10-05 08:1x 补，实测依据见 docs/47）
+#★★★★★ 协议性公开
 #
 #  为什么必须和「业务上公开」分开：
 #    业务公开（register/login/health）是**项目自己的选择** ——
@@ -880,7 +880,7 @@ NO_AUTH_WEAK = re.compile(
 #    协议性公开是**标准强制要求** —— 客户端就是靠它发现 token_endpoint，
 #    加了鉴权所有标准客户端都连不上。报出来是**纯噪声**。
 #
-#  实测形态（ascending-llc/jarvis-registry auth-server）：
+#  实测形态（ascending-llc/sampleagent2-registry auth-server）：
 #    @router.get("/.well-known/openid-configuration")  RFC 8414 OIDC Discovery
 #    @router.get("/.well-known/jwks.json")             RFC 7517 JWKS
 #  它的 docstring 自己写清楚了：
@@ -919,8 +919,8 @@ def _route_from_decorator(d):
 
     ★★ 为什么不用正则：`ast.unparse(d)` 输出的是 `self.app.get('/x')`，
        **没有 `@` 符号** —— 而按 `^@` 写的正则一律匹配不上（实测踩过）。
-       而 `unauth_endpoint` 判据是从源码行文本取 `@`，所以它能匹配。
-       → 同一种装饰器，两个判据解析方式不同 = 必然有一个错。
+       而 `unauth_endpoint` 规则是从源码行文本取 `@`，所以它能匹配。
+       → 同一种装饰器，两个规则解析方式不同 = 必然有一个错。
        → 统一改成按 AST 结构取。
     """
     if not isinstance(d, ast.Call):
@@ -950,7 +950,7 @@ def _route_from_decorator(d):
 #   为什么要单独识别：见_find_inconsistent_auth 里第 6 种写法的说明。
 #
 # ★★★ 10-05 修的真实缺陷：request 不一定是**第一个**实参，也不一定叫 `request`。
-#   实测 academic-commercialization-agent 第 1131 行：
+#   实测 another-sample-agent 第 1131 行：
 #       _authorize_run_mutation(run_id, http_request)   ← 第 2 个实参，且叫 http_request
 #   老正则 `\b(\w+)\s*\(\s*request\s*[,)]` 要求 request 紧跟左括号 →
 #   完全匹配不到 → **一个真做了鉴权的端点被报成「无鉴权」**（假阴性）。
@@ -967,7 +967,7 @@ _WRAPPER_CALL = re.compile(r"\b(\w+)\s*\(([^()]{0,200}?)\)")
 #       credits_per_request        计费
 #       requests                   ★ **HTTP 客户端库名**（出站调用）
 #       chat_request/update_request   Pydantic 模型
-#   实测规模：trinity 正确识别 412 次、误匹配 48 次；academic-commercialization
+#   实测规模：sampleagent 正确识别 412 次、误匹配 48 次；another-sample
 #   正确 201+12 次、误匹配 33 次 —— **量级相当，不能靠"占比小"忽略**。
 #
 #   ★ 命名规律：带修饰语的（requested_ / request_id / request_timeout）
@@ -983,9 +983,9 @@ _REQ_PARAM = re.compile(
 def _collect_router_guards(tree):
     """★★★★★ 第 9 种鉴权写法：**router 级dependencies**（10-05 08:3x 补）。
 
-    真实形态（rhesis-ai/rhesis 实测）：
-        # apps/backend/src/rhesis/backend/app/routers/services.py:63
-        router = RhesisRouter(
+    真实形态（sample-org/sample-api 实测）：
+        # app/routers/services.py:63
+        router = ApiRouter(
             prefix="/services",
             dependencies=[Depends(require_current_user_or_token)],   ★★ 这里
         )
@@ -994,18 +994,18 @@ def _collect_router_guards(tree):
         def get_github_contents(repo_url: str):       ← 端点自己一个字都没挂
 
     ★★ 为什么这个盲区比前 8 种都危险：
-      判据认的是「**端点自己**有没有鉴权痕迹」，
+      规则认的是「**端点自己**有没有鉴权痕迹」，
       而 router 级dependencies 是**整个文件的所有端点共享**的。
-      → 判据会把**这个文件里每一个端点**都判成"无鉴权"。
+      → 规则会把**这个文件里每一个端点**都判成"无鉴权"。
       → 而这些端点全都有鉴权。**100% 假阳性。**
 
     实测规模：
       | 项目 | 带 deps 的 router | 其下端点 | ★ 自身无痕迹（误判） |
       |---|---|---|---|
-      | rhesis-ai/rhesis | 24（23 文件） | 164 | 2 |
-      | abilityai/trinity | 2（2 文件） | 14 | **11** |
+      | sample-org/sample-api | 24（23 文件） | 164 | 2 |
+      | sample-org/sample-agent | 2（2 文件） | 14 | **11** |
 
-      trinity 那 11 处包括 `/execute-task` `/agent-files/share`
+      sampleagent 那 11 处包括 `/run-task` `/files/share`
       `/playbooks` `/chat` —— **全是高价值端点**。
 
     ★ 为什么漏了这么久：第 8 种写法（类型别名）的注释里我写了
@@ -1021,7 +1021,7 @@ def _collect_router_guards(tree):
         if not isinstance(n.value, ast.Call):
             continue
         fn = n.value.func
-        # ★ 兼容 `RhesisRouter(...)` / `APIRouter(...)` / `router = APIRouter()`
+        # ★ 兼容 `ApiRouter(...)` / `APIRouter(...)` / `router = APIRouter()`
         #   —— 判断依据是类名里含 "Router"，不挑具体基类（子类是常见写法）
         cname = getattr(fn, "id", None)
         if cname is None:
@@ -1093,7 +1093,7 @@ def _has_req_param(arglist):
 def _wrapper_names(body_src, self_name=None):
     """★ 抽出端点体里「把请求对象传给了某个自定义函数」的调用名。
 
-    返回函数名集合。判定口径：
+    返回函数名集合。判定约定：
       1. 抓出所有 `名字(实参列表)` 形态的调用（不跨嵌套括号）
       2. 实参列表里出现「请求对象」（request / http_request / req / request_obj…）
       3. 排除明显不是包装函数的
@@ -1103,7 +1103,7 @@ def _wrapper_names(body_src, self_name=None):
       就得靠一张猜出来的名字白名单 —— 下一个项目叫什么都可能漏。
 
     ★★★★★ 10-05 08:4x 修：必须排除**函数定义那一行**。
-      真实形态（rhesis travel_agent/app.py:248）：
+      真实形态（sampleapp/app.py:248）：
           @app.post("/chat")
           async def chat(request: ChatRequest):        ← 这行被当成调用了
               ...
@@ -1143,7 +1143,7 @@ def _wrapper_names(body_src, self_name=None):
 
 
 # ★ 异常/响应类的构造名 —— 它们**不是**「把请求传给某个鉴权函数」。
-#   判据第 6 种写法要追进被调函数看它做什么，而 HTTPException 被 raise 时
+#   规则第 6 种写法要追进被调函数看它做什么，而 HTTPException 被 raise 时
 #   恰恰说明**这个端点自己在做错误处理**，不是在鉴权。
 #   ★ 为什么要单列而不是塞进上面那个"排除内建"集合：
 #     那个集合是「内建函数」，这个是「框架类」，语义不同；
@@ -1266,7 +1266,7 @@ def _wrapper_is_auth(module_src, body_src, _cache=None, self_name=None):
 
     ★★ 这个函数是 10-05 上午为了修 hunter-community 的 69 处假阳性写的。
     起因：那项目把鉴权封成 `_uid(request)`，端点里只写一行`uid = _uid(request)`。
-    而判据前5 种写法全都识别不出来 —— 因为 **`_uid` 这个名字里
+    而规则前5 种写法全都识别不出来 —— 因为 **`_uid` 这个名字里
     没有 verify / require / check / ensure / validate / auth 任何一个词根**。
 
     ★★ 修法为什么不是「把 _uid 加进词根表」：
@@ -1278,9 +1278,9 @@ def _wrapper_is_auth(module_src, body_src, _cache=None, self_name=None):
     ★ 正确做法：追进那个函数的定义，看它**实际做了什么**：
       - 读了身份（request.state / token / credentials）→ 有「取身份」语义
       - 且在拿不到时会**拒绝**（401/403 / raise / abort / 抛异常）→ 有「鉴权」语义
-      两个同时成立才算鉴权。这与判据 3/4 的判定口径保持一致。
+      两个同时成立才算鉴权。这与规则 3/4 的判定约定保持一致。
 
-    返回 True/False。判定不出来时返回 False —— 与判据整体「宁可少报」的口径一致。
+    返回 True/False。判定不出来时返回 False —— 与规则整体「宁可少报」的约定一致。
 
     ★★★★★ 10-05 08:4x 修：调用方**必须传 self_name**。
       起因是 `_wrapper_names` 把端点自己的 `def` 行当成了调用
@@ -1414,14 +1414,14 @@ def _wrapper_is_auth(module_src, body_src, _cache=None, self_name=None):
     #        就认定它是鉴权（自测 2.x 反向档就是防这个）
     #     ② **必须查环**（自测 3.x）—— `def a(): return b()` / `def b(): return a()`
     #        不查会无限递归
-    #     ③ 定义不在本文件就**放弃**（与原有口径一致：认不准不算鉴权）
+    #     ③ 定义不在本文件就**放弃**（与原有约定一致：认不准不算鉴权）
     _seen = set()
     frontier = list(names)
     depth = 0
     # ★★★★★★ 10-07 补：找不到定义时回退到**全项目源码**。
     #
     #   实测代价：astra-quant-agent 的 `auth.py` / `dashboard.py` /
-    #   `exchanges.py` 里 48 处端点判据认不出鉴权，
+    #   `exchanges.py` 里 48 处端点规则认不出鉴权，
     #   因为 `require_admin_header` / `require_superadmin`
     #   **定义在 app.py**（端点在别的文件）→ 只搜本文件必然扑空。
     #
@@ -1449,7 +1449,7 @@ def _wrapper_is_auth(module_src, body_src, _cache=None, self_name=None):
             if not body:
                 continue          # 定义找不到 → 认不准，不算鉴权
             # ★ 两个条件必须同时成立：
-            #   只有 READ_ID 没有 DENY → 只是读了个 session_id，不算鉴权（判据 5 反向档）
+            #   只有 READ_ID 没有 DENY → 只是读了个 session_id，不算鉴权（规则 5 反向档）
             #   只有 DENY 没有 READ_ID → 拒绝某种操作，不是鉴权
             if (READ_ID.search(body) or READ_ID_LOOSE.search(body)) \
                     and DENY.search(body):
@@ -1470,7 +1470,7 @@ def _wrapper_is_auth(module_src, body_src, _cache=None, self_name=None):
 def _find_inconsistent_auth(tree, lines, path, out):
     """★★ 检测「同一个文件内，端点鉴权不一致」
 
-    ★★ 这条判据的来源（实测最有性价比的一条）：
+    ★★ 这条规则的来源（实测最有性价比的一条）：
     某项目 onboarding_manager.py 里 23 个端点挂了
     `Depends(get_current_user)`，13 个没挂 ——
     那 13 个里包括 `GET /api/onboarding/api-keys`
@@ -1537,7 +1537,7 @@ def _find_inconsistent_auth(tree, lines, path, out):
         has_dep = "Depends" in sig_src
         #★★★★★ 第 9 种写法（10-05 08:3x 补）：**router 级 dependencies**
         #   整个文件的端点共享的鉴权，端点自己一个字都不用挂：
-        #       router = RhesisRouter(prefix="/services",
+        #       router = ApiRouter(prefix="/services",
         #                             dependencies=[Depends(require_current_user_or_token)])
         #       @router.get("/github/contents")
         #       def get_github_contents(repo_url: str): ...
@@ -1556,7 +1556,7 @@ def _find_inconsistent_auth(tree, lines, path, out):
         #       CurrentUser       = Annotated[User, Depends(get_current_user)]
         #       # router.py
         #       def list_agent_clients(agent_name: OwnedAgentByName, current_user: CurrentUser):
-        #   ★ 实测后果（abilityai/trinity）：整个 client_portal/router.py 的端点
+        #   ★ 实测后果（sample-org/sample-agent）：整个 client_portal/router.py 的端点
         #     全都被判成"无鉴权"，而它们其实全都有鉴权；
         #     而"同文件内 1/5 有鉴权"那个 1 来自别的写法 → 1 引爆点带出 4 处误报。
         #
@@ -1580,7 +1580,7 @@ def _find_inconsistent_auth(tree, lines, path, out):
                 # 形如 require_admin_header(x, y) / verify_token(token)
                 #
                 # ★★★★★ 2026-10-05 06:58 修：词根表里`ensure` 造成假阳性。
-                #   实测 abilityai/trinity：
+                #   实测 sample-org/sample-agent：
                 #       await asyncio.ensure_future(_run_status_computation(home_dir))
                 #   `ensure_future` 是 asyncio 调度，**跟鉴权毫无关系**，
                 #   但它命中了 `ensure\w*\s*\(` → 该端点被判成"有鉴权"。
@@ -1615,13 +1615,13 @@ def _find_inconsistent_auth(tree, lines, path, out):
                 #   —— 因为 **_uid 这个名字里没有 verify/require/check/auth
                 #   任何一个词根**，而它偏偏是最自然的命名。
                 #   实测后果：hunter-community 16 个包装函数被调 49 次，
-                #   判据把16 个文件里的端点全判成"无鉴权"→ 69 处假阳性。
+                #   规则把16 个文件里的端点全判成"无鉴权"→ 69 处假阳性。
                 #
                 #   ★修法不能是「把 _uid 加进词根表」—— 那是猜名字，
                 #     下次叫 _me() / _whoami() / _ctx_user() 就又漏了。
                 #   ★ 正确做法：**追进被调函数，看它到底做什么**。
                 #     只有当那个函数体里同时出现「读身份」+「拒绝」时，
-                #     才算它有鉴权 —— 这与判据 3/4 的语义保持一致。
+                #     才算它有鉴权 —— 这与规则 3/4 的语义保持一致。
                 elif (_WRAPPER_CALL.search(body_src)
                       or _guard_called_names(body_src, self_name=n.name)):
                     #★★★★★ self_name=n.name —— 排除端点自己的 def 行
@@ -1672,7 +1672,7 @@ def _find_unauth_endpoints(tree, lines, path, out):
     # 先建立：模块级出现的鉴权符号（粗但有效 —— 宁可多报）
     module_auth = bool(AUTH_HINT.search("\n".join(lines)))
     #★★★★★ 第 9 种写法：router 级 dependencies（与 inconsistent_auth 同步）
-    #   ★★ 两条判据**必须同步** —— 否则会出现
+    #   ★★ 两条规则**必须同步** —— 否则会出现
     #     「inconsistent_auth 说它有鉴权、unauth_endpoint 说它没有」
     #     的自相矛盾，而两条数字都不能信。
     router_guards = _collect_router_guards(tree)
@@ -1767,11 +1767,11 @@ def _find_unauth_endpoints(tree, lines, path, out):
                 #       @router.get("/{agent_name}/terminal")
                 #       async def terminal(agent_name: AuthorizedAgentByName, ...)
                 #   ★ 机制早就有了（`_find_inconsistent_auth` 一直在用），
-                #     **唯独这条判据没接** → 同一个别名在 inconsistent_auth 里
+                #     **唯独这条规则没接** → 同一个别名在 inconsistent_auth 里
                 #     被认得出来、在 unauth_endpoint 里认不出，
                 #     两边自相矛盾。
                 #   实测代价（measure_crossfile_alias.py 量29 个项目）：
-                #     trinity 16 处（占它 64 处基数的 25%）+ jarvis 7 处。
+                #     sampleagent 16 处（占它 64 处基数的 25%）+ sampleagent2 7 处。
                 if not has_auth and _ALL_MODULE_SRC:
                     for al in _auth_aliases():
                         # ★★ 只看 **sig_ann**（精确的参数注解），不看 sig_src
@@ -1780,7 +1780,7 @@ def _find_unauth_endpoints(tree, lines, path, out):
                             break
                 # ★ 第 6 种写法：自定义包装函数（如 _uid(request)）。
                 #   ★ 与 _find_inconsistent_auth 里那处保持同一套逻辑 ——
-                #   同一个盲区在两条判据里都要补，否则会出现
+                #   同一个盲区在两条规则里都要补，否则会出现
                 #   「inconsistent_auth 说它有鉴权、unauth_endpoint 说它没有」
                 #   的自相矛盾，两条数字都不能信。
                 if not has_auth and (_WRAPPER_CALL.search(body_src)
@@ -1874,17 +1874,17 @@ def _find_unauth_endpoints(tree, lines, path, out):
 
 
 def analyze_files(files, skip_tests=True):
-    """对 {path: text} 跑判据。返回 (结果, 解析失败清单)。
+    """对 {path: text} 跑规则。返回 (结果, 解析失败清单)。
 
     ★★★★★★ skip_tests：排除测试文件（10-05 补，我从第一版就漏了）。
-      起因：核实 jarvis-registry 时看到
+      起因：核实 sampleagent2-registry 时看到
           registry/tests/unit/middleware/test_rbac.py:412  def stats():
       —— 测试夹具用 @app.get 造了假路由，被判成「同文件内 1/25 不一致」。
       回头量全部批次：**抽样 evidence 里 97% 来自测试文件，6 个 cell 全中**。
-      这是判据级缺陷，不是项目个例。
+      这是规则级缺陷，不是项目个例。
 
       ★ 判定逻辑放在独立模块 is_test_path.py，**不在这里内联**：
-        判据哈希是批次版本锁的锚点，动主干会让正在跑的批次全部作废；
+        规则哈希是批次版本锁的锚点，动主干会让正在跑的批次全部作废；
         而「哪些路径算测试」是要反复调的规则 → 拆出去才能反复调而不动主干。
         （反向误杀的坑见 is_test_path 的注释：src/test_utils.py 是生产模块。）
 
@@ -1899,14 +1899,14 @@ def analyze_files(files, skip_tests=True):
     global _ALL_MODULE_SRC
     _ALL_MODULE_SRC = "\n".join(
         t for p, t in sorted(files.items()) if p.endswith(".py"))
-    # ★★★★★★ 别名**在这里算一次**，缓存给两条判据用（10-07 补）。
-    #   起因：两条判据都在**每个文件**内部读别名，
+    # ★★★★★★ 别名**在这里算一次**，缓存给两条规则用（10-07 补）。
+    #   起因：两条规则都在**每个文件**内部读别名，
     #   而 `_collect_auth_aliases` 要扫整个 `_ALL_MODULE_SRC`
-    #   —— 实测 Clawith 597 文件 / 865 万字符，
+    #   —— 实测 a large sample project 597 文件 / 865 万字符，
     #   单次 0.16 秒 × 595 个业务文件 = **92 秒白花**，
     #   而且那个项目一个别名都没有（纯浪费）。
     _AUTH_ALIASES_CACHE[0] = (None, set())   # 先清空，让 _auth_aliases() 自愈重算
-    _auth_aliases()                          # ★ 在这里算一次，两条判据共用
+    _auth_aliases()                          # ★ 在这里算一次，两条规则共用
     # ★★ 同理清空 `_def_body_in` 的缓存 ——它的键是 `id(src)`，
     #   而**上一个项目的 `_ALL_MODULE_SRC` 可能已被Python 回收**，
     #   新对象复用了同一个 id → 会拿到上一个项目的函数体。
@@ -1938,10 +1938,10 @@ def analyze_files(files, skip_tests=True):
             agg[k]["n_hits"] += v["n_hits"]
             agg[k]["hit_files"] = sorted(set(agg[k]["hit_files"] + v["hit_files"]))
     # ★★ 「排掉多少测试文件」要随结果一起报出去 —— 不说清的话，
-    #   别人看到 n_hits 变小会以为判据变严了，而不知道是数据源被过滤了。
+    #   别人看到 n_hits 变小会以为规则变严了，而不知道是数据源被过滤了。
     #
     #   ★★★ 但**绝对不能塞进 agg**（10-05 07:5x 踩过）：
-    #   agg 里所有 value 都是同构的判据 cell（都有 n_hits / hits / label），
+    #   agg 里所有 value 都是同构的规则 cell（都有 n_hits / hits / label），
     #   而下游有 **6 处** `for k, v in agg.items()`（recheck / scan / cmp / backfill…）
     #   → 塞一个异构的 `_meta` 进去 = 给全部 6 处埋雷。
     #   ★ 实测后果：6 个分片全部跑到最后一步才 KeyError: 'n_hits'崩掉，

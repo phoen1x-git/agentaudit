@@ -1,19 +1,30 @@
-"""A1 自用版入口 · 把 findings.tsv 渲染成一张纯静态的清单页。
+"""Render a round's `findings.tsv` as a single self-contained static HTML page.
 
-    python app/make_index.py out/round-20261009
+    python app/make_index.py out/round-<tag> [--lang en|zh]
 
-★ 零后端、可排序、可搜索（docs/95 §九 9.1）。静态文件天然可归档、可对比两轮。
+No backend, sortable and searchable. A static file is easy to archive and to diff
+between two rounds.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import html
 import sys
 from pathlib import Path
 
+L = {
+    "en": {"sub": "{n} rows - untriaged, for human review only",
+           "ph": "filter: project / file / sink / snippet...",
+           "hint": "(click a header to sort; an empty verdict column means not looked at yet)"},
+    "zh": {"sub": "{n} 条 · 未判定，仅供人工审阅",
+           "ph": "过滤：项目 / 文件名 / sink / 片段…",
+           "hint": "（点表头排序；verdict 一列留空 = 未看）"},
+}
+
 TEMPLATE = """<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<title>findings · {tag}</title>
+<html lang="{lang}"><head><meta charset="utf-8">
+<title>findings - {tag}</title>
 <style>
   :root {{ color-scheme: light; }}
   body {{ font: 13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
@@ -37,9 +48,9 @@ TEMPLATE = """<!doctype html>
   .f {{ color:#0a58ca; }}
 </style></head><body>
 <header>
-  <h1>findings · {tag} <span class="mut">— {n} 条 · 未判定，仅供人工审阅</span></h1>
-  <div><input id="q" placeholder="过滤：项目 / 文件名 / sink / 片段…" autofocus>
-  <span class="mut">（点表头排序；verdict 一列留空 = 未看）</span></div>
+  <h1>findings - {tag} <span class="mut">- {sub}</span></h1>
+  <div><input id="q" placeholder="{ph}" autofocus>
+  <span class="mut">{hint}</span></div>
 </header>
 <div class="wrap">
 <table id="t"><thead><tr>{head}</tr></thead><tbody>
@@ -64,9 +75,13 @@ q.addEventListener('input',()=>{{const v=q.value.toLowerCase();
 
 
 def main() -> int:
-    rd = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    ap = argparse.ArgumentParser()
+    ap.add_argument("round_dir", nargs="?", help="a round directory, e.g. out/round-my-round")
+    ap.add_argument("--lang", default="en", choices=["en", "zh"], help="page language (default: en)")
+    a = ap.parse_args()
+    rd = Path(a.round_dir) if a.round_dir else None
     if not rd or not (rd / "findings.tsv").exists():
-        print("用法: python app/make_index.py <round-dir>")
+        print("usage: python app/make_index.py <round-dir> [--lang en|zh]")
         return 1
     with open(rd / "findings.tsv", encoding="utf-8-sig", newline="") as fh:
         rr = list(csv.DictReader(fh, delimiter="\t"))
@@ -86,9 +101,13 @@ def main() -> int:
                 cls = ' class="sink"'
             tds.append(f"<td{cls}>{v}</td>")
         body.append("<tr>" + "".join(tds) + "</tr>")
-    out = TEMPLATE.format(tag=rd.name, n=len(rr), head=head, rows="\n".join(body))
+    txt = L[a.lang]
+    out = TEMPLATE.format(lang=("zh-CN" if a.lang == "zh" else "en"),
+                          tag=rd.name, sub=txt["sub"].format(n=len(rr)),
+                          ph=txt["ph"], hint=txt["hint"],
+                          head=head, rows="\n".join(body))
     (rd / "index.html").write_text(out, encoding="utf-8")
-    print(f"index.html 已生成：{rd / 'index.html'}  ({len(rr)} 条)")
+    print(f"wrote {rd / 'index.html'} ({len(rr)} rows)")
     return 0
 
 

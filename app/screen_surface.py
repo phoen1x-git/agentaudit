@@ -1,14 +1,14 @@
-"""A1 入口 · 攻击面预检：把"值不值得建库扫"变成可执行判断。
+"""Attack-surface pre-screen: turn "is this worth indexing?" into a runnable check.
 
     python app/screen_surface.py --top 60 --n 12
 
-流水线位置：`gate_targets.py`（过健康门）→ **本步（攻击面预检）** → `prepare_targets.py`（下源码+建库）
+Position in the pipeline: `gate_targets.py` (health gate) -> this step -> `prepare_targets.py`.
 
-★ 为什么要有这一步（docs/56 + A1 第一批的教训）：
-  A1 第一批 12 个目标是按"描述里像带 Web 服务层的应用"挑的，
-  结果好几个本质是"工具脚本集合" —— 扫出来 0 条 vuln，**不是判据漏了，是攻击面不存在**。
-  本步不再看描述，而是**读仓库的文件树和依赖**，只留同时具备
-  「有执行原语」+「真的在调 LLM」的目标。
+Why it exists: targets picked from their description ("looks like it has a web layer")
+turned out to be mostly plain script collections, which produce zero findings not because
+the checks missed anything but because there is no attack surface. This step stops reading
+descriptions and instead reads the repository's file tree and dependencies, keeping only
+targets that both execute something and actually call an LLM.
 """
 from __future__ import annotations
 
@@ -32,18 +32,18 @@ SURFACE_CACHE = POOL / "surface_cache.json"
 def _already_prepared() -> set[str]:
     """★ 已经下过源码/建过库的目标不能再选（否则重扫一遍，纯浪费）。
 
-    来源：`core/config/targets_a1.yml`（已就绪的目标表）+ `a1_batch1.json`（上一批）。
+    来源：`core/config/targets.yml`（已就绪的目标表）+ `batch1.json`（上一批）。
     """
     out: set[str] = set()
     try:
         import yaml
-        d = yaml.safe_load((ROOT / "core" / "config" / "targets_a1.yml").read_text(encoding="utf-8"))
+        d = yaml.safe_load((ROOT / "core" / "config" / "targets.yml").read_text(encoding="utf-8"))
         for t in (d.get("targets") or {}).values():
             if t.get("repo"):
                 out.add(t["repo"].lower())
     except Exception:
         pass
-    for fn in ("a1_batch1.json",):
+    for fn in ("batch1.json",):
         p = POOL / fn
         if p.exists():
             try:
@@ -77,8 +77,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=60, help="先按文本分取前 N 个做预检")
     ap.add_argument("--n", type=int, default=12, help="最终挑几个")
-    ap.add_argument("--pool", default=str(POOL / "a1_pool_20261009.json"))
-    ap.add_argument("--out", default=str(POOL / "a1_batch2.json"))
+    ap.add_argument("--pool", default=str(POOL / "pool_20261009.json"))
+    ap.add_argument("--out", default=str(POOL / "batch2.json"))
     args = ap.parse_args()
 
     SEL = _load_selector()

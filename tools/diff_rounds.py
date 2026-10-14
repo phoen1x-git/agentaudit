@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""对比两轮 run_round 的 findings.tsv（同一批靶、不同开关）。
+"""对比两轮 run_round 的 findings.tsv（同一批目标、不同开关）。
 
 用途：单变量 A/B —— 例如 `ch388-base`(全默认) vs `ch388-plus`(开判定开关)，
 看哪个条目的 ai_verdict / arg_source / 置信度变了。
@@ -9,7 +9,7 @@
     python tools/diff_rounds.py out/round-A out/round-B --only-changed
     python tools/diff_rounds.py out/round-A out/round-B --json out/diff.json
 
-匹配键：用 (file, line, sink) —— 不依赖 fingerprint，因为改判据不改 fingerprint。
+匹配键：用 (file, line, sink) —— 不依赖 fingerprint，因为改规则不改 fingerprint。
 输出：新增 / 消失 / 结论变化 / 来源变化 四类，外加汇总计数与成本对比。
 """
 from __future__ import annotations

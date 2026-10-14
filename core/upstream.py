@@ -4,7 +4,7 @@
   而且——**报漏洞前必须 fetch 上游 main**（踩过的教训：手上是几个月前的快照，
   版本号不代表"还没修"）。
 
-做三件事（docs/95 §十一）：
+做三件事：
   ① default_branch 是什么（★ 别再凭印象用 main）
   ② 用【特征串】而不是行号，去最新代码里找这处还在不在
   ③ 查该包/该仓库有没有已公开的安全公告
@@ -77,9 +77,9 @@ def repo_for(project: str, cfg: dict | None = None) -> str:
     """★ 仓库坐标解析（**单一实现**，本模块是所有调用方的唯一来源）。
 
     ① 优先 `core/config/upstream_repos.yml`（手工维护，可额外放 packages 名）；
-    ② ★★ **回退到 `targets*.yml` 的 `repo:` 字段** —— 靶池里**每个靶都有**这一条，
+    ② ★★ **回退到 `targets*.yml` 的 `repo:` 字段** —— 目标池里**每个目标都有**这一条，
        而 `upstream_repos.yml` 到 2026-10-12 只手工维护了 **3 条**（sampledelegate/sampleframe/samplebi）。
-       不回退的后果（2026-10-12 实测撞到）：对**所有新靶**都变成"没配坐标 → 没查成"，
+       不回退的后果（2026-10-12 实测撞到）：对**所有新目标**都变成"没配坐标 → 没查成"，
        而 `run()` 又把它打印成"上游文件已不存在" → ★ **一个看起来像"查过了"的假 0**。
 
     ★ 允许 `cfg=None`（工具单独调用时不必先读 yml）。
@@ -240,7 +240,7 @@ def check_one(project: str, rel_file: str, snippet: str, cfg: dict, tok: str) ->
 
     # ④ 仓库 issue 查重
     # ★ 2026-10-11 教训（samplebi）：只拿【文件干名】当关键词会漏——samplebi 那条 RCE 的文件叫
-    #   `base.py`（stem="base"，长度<8 直接跳过），而真报告 上游单号 的标题走的是
+    #   `base.py`（stem="base"，长度<8 直接跳过），而真报告 upstream issue 的标题走的是
     #   "sql injection … unsafe exec() on LLM output"。→ 改成**多关键词**，用
     #   (a) 特征串里辨识度最高的函数名/调用名 (b) 文件干名（够长才用），各搜一次并合并去重。
     kws: list[str] = []
@@ -248,7 +248,7 @@ def check_one(project: str, rel_file: str, snippet: str, cfg: dict, tok: str) ->
     if snippet_s:
         kws.append(snippet_s)
     # ★ 单词关键词在 GitHub issue 搜索里经常 0 命中（实测 kw='exec'→[]，但
-    #   'code execution'→上游单号/#1078）。→ 再按 sink 形态补一条【类别短语】。
+    #   'code execution'→upstream issue/#1078）。→ 再按 sink 形态补一条【类别短语】。
     phrase = fd_snippet_phrase(snippet)
     if phrase:
         kws.append(phrase)
@@ -327,7 +327,7 @@ def run_round_dir(rd: Path, on_log=print, only_verdict: str = "vuln") -> dict:
 
     ★ 为什么要有这个函数（而不是让调用方各写一遍）：`app/check_upstream.py` 早就这么做，
       但 `run_round.py` **从来没调过它** → 结果"上游查了没查"全靠记不记得手动跑
-      （`docs/138` 立的规矩，`docs/184` §5 偏差 3：这条债拖了三次）。
+      。
       → **单一实现**：`app/check_upstream.py` 与 `app/run_round.py` 都调本函数。
       ★ 从 `findings.tsv` 读（不接收内存对象），保证"报告的输入"和"核实的输入"是**同一份**。
 

@@ -1,77 +1,81 @@
 # -*- coding: utf-8 -*-
-"""★ 验`_collect_auth_aliases` 的两种失败形态。
+"""Self-test for `_collect_auth_aliases` (auth-dependency aliases).
 
-背景（jarvis-registry 实测）：
-    # registry/src/registry/auth/dependencies.py:40
+Background: a project may declare its auth dependency once and reuse the alias:
+
+    # auth/dependencies.py
     type CurrentUser = Annotated[UserContextDict, Depends(get_current_user)]
-    # registry/src/registry/api/proxy_routes.py:527
+
+    # api/proxy_routes.py
     async def clear_session_endpoint(..., user_context: CurrentUser): ...
-  → 别名一个都没收到 → 端点被判成"无鉴权" → 假阳性。
+
+If the alias is not collected, every endpoint using it is judged "no auth" -> false
+positive. These cases cover the forms an alias can take, including PEP 695.
 """
 import io
 import os
 import re
 import sys
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8",
-                              errors="replace")
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ast_criteria import _collect_auth_aliases  # noqa: E402
 
+# Optional: a real cached source file, if one is available locally.
 CD = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                   "..", "data", "target_pool", "_src_cache")
-DEP = os.path.join(CD, "f__ascending-llc_jarvis-registry__registry_src_"
-                        "registry_auth_dependencies.py.txt")
+DEP = os.path.join(CD, "auth_dependencies.py.txt")
 
 CASES = [
-    # (说明, 源码, 期望是否收得到)
-    ("经典赋值 X = Annotated[...Depends(...)]",
+    # (description, source, should an alias be collected)
+    ("classic assignment X = Annotated[...Depends(...)]",
      "CurrentUser = Annotated[User, Depends(get_current_user)]\n", True),
-    ("★ PEP695: type X = Annotated[...Depends(...)]",
+    ("PEP695: type X = Annotated[...Depends(...)]",
      "type CurrentUser = Annotated[User, Depends(get_current_user)]\n", True),
-    ("FastAPI 官方写法 X = Depends(...)",
+    ("FastAPI shorthand X = Depends(...)",
      "CurrentUser = Depends(get_current_user)\n", True),
-    ("★ PEP695 简写: type X = Depends(...)",
+    ("PEP695 shorthand: type X = Depends(...)",
      "type CurrentUser = Depends(get_current_user)\n", True),
-    ("带类型注解的赋值 X: T = Annotated[...Depends(...)]",
+    ("annotated assignment X: T = Annotated[...Depends(...)]",
      "CurrentUser: tp.Alias = Annotated[User, Depends(get_current_user)]\n",
      True),
-    ("多行 Annotated（Depends 在下一行）",
+    ("multi-line Annotated (Depends on the next line)",
      "type CurrentUser = Annotated[\n    User,\n    Depends(get_current_user),\n]\n",
      True),
-    ("★ 小写别名不该收（避免把普通变量当别名）",
+    ("lower-case name should NOT be collected (it is a plain variable)",
      "helper = Depends(get_current_user)\n", False),
-    ("无关赋值不该收",
+    ("unrelated assignment should not be collected",
      "MAX_SIZE = 1024\n", False),
 ]
 
-print("=== _collect_auth_aliases 自测 ===")
+print("=== _collect_auth_aliases ===")
 bad = 0
 for desc, src, want in CASES:
     got = bool(_collect_auth_aliases(src))
     ok = (got == want)
     bad += (not ok)
-    print("  %s %-52s 期望=%-5s 实际=%-5s收=%s"
+    print("  %s %-52s want=%-5s got=%-5s -> %s"
           % ("OK  " if ok else "FAIL", desc, want, got,
              sorted(_collect_auth_aliases(src))))
 
 print()
-print("=== 真实文件（jarvis dependencies.py）===")
-real = open(DEP, encoding="utf-8", errors="replace").read()
-al = _collect_auth_aliases(real)
-print("  收得别名:", sorted(al) or "(空)")
-print("  含CurrentUser:", "CurrentUser" in al)
-print()
-print("  第 40 行原文:", repr(real.split("\n")[39]))
+if os.path.exists(DEP):
+    print("=== real file ===")
+    real = open(DEP, encoding="utf-8", errors="replace").read()
+    al = _collect_auth_aliases(real)
+    print("  aliases collected:", sorted(al) or "(none)")
+    print("  contains CurrentUser:", "CurrentUser" in al)
+    print()
 
-print()
-print("=== 单行正则 vs 加 type 前缀 ===")
-LINE = r"^[ \t]*([A-Z]\w*|_\w+)\s*(?::[^=\n]+)?=\s*"
-LINE_T = r"^[ \t]*(?:type\s+)?([A-Z]\w*|_\w+)\s*(?::[^=\n]+)?=\s*"
-for name, pat in (("现状", LINE), ("加 type 前缀", LINE_T)):
-    got = re.findall(pat + r"Annotated\s*\[", real, re.M)
-    print("  %-12s -> %s" % (name, got))
+    print("=== single-line regex vs type-prefixed regex ===")
+    LINE = r"^[ \t]*([A-Z]\w*|_\w+)\s*(?::[^=\n]+)?=\s*"
+    LINE_T = r"^[ \t]*(?:type\s+)?([A-Z]\w*|_\w+)\s*(?::[^=\n]+)?=\s*"
+    for name, pat in (("current", LINE), ("with type prefix", LINE_T)):
+        got = re.findall(pat + r"Annotated\s*\[", real, re.M)
+        print("  %-18s -> %s" % (name, got))
+    print()
+else:
+    print("(no cached sample source available; skipping the real-file section)")
 
-print()
-print("失败 %d / %d" % (bad, len(CASES)))
+print("failed %d / %d" % (bad, len(CASES)))
 sys.exit(1 if bad else 0)

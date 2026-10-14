@@ -1,11 +1,12 @@
-"""A1 自用版入口 · 上游核实（第⑤步的前半）。
+"""Check the upstream status of the candidates in a round.
 
-    python app/check_upstream.py out/round-20261009
+    python app/check_upstream.py out/round-my-round
 
-产出 `upstream.json`，然后重新生成报告，让"上游状态"那一节从「未查询」变成实测内容。
+Writes `upstream.json`, after which the report's "Upstream status" section can be
+regenerated from "not checked" into what was actually observed.
 
-★ 2026-10-12：本文件不再自己读 tsv —— **改调 `core.upstream.run_round_dir()`**，
-  和 `app/run_round.py` 共用同一实现（两份逻辑早晚算出不一样的数）。
+This shares one implementation with `app/run_round.py` (core.upstream.run_round_dir);
+two copies of the same lookup would eventually disagree.
 """
 from __future__ import annotations
 

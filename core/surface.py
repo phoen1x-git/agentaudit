@@ -2,15 +2,14 @@
 
 要解决的问题
 ------------
-`docs/56` 的实战结论是「**库型项目没有对外端点，扫了也是 0**」，但它当时只能靠人读描述判断。
-A1 第一批又验证了一遍：**描述里写着 web / api，不等于真有攻击面** ——
+ 的实战结论是「**库型项目没有对外端点，扫了也是 0**」，但它当时只能靠人读描述判断。
+第一批又验证了一遍：**描述里写着 web / api，不等于真有攻击面** ——
 那一批 12 个目标里，好几个本质是"工具脚本集合"，扫出来 0 条 vuln。
 
 本模块把那条经验做成**可执行的前检**：不看描述，直接读仓库的
   · **文件树** —— 有没有"执行原语"的痕迹（code_interpreter / executor / repl / sandbox / sql / browser）
   · **依赖清单** —— 有没有 LLM 客户端依赖、有没有 Web 层
-  · **夹带代码比例** —— 有多少文件在 vendor/third_party/node_modules 下（这类副本会污染候选池，
-    见 `docs/102`；夹带多的目标，后续 path-filter 的收益也大）
+  · **夹带代码比例** —— 有多少文件在 vendor/third_party/node_modules 下
 
 ★ 它**不判断有没有漏洞**，只回答"这个目标值不值得建库去扫"。两次 API 调用/仓库，很便宜。
 
@@ -113,7 +112,7 @@ def probe(repo: str, branch: str, tok: str | None = None) -> dict:
 
 
 # ---- 「真的在跑模型产出的代码吗」—— ★ 必须读内容，不能只看名字 ----
-# ★★ 依据（`docs/112` 补记 / `docs/113` §八）：关键词命中的是**文件名和类名**
+# ★★ 依据：关键词命中的是**文件名和类名**
 #    （`shell_tool.py`、`class Executor`）。实测那 6 个"强信号"目标
 #    （sampleproj / overmind / marginalia / cascadeflow / openosint / synapse-ai）
 #    **实际产出 0 条 exec 类候选** —— 只靠名字会把它们当 Agent。

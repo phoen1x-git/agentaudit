@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """自测：协议性公开豁免（`.well-known`）。
 
-★ 这批用例的由来：jarvis-registry 排除测试文件后只剩 3 处inconsistent_auth，
+★ 这批用例的由来：sampleagent2-registry 排除测试文件后只剩 3 处inconsistent_auth，
   逐条读源码定性后发现其中 2 处是 **OIDC Discovery + JWKS** ——
   按 RFC 8414 / RFC 7517 **必须无鉴权公开**，报出来是纯噪声。
 

@@ -1,19 +1,19 @@
-"""『目标短名 → 靶源码根目录』的映射 + 把 findings 里的相对路径解析成真实路径。
+"""『目标短名 → 目标源码根目录』的映射 + 把 findings 里的相对路径解析成真实路径。
 
 ★★ 为什么单独抽出来（而不是散在各工具里）：
-   原来这段逻辑住在 `sample_false_negatives.py`，而那个文件**写死了我们自己的靶**，
+   原来这段逻辑住在 `sample_false_negatives.py`，而那个文件**写死了我们自己的目标**，
    所以**不能随包发布**。但 `judge_round` / `rejudge_rows` / `resolve_needs_human_callers`
    都要用它 ⇒ 抽成一个**通用、可配置**的小模块。
 
 ★ 配置方式（都不进版本库）：
    1. `core/config/targets*.yml` —— 权威来源，形如：
           targets:
-            <你给靶起的短名>:
+            <你给目标起的短名>:
               repo: owner/name
               src: ../_targets/owner__name
    2. 环境变量 `AF_TARGET_MAP=/path/to/map.json` —— 形如 `{"短名": "源码根绝对路径"}`
 
-★ 本模块**不内置任何具体靶**。
+★ 本模块**不内置任何具体目标**。
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ _SRC_MAP: dict[str, str] = load_src_map()
 
 
 def _resolve_src(r: dict) -> str | None:
-    """把 findings 里的相对 `file` 解析成靶源码真实路径。
+    """把 findings 里的相对 `file` 解析成目标源码真实路径。
 
     ① 直接命中 → ② 去版本后缀（`x-1_2_3` → `x`）→ ③ 前缀模糊；
     都失败则按 basename 在候选根里搜。

@@ -1,7 +1,8 @@
-"""内核 · 配置加载与路径过滤。
+"""Kernel: config loading and path filtering.
 
-★ 开关 path-filter 的实现就在这里：把论文那条子串黑名单，换成"路径段 + 文件名正则 + 子串"三层。
-★ 消融实验用 `AF_NO_FILTER=1` 关掉它（见 app/exp_ablation_static.py）。
+The path filter replaces the baseline's plain substring blacklist with three layers:
+path segments, filename regexes, and substrings. Set AF_NO_FILTER=1 to switch it off
+for an A/B comparison.
 """
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ def enabled_sinks() -> list[dict]:
 def path_is_filtered(rel_path: str, filters: dict) -> bool:
     """rel_path 用 / 分隔。命中任一规则 → True（这条结果不交给人看）。"""
     if os.environ.get("AF_NO_FILTER", "0") == "1":
-        return False                      # ★ 消融用：关掉 path-filter
+        return False                      # ★ for A/B：关掉 path-filter
     if not rel_path:
         return False
     low = rel_path.lower().replace("\\", "/")
@@ -50,7 +51,7 @@ def path_is_filtered(rel_path: str, filters: dict) -> bool:
     for pat in filters.get("filename_re", []):
         if re.match(pat, base):
             return True
-    # ③ 论文原样的子串兜底
+    # ③ AgentFuzz baseline的子串兜底
     for sub in filters.get("substrings", []):
         if sub.lower() in low:
             return True

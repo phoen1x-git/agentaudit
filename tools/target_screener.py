@@ -4,7 +4,7 @@
 目标筛选器（target screener）
 ============================
 
-目的：把「选样」从经验判断变成一条可自动跑的判据，产出一份候选目标清单。
+目的：把「选样」从经验判断变成一条可自动跑的规则，产出一份候选目标清单。
 
 为什么需要它
 ------------
@@ -13,8 +13,8 @@
     1) 头部（已被深度审计）
     2) 已在管安全（有 SECURITY.md / 有安全公告 → 洞会被更快修掉）
 
-★ 本脚本的判据全部可自动判定，不需要人工看仓库。
-  判据设计刻意分三层，因为 GitHub 未认证只有 60 次/小时的核心额度：
+★ 本脚本的规则全部可自动判定，不需要人工看仓库。
+  规则设计刻意分三层，因为 GitHub 未认证只有 60 次/小时的核心额度：
 
     Layer 0  拉候选池        search API，每个 query 1 次请求
     Layer 1  硬性过滤        search 结果自带字段，0 次额外请求
@@ -27,7 +27,7 @@
     python target_screener.py screen     # 跑筛选（Layer 1+2，便宜）
     python target_screener.py deep       # 深查入围者（Layer 3，昂贵）
     python target_screener.py report     # 出候选清单 Markdown
-    python target_screener.py selftest   # ★ 先跑这个：验判据本身对不对
+    python target_screener.py selftest   # ★ 先跑这个：验规则本身对不对
 
 ★ 断点续跑：所有 API 结果落盘缓存到 _cache/，重跑不重复花额度。
 ★ 限流：未认证 60 次/小时。脚本会读 rate_limit 自动退避；设 GH_TOKEN 可提到 5000。
@@ -180,11 +180,11 @@ def days_since(s):
 
 # ---------------------------------------------------------------- 已知事实
 
-# AgentFuzz 论文 Dataset.md 里测过的 20 个 —— 必须排除，否则没有「未测过」可言
+# AgentFuzz AgentFuzz Dataset.md 里测过的 20 个 —— 必须排除，否则没有「未测过」可言
 PAPER_TARGETS = {
     "significant-gravitas/autogpt", "langgenius/dify", "langflow-ai/langflow",
     "quivrhq/quivr", "chatchat-space/langchain-chatchat", "infiniflow/ragflow",
-    "microsoft/jarvis", "stitionai/samplecoder", "transformeroptimus/superagi",
+    "microsoft/sampleagent2", "stitionai/samplecoder", "transformeroptimus/superagi",
     "gaizhenbiao/chuanhuchatgpt", "eosphoros-ai/db-gpt", "sinaptik-ai/sampleframe",
     "samplebi/samplebi", "sampleplat/sampleplat", "samplexa/samplexa",
     "sampletask/sampletask", "microsoft/sampledelegate", "samplescope/samplescope",
@@ -197,7 +197,7 @@ KNOWN_TRIED = {
     "microsoft/sampledelegate", "sinaptik-ai/sampleframe", "sampleframe/sampleframe",
 }
 
-# ★ 标准答案：用来验判据本身（跑 selftest）。
+# ★ 标准答案：用来验规则本身（跑 selftest）。
 #   依据是 00_交接_第二版.md 里 2026-10-04 的上游核实结果。
 KNOWN_TRUTH = {
     "samplezero/samplezero": {
@@ -218,12 +218,12 @@ KNOWN_TRUTH = {
     },
 }
 
-# ---------------------------------------------------------------- 判据
+# ---------------------------------------------------------------- 规则
 
 # ★ 主题/描述里的信号词。用集合投票，不靠单一名字匹配。
 #   （教训：按名字匹配 = 换个名字就瞎，栽过四次）
 #
-# ★★ 词表要宽。判据的目的是**召回** Agent 项目，不是精确分类。
+# ★★ 词表要宽。规则的目的是**召回** Agent 项目，不是精确分类。
 #   第一版把 LLM 维度只认 "llm/gpt/openai"，结果把 Biomni（描述写 "biomedical
 #   AI agent"）、Paper2Poster（"Multi-agent Poster"）全误杀了 —— 现代项目的
 #   描述早就不写 LLM 了，写 AI / model / 生成式。
@@ -266,7 +266,7 @@ def looks_like_agent(name, desc, topics):
         'yes'   —— 多个独立信号同时命中
         'maybe' —— 信号弱，可能是相关但不同类
         'no'    —— 基本不是 Agent 项目
-    ★ 返回的是启发式判断，不是硬判据 —— 报告里会标明这一点。
+    ★ 返回的是启发式判断，不是硬规则 —— 报告里会标明这一点。
     """
     topics_l = {str(t).lower() for t in (topics or [])}
     desc = desc or ""
@@ -318,7 +318,7 @@ def looks_like_agent(name, desc, topics):
         #   stepfun-ai/gelab-zero（GUI agent）、HumanSignal/SampleSDK（数据标注 agent 框架）
         #   都被卡在 no 上。改成"不排斥"而非"必须命中"。
         #   → 真正该排掉的是 lorax / vllm-ascend 这类**没有 agent 属性**的
-        #     推理服务器，它们 dim_hit=False，落在 no 上，判据仍然对。
+        #     推理服务器，它们 dim_hit=False，落在 no 上，规则仍然对。
         verdict = "maybe"
     else:
         verdict = "no"
@@ -334,9 +334,9 @@ def screen_item(it):
     full = (it.get("full_name") or "").lower()
     reasons = []
 
-    # 1) 论文测过 / 已实测过（★ 新旧名都认，避免改名后漏排除）
+    # 1) AgentFuzz测过 / 已实测过（★ 新旧名都认，避免改名后漏排除）
     if is_paper_target(full):
-        return False, ["论文已测过或本项目已实测过"]
+        return False, ["AgentFuzz已测过或本项目已实测过"]
 
     # 2) 归档 —— 已归档的仓库不会有新洞可挖
     if it.get("archived"):
@@ -379,7 +379,7 @@ def screen_item(it):
 # ---------------------------------------------------------------- Layer 2: PyPI
 
 def pypi_info(pkg):
-    """查 PyPI。★ PyPI 无速率限制，这条判据基本免费。"""
+    """查 PyPI。★ PyPI 无速率限制，这条规则基本免费。"""
     if not pkg:
         return None
     d = http_json("https://pypi.org/pypi/%s/json" % pkg)
@@ -415,10 +415,10 @@ def guess_pkg_name(full_name):
 # ---------------------------------------------------------------- Layer 3: 深查
 
 def deep_one(full_name, branch):
-    """★ 昂贵：每个候选 **1 次** core 请求（树），一次拿全部判据。
+    """★ 昂贵：每个候选 **1 次** core 请求（树），一次拿全部规则。
 
     查四件用 search 拿不到、但决定「值不值得挖」的事：
-      1) 有没有 SECURITY.md      —— 有人在管安全（反直觉判据）
+      1) 有没有 SECURITY.md      —— 有人在管安全（反直觉规则）
       2) 有没有 server/api 层    —— 攻击面（交接档案的教训6）
       3) 有没有工具/插件注册机制 —— 二阶污点能不能落地
       4) 代码规模               —— 太小不可信
@@ -426,12 +426,12 @@ def deep_one(full_name, branch):
     ★★ 第一版这里有两个错，都是同一个病根：
        (a) 用 contents/SECURITY.md 判断，返回的是 dict 不是 list，
            于是 `isinstance(sec, list)` 恒为 False → **所有目标都报「无 SECURITY.md」**。
-           dynamiq 实测根目录就有 SECURITY.md（见 docs/33）。
+           dynamiq 实测根目录就有 SECURITY.md。
        (b) 只看**顶层**目录名找 server/api 层，而真实项目里 server 代码
            常在 examples/ 或子包内（如 dynamiq 的 examples/.../http_server_fastapi.py），
            于是 has_server_dir 全线 False → **等于没看**。
        教训：「该出现的东西出现了」≠「它出现在该在的地方、并且被看见」。
-       现在改成：只用一次树请求，所有判据都从**完整路径列表**里按内容找。
+       现在改成：只用一次树请求，所有规则都从**完整路径列表**里按内容找。
     """
     out = {"full_name": full_name, "branch": branch}
 
@@ -461,7 +461,7 @@ def deep_one(full_name, branch):
     #       - 第三方 vendor 代码（clearml_agent/_vendor/jwt/api_jwk.py）
     #       - CLI 入口（sampleproj/api/cli/commands/*.py 是命令行工具）
     #       - 调用别人的 API 的客户端（dynamiq/nodes/tools/http_api_call.py）
-    #    → 判据收紧为：**有明确服务端职责信号**才算攻击面。
+    #    → 规则收紧为：**有明确服务端职责信号**才算攻击面。
     srv_real = []
     for p in low:
         if not p.endswith((".py", ".ts", ".js")):
@@ -529,7 +529,7 @@ def deep_one(full_name, branch):
     out["total_entries"] = len(paths)
     # ★ 树被截断 = 大仓库，判定要保守（数据不全）
     if out["truncated"]:
-        out["note"] = "树被GitHub截断，目录类判据可能漏判"
+        out["note"] = "树被GitHub截断，目录类规则可能漏判"
     return out
 
 
@@ -542,7 +542,7 @@ def load_pool():
     return {"repos": {}, "queries": [], "fetched_at": None}
 
 
-# ★ 规范化名缓存：论文目标/已知目标可能改名（samplezero: frdel/ → agent0ai/）
+# ★ 规范化名缓存：AgentFuzz目标/已知目标可能改名（samplezero: frdel/ → agent0ai/）
 #   按旧名匹配 = 漏排除。canonical 文件由 `resolve` 命令生成。
 CANON_FILE = os.path.join(OUT, "canonical.json")
 
@@ -565,11 +565,11 @@ def canon_map():
 
 
 def cmd_resolve(args):
-    """把论文 20 个目标 + 已知目标的**规范名**解析出来并缓存。
+    """把AgentFuzz 20 个目标 + 已知目标的**规范名**解析出来并缓存。
 
     ★ 为什么必须做：samplezero 已从 frdel/ 改名到 agent0ai/。
       排除表里若只有旧名，改名后的仓库会**漏排除**，
-      于是「论文已测过」这条判据在最该拦的那个项目上失效。
+      于是「AgentFuzz已测过」这条规则在最该拦的那个项目上失效。
       （同类教训：按名字匹配 = 换个名字就瞎）
     """
     names = sorted(PAPER_TARGETS | KNOWN_TRIED)
@@ -609,7 +609,7 @@ def cmd_resolve(args):
 
 
 def is_paper_target(full_lower):
-    """判断是否论文测过 / 已实测过。★ 新旧名都认。"""
+    """判断是否AgentFuzz测过 / 已实测过。★ 新旧名都认。"""
     cm = canon_map()
     cand = {full_lower, cm.get(full_lower)}
     # 反向：规范名映射回来也算
@@ -782,16 +782,16 @@ def cmd_report(args):
     lines.append("# 候选目标池（自动筛选产出）\n")
     lines.append("生成时间：%s\n" % scr.get("screened_at"))
     lines.append("筛选条件：star %d–%d、半年内有提交、未归档、非 fork、"
-                 "非论文已测、语言 Python、像 Agent 项目\n"
+                 "非AgentFuzz已测、语言 Python、像 Agent 项目\n"
                  % (STAR_MIN, STAR_MAX))
-    lines.append("## 判据口径（★ 必读，别把这些数字读成结论）\n")
+    lines.append("## 规则约定（★ 必读，别把这些数字读成结论）\n")
     lines.append("| 显示 | 含义 |")
     lines.append("|---|---|")
     lines.append("| `—` | **没查过**（不是「没有」）|")
     lines.append("| `无` | 查过了，确实没有 |")
     lines.append("")
     lines.append("- `agent_verdict` 是**启发式**（topics/描述信号投票），"
-                 "**不是硬判据**，不参与事实分。")
+                 "**不是硬规则**，不参与事实分。")
     lines.append("- `PyPI ✗` 只说明**猜的包名**没命中，不代表装不上 —— "
                  "包名猜错是常态。")
     lines.append("- 「未跑源码探针」的项目，**攻击面是未知的**，"
@@ -827,7 +827,7 @@ def cmd_report(args):
             r.get("stars"), r.get("days_since_push"), sec, probe_s))
     lines.append("")
 
-    lines.append("## 逐条判据依据\n")
+    lines.append("## 逐条规则依据\n")
     for score, r, d, why in top:
         lines.append("### %s（分数 %d）\n" % (r["full_name"], score))
         lines.append("- 描述：%s" % (r.get("desc") or "（无）"))
@@ -1000,11 +1000,11 @@ def score_target(r, d):
         else:
             why.append("%d天前有提交，偏冷，减分" % dd)
 
-    # ★ 反直觉判据：没有 SECURITY.md = 没人管安全 = 洞不会被快速修掉
+    # ★ 反直觉规则：没有 SECURITY.md = 没人管安全 = 洞不会被快速修掉
     #   （samplebi 有3条安全公告、sampledelegate 有2条，印证「有人在管」的都被审过）
     if d.get("security_md") is False:
         score += 20; facts += 20
-        why.append("无SECURITY.md，安全响应不可靠（★反直觉判据）")
+        why.append("无SECURITY.md，安全响应不可靠（★反直觉规则）")
     elif d.get("security_md") is True:
         why.append("有SECURITY.md，安全流程完善（洞会被快速修），减分")
 
@@ -1067,13 +1067,13 @@ def score_target(r, d):
 
 
 def cmd_selftest(args):
-    """★ 验判据本身。
+    """★ 验规则本身。
 
-    规矩：跑任何实验前先自己验判据（零成本）。判据坏了，跑出来的数字全是废的。
-    这里拿 5 个已知真实状态的目标当标准答案，检查筛判据能不能把它们正确排除。
+    规矩：跑任何实验前先自己验规则（零成本）。规则坏了，跑出来的数字全是废的。
+    这里拿 5 个已知真实状态的目标当标准答案，检查筛规则能不能把它们正确排除。
     """
     print("=" * 66)
-    print("判据自测：用已知上游状态的标准答案验筛选逻辑")
+    print("规则自测：用已知上游状态的标准答案验筛选逻辑")
     print("=" * 66)
     print("标准答案来源：00_交接_第二版.md 的 2026-10-04 上游核实")
     print()
@@ -1098,23 +1098,23 @@ def cmd_selftest(args):
             (d.get("pushed_at") or "")[:10], "见下"))
         print("    重定向到：%s" % (d.get("full_name") or "(未重定向)"))
 
-        # 验判据 1：archived 判据
+        # 验规则 1：archived 规则
         if got_arch != truth["archived"]:
-            fails.append("%s: archived 判据错了，标准答案=%s 实测=%s" % (
+            fails.append("%s: archived 规则错了，标准答案=%s 实测=%s" % (
                 full, truth["archived"], got_arch))
-            print("    [FAIL] archived 判据与标准答案不符")
+            print("    [FAIL] archived 规则与标准答案不符")
         else:
-            print("    [OK] archived 判据正确")
+            print("    [OK] archived 规则正确")
 
-        # 验判据 2：star 区间能把头部排除掉
+        # 验规则 2：star 区间能把头部排除掉
         st = d.get("stargazers_count") or 0
         if st > STAR_MAX:
             print("    [OK] star=%d > %d → 会被 star 区间排除（头部已被审计）" % (
                 st, STAR_MAX))
         else:
-            print("    [ ] star=%d 未触发区间排除，需靠其它判据" % st)
+            print("    [ ] star=%d 未触发区间排除，需靠其它规则" % st)
 
-        # 验判据 3：安全公告数（未被审计的直接信号）
+        # 验规则 3：安全公告数（未被审计的直接信号）
         adv = http_json("https://api.github.com/repos/%s/security-advisories?per_page=100" % full)
         if isinstance(adv, list):
             print("    安全公告：%d 条" % len(adv))
@@ -1122,7 +1122,7 @@ def cmd_selftest(args):
                 print("      - %s %s" % (a.get("cve_id") or a.get("ghsa_id"),
                                         (a.get("summary") or "")[:58]))
             if len(adv) > 0:
-                print("    [OK] 有公告 → 印证「已被审计过」，这条判据可用")
+                print("    [OK] 有公告 → 印证「已被审计过」，这条规则可用")
         else:
             print("    安全公告：查不到（%s）" % str(adv)[:60])
         print()
@@ -1133,7 +1133,7 @@ def cmd_selftest(args):
         for f in fails:
             print("  [FAIL] %s" % f)
         return 1
-    print("自测通过：判据与已知上游状态一致")
+    print("自测通过：规则与已知上游状态一致")
     return 0
 
 
@@ -1156,8 +1156,8 @@ def main():
         "--limit", type=int, default=0, help="只查前 N 个")
     pr = sub.add_parser("report", help="出候选清单")
     pr.add_argument("--top", type=int, default=0, help="只写前 N 个")
-    sub.add_parser("selftest", help="验判据本身")
-    sub.add_parser("resolve", help="把论文目标解析成规范名（防改名漏排除）")
+    sub.add_parser("selftest", help="验规则本身")
+    sub.add_parser("resolve", help="把AgentFuzz目标解析成规范名（防改名漏排除）")
     pp = sub.add_parser("probe", help="★ 源码级攻击面探针（git clone，不花 API 额度）")
     pp.add_argument("--limit", type=int, default=0, help="只查前 N 个")
     pp.add_argument("--repos", default="", help="只查指定项目（逗号分隔）")

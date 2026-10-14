@@ -2,7 +2,7 @@
 """★ evidence 的 file 字段必须是**文件路径**，不是路由路径（11 档）。
 
 ★★★★★★ 这个 bug 藏了不知道多久，而且是**记录层**的bug ——
-   判据结论本身是对的，但证据记错了地方，导致：
+   规则结论本身是对的，但证据记错了地方，导致：
      ① 核实的时候看到 `"file": "/chat"` ，根本不知道命中在哪个文件；
      ② files_top 里 27 处命中被压成 9 个「路由路径」桶，
         数据源分布完全失真 —— 而 files_top 恰恰是
@@ -12,7 +12,7 @@
 是文件路径，函数体里却两处写了 `path = m.group(3)`（路由路径），
 **把入参覆盖了**。Python 不会报错，覆盖后一切照常运行。
 
-**判据本身没错，错的只是「把结论记到哪儿」。**
+**规则本身没错，错的只是「把结论记到哪儿」。**
 这类 bug 比误判更阴险：误判会被自测抓到，记错地方不会。
 
 自测要点：
@@ -42,7 +42,7 @@ def check(name, cond, detail=""):
 
 
 def hits_of(src, route):
-    """跑一遍判据，返回 unauth_endpoint 里 route 匹配的那些 hit。"""
+    """跑一遍规则，返回 unauth_endpoint 里 route 匹配的那些 hit。"""
     files = {"app/api/routes.py": src}
     res, failed = ac.analyze_files(files, skip_tests=True)
     got = res["unauth_endpoint"]["hits"]

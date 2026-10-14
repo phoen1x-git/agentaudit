@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-判据改动后重核：不碰网络，只重跑 AST 判据那一层。
+规则改动后重核：不碰网络，只重跑 AST 规则那一层。
 
 ★ 为什么可以只读缓存
 --------------------
 scan.py 里取文件走的是带磁盘缓存的 api_raw(repo, path, branch, "f__repo__path")，
-网络拉过一次就落盘了。判据改动只影响 ast_criteria.analyze_files 这一步，
+网络拉过一次就落盘了。规则改动只影响 ast_criteria.analyze_files 这一步，
 **与文件内容无关地可重算**。
 → 所以重核不需要重新 clone / 重新请求，纯离线几分钟就能跑完 11 个项目。
 
@@ -16,7 +16,7 @@ scan.py 里取文件走的是带磁盘缓存的 api_raw(repo, path, branch, "f__
     python tools/recheck.py --list data/target_pool/recheck.txt
     python tools/recheck.py --list ... --out data/target_pool/recheck_new.json
 
-★ 判据自己坏没坏，用 tools/selftest_auth.py 的标准答案验证；
+★ 规则自己坏没坏，用 tools/selftest_auth.py 的标准答案验证；
   本脚本只管把新数字算出来，并跟旧数字并排摆着方便对比。
 """
 import argparse
@@ -41,23 +41,23 @@ sys.path.insert(0, HERE)
 import fetch_src_probe as fsp
 import ast_criteria as astc
 
-# ★ 只关心这几个判据的变化（其余判据没动，结果必然一致）
+# ★ 只关心这几个规则的变化（其余规则没动，结果必然一致）
 WATCH = ["inconsistent_auth", "unauth_endpoint"]
 
 
-# ★★★ 判据版本（2026-10-05 加）
-#   起因：06:40 启动 4 个重核分片 → 06:42 核实 trinity 时改了判据
+# ★★★ 规则版本（2026-10-05 加）
+#   起因：06:40 启动 4 个重核分片 → 06:42 核实 sampleagent 时改了规则
 #   → 06:46 发现已跑出的 3 条记录是**旧代码**的结果。
 #   ★ 危险在于它看起来完全正常：有数字、有覆盖率、有证据，
-#     只是判据版本不对 → 不查就会把旧数字当新结论。
+#     只是规则版本不对 → 不查就会把旧数字当新结论。
 def _kind_hist(agg):
     """★ 把「判定依据」的分布单独统计出来（不抽样）。
 
-    起因（10-05 07:0x）：核实 trinity 时我从 `kind` 字段里看到
+    起因（10-05 07:0x）：核实 sampleagent 时我从 `kind` 字段里看到
     「同文件内 **1/15** 个端点有鉴权」这个**分母**，才意识到
-    academic-commercialization 那 12 处全是误报。
+    another-sample 那 12 处全是误报。
 
-    ★ 关键：那个分母是判据自证的信息（1/N 意味着「只有 1 个被认成有鉴权，
+    ★ 关键：那个分母是规则自证的信息（1/N 意味着「只有 1 个被认成有鉴权，
       其余全被带出来」，是假阳性的高发形态），**不该藏在 evidence 抽样里**。
       前 8 条里如果只有第 1 条是 1/15，抽样就看不见了。
 
@@ -76,7 +76,7 @@ def _kind_hist(agg):
 def _files_top(agg, limit=8):
     """★ 命中最集中的文件（核实工作从这里下手最省力）。
 
-    docs/45 核实 trinity 就是这么定位的：先看哪个文件命中最多，
+     核实 sampleagent 就是这么定位的：先看哪个文件命中最多，
     8 条 evidence 里7 条挤在 git.py → 一眼看出是「1 引爆 N」。
     """
     cnt = {}
@@ -120,7 +120,7 @@ def cache_files_quiet(repo, branch):
     ----------------------
     排分片时我想按「每个项目有多少文件」分片，于是对 29 个项目逐个调
     `cache_files()` —— 而它内部走 `fsp.api_get` / `api_raw`，
-    **对没缓存的项目会真的去 GitHub 拉**（langroid / dd-agent 那种几百个文件）
+    **对没缓存的项目会真的去 GitHub 拉**（another project / another-agent 那种几百个文件）
     → 分片脚本自己先卡了 20 分钟，一个片都没排出来。
 
     ★ 教训：**「查一个项目的规模」和「把那个项目拉下来」是两件事**，
@@ -179,16 +179,16 @@ BASE_FILES = ("night_result.jsonl", "refill_result.jsonl",
 def old_counts(repo):
     """从已有结果里翻出旧数字。
 
-    ★★ 这里踩过一个严重的口径坑 Originally: 找到第一条就return，
+    ★★ 这里踩过一个严重的约定坑 Originally: 找到第一条就return，
     而文件顺序是night → refill → ...。night 批次多数项目走的是**抽样**
     （cov 0.1~0.3），refill 批次才是**全量**（cov 0.9+）。
     → 同一个项目在 night 里inc_auth=0、在 refill 里 inc_auth=4，
       按顺序取会拿到抽样那个 0，对比表就写成「0→4」，
-      **看起来像判据新增了 4 个真阳性，实际那 4 个在抽样模式下本来就看不见。**
-    → 报告里这么写会误导读者，也让判据迭代看起来在虚涨检出。
+      **看起来像规则新增了 4 个真阳性，实际那 4 个在抽样模式下本来就看不见。**
+    → 报告里这么写会误导读者，也让规则迭代看起来在虚涨检出。
 
-    正确口径：**遍历所有来源，取 coverage 最高的那条当基准。**
-    （coverage 高的那次看得文件多，判据结论更可信。）
+    正确约定：**遍历所有来源，取 coverage 最高的那条当基准。**
+    （coverage 高的那次看得文件多，规则结论更可信。）
     """
     pool = os.path.join(ROOT, "data", "target_pool")
     best = None
@@ -239,7 +239,7 @@ def _pull(r):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="离线重核算判据")
+    ap = argparse.ArgumentParser(description="离线重核算规则")
     ap.add_argument("--list", required=True, help="批次文件（每行 owner/repo）")
     ap.add_argument("--out", default="", help="输出 JSON")
     ap.add_argument("--no-full", action="store_true",
@@ -287,7 +287,7 @@ def main():
         agg, pf = astc.analyze_files(files)
         cov = len(files) / float(total_py)
         # ★★★ 证据落盘：全量 + 显式上限（10-05 修正）
-        #   起因：核实 trinity 时发现 evidence 只有 8 条，而 n_hits=103。
+        #   起因：核实 sampleagent 时发现 evidence 只有 8 条，而 n_hits=103。
         #   两者不矛盾（前者计数、后者抽样），但**报告里不写清就会让人
         #   以为"8 条就是全部"** —— 我不能替那 95 条背书。
         #
@@ -304,7 +304,7 @@ def main():
         for _k, _v in agg.items():
             if not isinstance(_v, dict) or not all(
                     x in _v for x in ("n_hits", "hits", "label")):
-                print("  ★★ 判据返回值里混进异构键 %r（keys=%s）—— 已中止，"
+                print("  ★★ 规则返回值里混进异构键 %r（keys=%s）—— 已中止，"
                       "别把这批数据落盘" % (
                           _k, sorted(_v) if isinstance(_v, dict) else type(_v)))
                 return 1
@@ -314,10 +314,10 @@ def main():
             "coverage": round(cov, 3),
             "n_miss": len(miss), "parse_failed": pf,
             "secs": round(time.time() - t0, 1),
-            # ★★★ 判据版本随记录一起落盘（2026-10-05 加）
-            #  起因：06:40 启动分片 → 06:42 改了判据 → 06:46 发现已跑出的
+            # ★★★ 规则版本随记录一起落盘（2026-10-05 加）
+            #  起因：06:40 启动分片 → 06:42 改了规则 → 06:46 发现已跑出的
             #   3 条是**旧代码**的结果，而它们看起来完全正常（有数字有证据）。
-            #   → 每条记录自证「我是用哪版判据跑的」，不用靠记忆。
+            #   → 每条记录自证「我是用哪版规则跑的」，不用靠记忆。
             "criteria_ver": _criteria_hash(),
             "criteria_stamped": _criteria_stamp(),
             "cells": {k: {"n": v["n_hits"], "label": v["label"]}
@@ -331,9 +331,9 @@ def main():
             "files_top": _files_top(agg),
             "evidence": {k: v["hits"][:EV_CAP]
                          for k, v in agg.items() if v["n_hits"]},
-            #★★ 判据运行元信息（★ 与 agg 物理隔离，见 ast_criteria.LAST_RUN_META）
+            #★★ 规则运行元信息（★ 与 agg 物理隔离，见 ast_criteria.LAST_RUN_META）
             #   必须落盘：「排掉多少测试文件」是解释数字变化的**前提**——
-            #   没有它，看到 n_hits 变小只会以为判据变严了。
+            #   没有它，看到 n_hits 变小只会以为规则变严了。
             "criteria_meta": dict(astc.LAST_RUN_META),
         }
         old = old_counts(repo)
@@ -377,10 +377,10 @@ def main():
     print("-" * 78)
     print("覆盖>=60%% 可出结论: %d/%d" % (len(good), len(out)))
 
-    # ★★ 只有「新旧基准覆盖可比」时，差值才允许解释成「判据变化带来的」。
+    # ★★ 只有「新旧基准覆盖可比」时，差值才允许解释成「规则变化带来的」。
     #   如果新扫描 cov=98% 而基准是抽样 cov=26%，那 +4 可能只是
-    #   「基准那次没看到那么多文件」，不是判据变松/变严。
-    print("\n可比性检查（新旧覆盖率差 >15 个百分点 → 差值不可直接归因于判据）:")
+    #   「基准那次没看到那么多文件」，不是规则变松/变严。
+    print("\n可比性检查（新旧覆盖率差 >15 个百分点 → 差值不可直接归因于规则）:")
     incomparable = []
     for r in out:
         o = r.get("old") or {}

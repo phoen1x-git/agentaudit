@@ -1,16 +1,16 @@
-"""A1 自用版入口 · 给一批新目标备料（下源码 + 建 CodeQL 库）。
+"""Prepare a batch of targets: fetch sources and build CodeQL databases.
 
-    python app/prepare_targets.py data/target_pool/a1_batch1.json
+    python app/prepare_targets.py data/target_pool/batch1.json
 
-★ 这一步是整条链上**最重的**（每个目标要 clone + 建库，几分钟起），所以：
-  · 逐个容错，一个失败不影响下一个（失败要出声，写进日志）
-  · 已建好的库直接跳过（可反复跑）
-  · 支持 --only 只补某几个
+This is the heaviest stage (each target is cloned and indexed, which takes minutes), so:
+  - one failure does not stop the rest, and every failure is logged loudly
+  - databases that already exist are skipped, so this is safe to re-run
+  - --only restricts it to a subset
 
-产出：
-    ../_targets/a1src/<name>/          源码
-    ../_targets/a1db/<name>-db/        CodeQL 库
-    core/config/targets_a1.yml         给 run_round 用的目标表
+Output:
+    ./_targets/src/<name>/           fetched sources
+    ./_targets/db/<name>-db/         CodeQL databases
+    core/config/targets.yml          target table used by run_round
 """
 from __future__ import annotations
 
@@ -30,10 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))          # ★ 让 core 可导入（脚本方式运行时 sys.path[0] 是 app/）
 WS = ROOT.parent
-SRC_ROOT = WS / "_targets" / "a1src"
-DB_ROOT = WS / "_targets" / "a1db"
+SRC_ROOT = Path(os.environ.get("AF_SRC_DIR") or (ROOT / "_targets" / "src"))
+DB_ROOT = Path(os.environ.get("AF_DB_DIR") or (ROOT / "_targets" / "db"))
 POOL = ROOT / "data" / "target_pool"
-CODEQL = WS / "_tools" / "codeql" / "codeql.exe"
+CODEQL = Path(os.environ.get("AF_CODEQL") or (ROOT / "_tools" / "codeql" / "codeql.exe"))
 
 
 def _safe(repo: str) -> str:
@@ -191,10 +191,10 @@ def make_db(name: str, src: Path, db: Path, log) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("batch", help="a1_batch1.json")
+    ap.add_argument("batch", help="batch1.json")
     ap.add_argument("--only", default="")
     ap.add_argument("--targets-out", default="",
-                    help="目标表输出路径（默认 core/config/targets_a1.yml）")
+                    help="目标表输出路径（默认 core/config/targets.yml）")
     ap.add_argument("--jobs", type=int, default=4,
                     help="并发下载路数。★ 实测单连接被限速在 ~36 KB/s，4 路并发能到 ~107 KB/s")
     ap.add_argument("--no-proxy", action="store_true",
@@ -202,7 +202,7 @@ def main() -> int:
     ap.add_argument("--proxy", default="",
                     help="指定代理 URL；默认自动采用环境变量里的代理")
     ap.add_argument("--max-mb", type=float, default=40.0,
-                    help="★ 工作树体积上限（MB，默认 40）。今夜为跑超大但活跃的靶放宽（如 120）")
+                    help="★ 工作树体积上限（MB，默认 40）。今夜为跑超大但活跃的目标放宽（如 120）")
     args = ap.parse_args()
     proxy = _resolve_proxy(args)
     batch = json.load(open(ROOT / args.batch if not Path(args.batch).is_absolute() else args.batch,
@@ -324,7 +324,7 @@ def main() -> int:
     #   ② repo 名从**所有批次文件**里反查（不然扫到的库对不上仓库）。
     import yaml
     repo_of: dict[str, str] = {}
-    for bp in sorted(POOL.glob("a1_batch*.json")):
+    for bp in sorted(POOL.glob("batch*.json")):
         try:
             for b in json.load(open(bp, encoding="utf-8")).get("batch", []):
                 if b.get("repo"):
@@ -332,7 +332,7 @@ def main() -> int:
         except Exception:
             continue
     tgt = {"version": 1, "updated": datetime.now().strftime("%Y-%m-%d"),
-           "note": "A1 目标表（由 app/prepare_targets.py 扫描 _targets/a1db 生成，"
+           "note": "target table（由 app/prepare_targets.py 扫描 _targets/db 生成，"
                    "含所有批次已建好的库）", "targets": {}}
     for d in sorted(DB_ROOT.glob("*-db")):
         if not (d / "codeql-database.yml").exists():
@@ -350,11 +350,11 @@ def main() -> int:
             "src": Path(os.path.relpath(src, ROOT)).as_posix(),
         }
     dst = Path(args.targets_out) if getattr(args, "targets_out", "") \
-        else (ROOT / "core" / "config" / "targets_a1.yml")
+        else (ROOT / "core" / "config" / "targets.yml")
     dst.write_text(yaml.safe_dump(tgt, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     ok = sum(1 for v in done.values() if v.get("status") == "ok")
-    log(f"\n== 备料完成：本批成功 {ok} / {len(done)}；目标表 {len(tgt['targets'])} 个 → {dst}")
+    log(f"\n== 准备完成：本批成功 {ok} / {len(done)}；目标表 {len(tgt['targets'])} 个 → {dst}")
     log(f"   日志 → {logf}")
     fh.close()
     return 0 if ok else 2

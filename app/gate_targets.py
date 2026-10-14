@@ -1,16 +1,17 @@
-"""A1 自用版入口 · 用健康门筛目标池。
+"""Screen a target pool with the health gate.
 
     python app/gate_targets.py data/target_pool/projects_profile.json [--mode alive|detect]
 
-输入：一个 {repo: {...}} 或 [repo, ...] 的池子（旧的画像文件也行）
-输出：`data/target_pool/a1_pool_<日期>.json` —— 只留过门的，并**记录每个被筛掉的原因**。
+Input: a pool shaped like {repo: {...}} or [repo, ...].
+Output: `data/target_pool/pool_<date>.json`, keeping only the targets that pass, together
+with the reason each rejected target was rejected.
 
-★ 为什么要留"被筛掉的原因"：目标池的老化是**悄悄发生**的
-  （仓库归档、作者弃坑），不记原因就看不出池子在烂。
+Keeping the reasons matters: a target pool decays quietly (repos get archived, authors
+walk away) and without the reasons you cannot see it happening.
 
-★ `--mode`（2026-10-10 加，`docs/113` §八）：
-    alive （默认）报给开发者 → 归档/长期不维护即跳过
-    detect        验证检出能力 → **不跳过归档**（目标是"里面得有真洞"）
+--mode:
+    alive  (default) reporting to maintainers -> skip archived / unmaintained repos
+    detect           measuring detection power -> do not skip archived repos
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ def _repos_from(path: Path) -> list[str]:
     if isinstance(d, dict):
         if "repos" in d and isinstance(d["repos"], dict):        # screener 的 pool.json
             return [k for k in d["repos"]]
-        if "passed" in d:                                        # 我们自己产出的 a1_pool_*.json
+        if "passed" in d:                                        # 我们自己产出的 pool_*.json
             return [x["repo"] for x in d["passed"]]
         return [k for k in d if not k.startswith("_")]
     if isinstance(d, list):
@@ -86,7 +87,7 @@ def main() -> int:
         "skipped": [{"repo": r["repo"], "reasons": r["reasons"]} for r in skipped],
         "unknown": [{"repo": r["repo"], "reasons": r["reasons"]} for r in unknown],
     }
-    dst = ROOT / "data" / "target_pool" / f"a1_pool_{datetime.now().strftime('%Y%m%d')}.json"
+    dst = ROOT / "data" / "target_pool" / f"pool_{datetime.now().strftime('%Y%m%d')}.json"
     dst.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"\n== 入场 {len(repos)} → 过门 {len(passed)}，筛掉 {len(skipped)}，未知 {len(unknown)}")

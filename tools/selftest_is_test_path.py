@@ -9,14 +9,14 @@
   后面改了逻辑想回归，**没有可对照的基准**——
   只能凭记忆重写一遍用例，那份用例就失去了意义。
 
-★ 判据类代码的所有自测都该这样：标准答案落盘、能重复跑、
-  改了判据第一件事就是跑它。
+★ 规则类代码的所有自测都该这样：标准答案落盘、能重复跑、
+  改了规则第一件事就是跑它。
 """
 
 CASES = [
     # (路径, 期望, 为什么)
     ("registry/tests/unit/middleware/test_rbac.py", True,
-     "tests 目录 + test_ 前缀 —— 10-05 核实 jarvis-registry 时看到的那批"),
+     "tests 目录 + test_ 前缀 —— 10-05 核实 sampleagent2-registry 时看到的那批"),
     ("auth-server/tests/test_auth.py", True, "tests 目录"),
     ("src/app/routers/users.py", False, "生产代码"),
     ("examples/demo_app.py", False,
@@ -38,13 +38,13 @@ CASES = [
     ("tests/e2e/test_login.py", True, "e2e 目录"),
     ("src/fixtures/data.py", True, "fixtures 目录"),
     # ---- 10-05 07:4x：包名 tests目录 vs 业务模块 tests 目录，**原理上不可分** ----
-    #   这两档的期望值 = 「我选择的口径」，不是「事实真相」。
+    #   这两档的期望值 = 「我选择的约定」，不是「事实真相」。
     #   我试过用「tests 段的上一层是不是源码根」区分，第一档就误伤了最初要修的那批
     #   （registry/tests 的上一层是 monorepo 包名，不在源码根表里）。
     #   ★ 选「一律排除」的理由：误杀不可见，多留的测试代码在 files_top 里一眼能看出。
     ("backend/api/content_planning/tests/test_data.py", True,
      "★ 已知误杀：ALwrity 真实文件，这个 'tests' 是**业务模块名**（内容策划的测试数据），"
-     "按口径仍当测试排除 → 会漏掉这一条生产代码（★ 已接受的代价）"),
+     "按约定仍当测试排除 → 会漏掉这一条生产代码（★ 已接受的代价）"),
     ("backend/api/content_planning/tests/before_after_test.py", True,
      "★ 同上，已知误杀"),
     ("backend/api/tests/test_users.py", True,
@@ -72,7 +72,7 @@ def main():
               % ("OK  " if ok else "FAIL", repr(path)[:54], exp, got, why))
     print()
     if bad:
-        print("★ %d / %d 档不通过 —— 判据坏了，别拿去过滤数据" % (len(bad), len(CASES)))
+        print("★ %d / %d 档不通过 —— 规则坏了，别拿去过滤数据" % (len(bad), len(CASES)))
         return 1
     print("全部 %d 档通过" % len(CASES))
     return 0

@@ -3,7 +3,7 @@
 输入：一条 Finding（sink 调用点 + 所在函数源码 + 调用链 + 路径上的 if）
 输出：结构化结论（危险动作 / 实参来源 / 守卫是否真实 / 判定 + 置信度 + 证据）
 
-★★ 三条铁律（照 docs/95 §十二）
+★★ 三条铁律
   ① 这是 **AI 复核**，不是人工核实。字段名一律 ai_verdict / ai_*，
      不许出现 confirmed / human-verified。
   ② LLM 只做分类，不做最终结论；**信息不足就判 needs_human**，不许硬给。
@@ -50,10 +50,10 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
     一个数据清洗模块里冒出来的 exec），那它是真问题，按前三层判。
   → by_design：yes（是设计功能）/ no（不是）/ unclear
 
-★★ scope_exceeds 的判定口径（★ 写死，按此执行，**不要每次自己重新权衡**）
+★★ scope_exceeds 的判定约定（★ 写死，按此执行，**不要每次自己重新权衡**）
    ★★ 2026-10-09 改。改的原因：原措辞是"拿不到超出范围的证据时，判 not_vuln 或 needs_human"
       —— 给了**两个**选项、又没定义"什么算证据"，实测导致同一条 finding 重复判会翻
-      （`docs/108`：8 条里 4 条不稳，`scope_exceeds` 稳定率仅 0.50）。现在收敛成唯一答案。
+      。现在收敛成唯一答案。
 
    **只看本调用点所在函数的代码**（不看别的文件、不看运行环境、不猜调用方）：
    - `yes`  ← 在本函数体内**直接看到**：不可信内容被原样交给危险动作，
@@ -95,7 +95,7 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
      · 看到的是在拦别的东西（判空 / 判环境 / 打日志）→ 不算防护
      · 确实一行针对本值的校验都没有 → guards_real 填 no
      · 它只是把值继续往下传（本函数内既无校验、也无危险动作）→ 才判 unclear
-     ★ 这段源码**不是新判据**，是把原本就在代码里的证据补给你；该判什么仍按上面的尺度。
+     ★ 这段源码**不是新规则**，是把原本就在代码里的证据补给你；该判什么仍按上面的尺度。
 
 第三层 · 守卫算不算真防护
   调用链上压着的 if：
@@ -142,16 +142,16 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
 MT_DEFAULT = 2000
 MT_BIG = 8000
 
-# ★★ 可选判据补丁（开关 AF_JUDGE_OPARG=1，**默认关**）—— docs/134 §四②
+# ★★ 可选规则补丁（开关 AF_JUDGE_OPARG=1，**默认关**）——  §四②
 #   背景：batch3 里那条唯一的 `vuln` 是误报 —— `get_document_content.py` 的
 #   `requests.get(url)`，而 `url` 来自**CLI 参数** `-u/--api-url`。跑这个 CLI 的人
 #   自己就是操作者，他本来就能访问自己的网络 —— 这不是 SSRF。
 #   根因：判定层把"程序自己的 CLI 参数"当成了不可信输入。
-#   ★ 做成**可开关**而不是直接改：改判据会同时动"稳定性"和"刻度"（docs/109），
+#   ★ 做成**可开关**而不是直接改：改规则会同时动"稳定性"和"刻度"，
 #     必须能 A/B 对照，所以默认行为一字不改。
 OPARG_BLOCK = """
 
-★★ 补充判据（本条已启用）：什么叫「不可信输入」
+★★ 补充规则（本条已启用）：什么叫「不可信输入」
   **同一个进程的操作者自己提供的输入，不算不可信输入** —— 跑这个程序的人本来就是操作者：
     · 命令行参数（sys.argv / argparse / click / typer 的选项）
     · 本进程自己的环境变量（os.environ 里项目定义的）
@@ -162,19 +162,19 @@ OPARG_BLOCK = """
   ★ 自检一句："**是谁在控制这个值？**" —— 若答案是"运行这个程序的人自己"，就不是漏洞。
 """
 
-# ★★ 可选判据补丁（开关 AF_JUDGE_REPOCFG=1，**默认关**）—— docs/146 / docs/147
-#   背景：上游单号（**外部人报的真洞**）在现有 rubric 下被判 `not_vuln`，理由是
+# ★★ 可选规则补丁（开关 AF_JUDGE_REPOCFG=1，**默认关**）——  / 
+#   背景：upstream issue（**外部人报的真洞**）在现有 rubric 下被判 `not_vuln`，理由是
 #   "base_url 来自本地 provider 配置（非 LLM/外部不可信输入）" ——
 #   ★ 判定层没错，是「配置」这个词把**两种性质相反**的东西混成了一种：
 #     · 操作者自己的配置（~/.config、自己的 CLI 参数）→ 不算不可信输入；
 #     · **随仓库一起 clone 下来的项目内配置文件**（`.sampleproj.json` 等）→
 #       控制它的是**仓库作者**，运行者只是"打开了别人的项目" → **算不可信输入**。
-#   实测（docs/147）：加上这段后，同一条从 `not_vuln` 变成 `needs_human`，且理由变成
+#   实测：加上这段后，同一条从 `not_vuln` 变成 `needs_human`，且理由变成
 #   正确的问题（"取决于该 config 来自运行者自身配置还是仓库内配置文件"）。
-#   ★ 仍做成**可开关**：改判据会同时动"刻度 + 稳定性"（docs/109），必须能 A/B。
+#   ★ 仍做成**可开关**：改规则会同时动"刻度 + 稳定性"，必须能 A/B。
 REPOCFG_BLOCK = """
 
-★★ 补充判据（本条已启用）：什么叫「来自配置」—— 分两种，可信度正好相反
+★★ 补充规则（本条已启用）：什么叫「来自配置」—— 分两种，可信度正好相反
 
   「配置」**不是一种来源**，判定时必须先分清是哪一种：
   - `operator_config`（**操作者自己的**）：`~/.config/…`、操作者自己的环境变量、
@@ -200,23 +200,22 @@ REPOCFG_BLOCK = """
 """
 
 
-# ★★ 可选判据补丁（开关 AF_JUDGE_SCOPE2=1，**默认关**）—— docs/234
-#    为什么加：docs/233 实测 37 条里 9 条结论翻转，**逐轮打标后 9/9 都由
+# ★★ 可选规则补丁（开关 AF_JUDGE_SCOPE2=1，**默认关**）—— 
+#    为什么加： 实测 37 条里 9 条结论翻转，**逐轮打标后 9/9 都由
 #    「scope_exceeds 的语义边界没被定义」引起**；维度佐证 by_design 0.973（最稳）
 #    vs scope_exceeds 0.757（明显更不稳）。
 #    本 block 只做**一件事**：定义「预期范围」这个词，并禁掉三条实测摇摆的退路。
-#    ★ 单独开关的理由：**改判据会同时动「稳定性」和「刻度」**（docs/108：判据写死让不稳
-#      从 4/8 降到 3/8，但 vuln 计数从 3 涨到 5）⇒ 必须能单独 A/B（单变量原则）。
+#    ★ 单独开关的理由：**改规则会同时动「稳定性」和「刻度」**⇒ 必须能单独 A/B（单变量原则）。
 #
 #  ★★★ 2026-10-13 20:1x **用户拍板：开启**（默认值由 "0" 改为 "1"）。
-#      依据是 docs/234 的 A/B 实测（两臂各 37 条 × 3 轮，同批样本）：
+#      依据是  的 A/B 实测（两臂各 37 条 × 3 轮，同批样本）：
 #        · 结论翻转率 **0.243 → 0.135**（近乎腰斩）
 #        · 目标维度 scope_exceeds **0.757 → 0.865**
 #        · by_design 0.973 → **1.000**
 #        · ⚠️ 代价：多数票 vuln 计数 **26 → 30**、arg_source **0.622 → 0.514**
 #      ⇒ 用户接受"尺子变严、洞变多"，换"结论更稳"。
 #      ★ 想回到旧尺子：`AF_JUDGE_SCOPE2=0` 即可（单变量可逆）。
-#      ★ 待办：`arg_source` 那一维被带坏了（0.514），**需要单独再收一次**（docs/234 §六）。
+#      ★ 待办：`arg_source` 那一维被带坏了（0.514），**需要单独再收一次**。
 SCOPE2_BLOCK = """
 
 ★★ 对上面 `scope_exceeds` 的补充定义（★ 按此执行，**不要自己重新权衡**）
@@ -240,12 +239,12 @@ SCOPE2_BLOCK = """
 """
 
 
-# ★★ 可选判据补丁（开关 AF_JUDGE_ARGSRC=1，**默认开**）—— docs/234 §二 / docs/233 §三之二
-#    为什么加：`docs/233` 实测 —— 37 条里 9 条结论翻转，**9/9 由语义歧义引起**，
+# ★★ 可选规则补丁（开关 AF_JUDGE_ARGSRC=1，**默认开**）——  §二 /  §三之二
+#    为什么加： 实测 —— 37 条里 9 条结论翻转，**9/9 由语义歧义引起**，
 #    其中**有 4 条**是 `arg_source` 在 `tool_arg` ⇄ `llm_output` 之间跳（它是五个维度里最不稳的，0.622）。
 #    开 SCOPE2 后它进一步掉到 **0.514**（成了最差的一维）⇒ **必须单独收一次**。
 #    本 block 只做两件事：① 把五个取值的边界写死；② **给"看不出"一个明确去处（unknown）**。
-#    ★ 单独开关的理由：它改的是「实参来源」这一维的口径，与 SCOPE2（范围这一维）**不是一回事**，
+#    ★ 单独开关的理由：它改的是「实参来源」这一维的约定，与 SCOPE2（范围这一维）**不是一回事**，
 #      必须能分别 A/B / 分别回退（单变量原则）。
 ARGSRC_BLOCK = """
 
@@ -261,7 +260,7 @@ ARGSRC_BLOCK = """
   当数据流**只说到 `param`**、而你看不出它究竟是"工具入参"还是"人类输入"时
   ⇒ **一律填 `unknown`**。
   ★ 不许为了"看起来更具体"而在 user_input / llm_output / tool_arg 里挑一个 ——
-    `docs/233` 实测：9 条翻转里**有 4 条**是这一维在 `tool_arg` ⇄ `llm_output` 之间跳。
+     实测：9 条翻转里**有 4 条**是这一维在 `tool_arg` ⇄ `llm_output` 之间跳。
   ★ **`unknown` 是正确答案，不是失败。**
 """
 
@@ -276,7 +275,7 @@ def rubric_text() -> str:
         rt += OPARG_BLOCK
     if os.environ.get("AF_JUDGE_REPOCFG", "0") == "1":
         rt += REPOCFG_BLOCK
-    # ★★ 默认 **"1" = 开启**（2026-10-13 用户拍板，依据 docs/234 的 A/B 实测）。
+    # ★★ 默认 **"1" = 开启**。
     #    要回到旧尺子：`AF_JUDGE_SCOPE2=0`（单变量、可逆）。
     if os.environ.get("AF_JUDGE_SCOPE2", "1") == "1":
         rt += SCOPE2_BLOCK
@@ -295,7 +294,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
     if key not in cache:
         qual, body = SC.enclosing_function(path, fd.sink_line) if path else ("", "")
         entry_body = SC.function_named(path, fd.entry) if (path and fd.entry) else ""
-        # guard 形如 "app.py#1362:8" → 取 "1362:8" 再去掉列号
+        # guard looks like "file.py:line:col" -> strip the column
         gl_nums = []
         for g in fd.guards:
             if "#" not in g:
@@ -308,7 +307,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
         # ★★ 实参来源所在函数的源码（开关 AF_JUDGE_ARGCTX，默认开）。
         #    为什么必须给：数据流会说"实参可追溯到 param `catalog` @ f.py:90"，
         #    而那个函数**不是 sink 所在函数** → 判定层看不到 → 只能说"依据在给定代码之外"。
-        #    实测（docs/113）：14/14 条 needs_human 的理由全是这一句，
+        #    实测：14/14 条 needs_human 的理由全是这一句，
         #    而真正的校验（白名单/正则）恰恰常写在那函数体内。补上它才是"补输入"。
         arg_funcs = []
         if os.environ.get("AF_JUDGE_ARGCTX", "1") != "0" and root:
@@ -331,7 +330,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
     gl = "\n".join("  " + x for x in c["guard_lines"]) or "  （未能取到守卫行）"
 
     # ★ 跨过程数据流给出的「实参来源」（开关 dataflow-argsource）。
-    #   目的：把"实参从哪来"从**要模型猜**变成**可引用的证据**（docs/108：这是最不稳的字段）。
+    #   目的：把"实参从哪来"从**要模型猜**变成**可引用的证据**。
     ds_lines = []
     for a in (getattr(fd, "arg_sources", None) or []):
         at = (a.get("arg_text") or "").replace("ControlFlowNode for ", "").strip()
@@ -356,11 +355,11 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
         af_block = ("【实参来源所在函数的源码（★ 值在这里被接住）】\n"
                     + "\n".join(chunks) + "\n\n")
 
-    # ★★ 配置来源证据（开关 AF_JUDGE_CFGSRC，默认关；docs/147 §四）
+    # ★★ 配置来源证据
     #   为什么需要：`base_url = config.get("base_url")` 这类代码，判定层判不出
     #   "这是操作者自己配的，还是随仓库 clone 下来的" —— 两者可信度正好相反。
     #   ★ 这里**只贴证据原文**（哪一行在加载项目内配置 / 哪一行在做分层合并），
-    #     **不替判定层下结论**；怎么判仍由 rubric 的尺度决定（docs/113 的教训）。
+    #     **不替判定层下结论**；怎么判仍由 rubric 的尺度决定。
     cfg_block = ""
     if os.environ.get("AF_JUDGE_CFGSRC", "0") == "1" and root:
         try:
@@ -424,7 +423,7 @@ def judge(findings: list[F.Finding], on_log=print, tag: str = "kernel_judge",
 
     ★★ votes > 1：同一条**重复判 N 次再聚合**。
        为什么需要：实测同一条 finding 在温度 0 下重复判 5 次，**8 条里 4 条结论会翻**
-       （`docs/108`）。所以单次跑的 vuln 计数**不可复现**。
+       。所以单次跑的 vuln 计数**不可复现**。
        ★ 聚合策略**不是实现细节，它直接决定报什么**：
          · 多数票 → 保守（会丢掉那些"少数票才算 vuln"的真阳）
          · 任一票 → 激进（假阳性也进来）

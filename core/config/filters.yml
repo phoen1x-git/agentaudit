@@ -1,21 +1,21 @@
 # 内核 · 路径过滤规则
 #
-# ★ 开关 path-filter：替代论文 ql/util/util.qll 的 isIncludeLocation2。
-#   论文的做法是一串【子串黑名单】：
+# ★ 开关 path-filter：替代AgentFuzz ql/util/util.qll 的 isIncludeLocation2。
+#   the baseline's approach是一串【子串黑名单】：
 #       ["test","miniconda","demo","example","qltracer","newrepo","Python39"]
-#   问题（我们自己踩过、且论文这条线同病）：
+#   问题（我们自己踩过、且AgentFuzz这条线同病）：
 #   ① 子串匹配太糙 —— "test" 会把 contest / latest / testfile 以外的一堆都误伤，
 #      也会漏掉 tests/（复数）以外的写法；
 #   ② ★ 它把"排除测试文件"这件事交给了运气 —— 我们另一条线的教训正是
-#      「判据从第一版起就没排除测试文件，97% 的 evidence 来自测试文件」。
+#      「规则从第一版起就没排除测试文件，97% 的 evidence 来自测试文件」。
 #
 # ★ 我们的改法（本轮只做到这一层，不假装更聪明）：
 #   把黑名单改成【分层规则】，并且把"测试文件"单独立成一条、默认开启、可单独关：
 #     · path_segments : 按路径【段】精确匹配（/tests/、/demo/ ...），不再子串乱伤
 #     · filename_re  : 按文件名正则（test_*.py、*_test.py、conftest.py ...）
-#     · substring   : 保留论文原来的子串黑名单（miniconda/Python39 这种环境路径仍适用）
+#     · substring   : 保留AgentFuzz原来的子串黑名单（miniconda/Python39 这种环境路径仍适用）
 #
-# ★ 说明：这一层只影响"要不要把这条结果交给人看"，不影响查询本身。关掉它 = 回到论文口径。
+# ★ 说明：这一层只影响"要不要把这条结果交给人看"，不影响查询本身。关掉它 = 回到baseline behaviour。
 
 version: 1
 updated: 2026-10-09
@@ -41,10 +41,10 @@ path_segments:
   - miniconda
   - anaconda
   # ★★ 2026-10-09 新加：**夹带 / vendored 代码**
-  #    起因：A1 第一批新目标里 sampleservice 报的 20 条几乎全在
+  #    起因：第一批新目标里 sampleservice 报的 20 条几乎全在
   #    `backend/builtin_skills/{pptx,xlsx,docx}/scripts/office/...` ——
   #    那是仓库里**夹带的第三方"技能"脚本副本**，不是项目自己的攻击面。
-  #    论文的黑名单只有 test/miniconda/demo…，**没有这一类**。
+  #    the baseline blacklist只有 test/miniconda/demo…，**没有这一类**。
   #    ⚠️ 注意：不排 "skills" / "scripts" 这种泛词（会把项目自己的代码也排掉），
   #       只排明确的"夹带"标记。
   - builtin_skills
@@ -63,7 +63,7 @@ filename_re:
   - "^tests?\\.py$"
   - "^setup\\.py$"          # 安装脚本，不是业务逻辑
 
-# 论文原样的子串黑名单（保留，作为环境路径兜底）
+# AgentFuzz baseline的子串黑名单（保留，作为环境路径兜底）
 substrings:
   - miniconda
   - Python39

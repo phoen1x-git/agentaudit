@@ -1,4 +1,4 @@
-"""探 PyPI 某个版本的发包体积（给"按包建靶"路线用）。
+"""探 PyPI 某个版本的发包体积（给"按包建目标"路线用）。
 
     python tools/pypi_probe.py sample-index==0.10.37 samplebi==0.3.4
 

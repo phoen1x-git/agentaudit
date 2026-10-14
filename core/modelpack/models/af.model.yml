@@ -23,7 +23,7 @@
 #  ⚠️ 一次批量试了 anthropic / google / langchain 的 8 种候选写法，**在 sampletoolkit db 上都未命中**
 #     —— 可能是那些库在 sampletoolkit 里的调用形态不同（未逐个排查）。**填之前必须在真靶 db 上验。**
 #
-# ══ 三、★★ 但现在写了还"吃不到"（重要，见 docs/212 §2.4c）══════════════
+# ══ 三、★★ 但现在写了还"吃不到"══════════════
 #  · `summaryModel` → 可能自动生效（我们的 `TaintTracking::Global` 吃框架 summary）。**未验证**。
 #  · `sourceModel` / `sinkModel` → ★ **不会自动生效**：`core/gen_ql.py` 的
 #    `srcKindCfg` / `isSinkArgCfg` 是**自定义谓词，不读 MaD**。

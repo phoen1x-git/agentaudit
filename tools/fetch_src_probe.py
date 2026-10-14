@@ -6,7 +6,7 @@
 
 背景与踩坑（2026-10-04）
 -----------------------
-要让判据落到源码上，第一反应是 `git clone`。实测在这台机器上：
+要让规则落到源码上，第一反应是 `git clone`。实测在这台机器上：
 
     git clone → CONNECT tunnel failed, response 502   （8/8 全失败）
     git 不用代理 → Could not connect to server:443
@@ -23,10 +23,10 @@
     按需取关键文件        → 每目标约 3~5 次请求，core 额度 60/小时 够用
 
 ★ **所以这个探针给的是「抽样证据」，不是全量覆盖。**
-  报告里必须按抽样口径写，不能说「已扫描全部源码」。
+  报告里必须按抽样约定写，不能说「已扫描全部源码」。
   （这是我把它叫 probe 而不是 scanner 的原因 —— 探针本来就是抽样的。）
 
-判据与 probe_attack_surface.py 相同，但只作用于取到的文件。
+规则与 probe_attack_surface.py 相同，但只作用于取到的文件。
 """
 
 import json
@@ -159,7 +159,7 @@ def pick_key_files(paths, max_files=40):
       → 教训：**抽样会漏掉最关键的文件**，而漏掉的位置是系统性的
         （不是随机漏，是「名字不告诉你它重要」的那些全漏）。
       所以：① 给「可能被漏」的路径兜底保底名额
-            ② 把抽样比例与口径都写进报告，不假装是全量。
+            ② 把抽样比例与约定都写进报告，不假装是全量。
     """
     py = [p for p in paths if p.endswith(".py")]
 
@@ -290,7 +290,7 @@ def probe_remote(full_name, branch, max_files=None, verbose=True):
         txt = api_raw(full_name, p, branch, "f__%s__%s" % (full_name, p))
         if not txt:
             continue
-        # ★ 配置类文件也存下来（summarize 会对文本跑判据，toml 无命中，无害），
+        # ★ 配置类文件也存下来（summarize 会对文本跑规则，toml 无命中，无害），
         #   这样报告里能看到"取到了哪些文件"
         files[p] = txt
         if verbose and i % 10 == 0:
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         sys.exit(1)
     print("\n文件 %d 个（抽样 %d / 共 %d 个py）"
           % (r["fetched_files"], r["sampled_files"], r["total_py_files"]))
-    print("覆盖口径：%s" % r["coverage_note"])
+    print("覆盖约定：%s" % r["coverage_note"])
     for k, label in [("has_http_endpoint", "HTTP端点"),
                      ("has_mcp_server", "MCP服务"),
                      ("has_tool_registration", "工具注册"),

@@ -1,22 +1,21 @@
 # -*- coding: utf-8 -*-
-"""内核 · 第 9 条判据（duality）：「同一函数里两种等价写法并存」
+"""内核 · 第 9 条规则（duality）：「同一函数里两种等价写法并存」
 
-★ 从 `tools/criterion9_duality.py` 接回主判据（docs/134 §四 ①）。
-  `docs/94 §3` 白纸黑字：产出那 4 份报告的是 crit9/10/11 —— 重建流水线时
-  我们把它丢在了支线，这里拿回来。
+★ The standalone runner lives in `tools/duality_scan.py`.
+  ` The strong/weak-form checks used to live outside the pipeline; this module brings them back in.
 
 ★ 它是**候选生成器**，不是判定器：
   「同一个函数里，强写法（参数化 / literal_eval / basename…）与弱写法
    （f-string 拼接 / eval / 直接 join…）同时出现」→ 弱的那处可疑。
-  真正的判定仍归 LLM 判定层（四层判据）。
+  真正的判定仍归 LLM 判定层（四层规则）。
 
-★★ 新增「常量 / 净化过滤」（docs/134 §四 ②）：
-  实测 crit9 在新靶上报的 12 处**全是误报**，原因**完全一致**：
+★★ 新增「常量 / 净化过滤」：
+  measured on new targets, the 12 hits reported**全是误报**，原因**完全一致**：
   被内插的值要么是**常量**（`__init__` 里的表名字面量），要么**已被上游净化**
-  （`re.sub("[^A-Za-z0-9_-]", "_", x)`）。crit9 只看「局部写法不一致」，
+  （`re.sub("[^A-Za-z0-9_-]", "_", x)`）。it only looks at local inconsistency，
   不看那个值是什么 —— 这里补上：解析弱写法里的实参，能证成「常量/净化返回值」→ 丢掉。
 
-★ 实现说明：判定**直接在 AST 上做**（不是像老 crit9 那样在 unparse 后的行上正则）——
+★ 实现说明：判定**直接在 AST 上做**(not by regex on unparsed lines, as the older script did)——
   因为多行调用（`execute(\n "...",\n params)`）在源码里跨行，行正则匹配不到强写法。
 """
 from __future__ import annotations
@@ -249,7 +248,7 @@ def classify_suspects(suspects, fn, tree) -> str | None:
     return None
 
 
-# ★★ 「SDK 客户端构造参数」这一类 —— 补的是**已知真值自测暴露的缺口**（`docs/135`）：
+# ★★ 「SDK 客户端构造参数」这一类 —— 补的是**已知真值自测暴露的缺口**：
 #   SampleSDK 那条真漏洞是 `AsyncOpenAI(api_key=…, base_url=<请求头>)` —— SSRF **发生在客户端构造**
 #   而不是 `requests.get(url)`，所以 sink 表（按调用名匹配）**天生认不出它**。
 #   这里用 AST 判：**任何带 base_url / api_base 关键字实参、且该值不是常量**的调用 → 候选。
@@ -302,7 +301,7 @@ def scan_file(_path: str, src: str) -> list[dict]:
         #   ★★ 默认**关**（`AF_DUALITY_SDK=1` 才开）：实测全语料会加 **297 条** ——
         #     因为"自定义 base_url"在 LLM 框架里极其常见（本地模型/代理），绝大多数是正常配置。
         #     它只在"base_url 来自不可信来源（请求头/LLM 产出）"时才是洞 —— 那要交给
-        #     实参来源（dataflow）+ 判定层，不能靠"非常量"一刀切。见 docs/135。
+        #     实参来源（dataflow）+ 判定层，不能靠"非常量"一刀切。见 。
         if os.environ.get("AF_DUALITY_SDK", "0") == "1":
             for ln, kwn in _client_base_hits(fn, tree, mod):
                 if ln in seen_ln:

@@ -5,14 +5,14 @@
 ----
 第 7 种写法（`别名 = Annotated[..., Depends(...)]`）的机制早就有了 ——
 `_find_inconsistent_auth` 一直在用。但**`unauth_endpoint` 没接**，
-于是同一个别名在一条判据里被认得出来、在另一条里认不出 → 自相矛盾。
+于是同一个别名在一条规则里被认得出来、在另一条里认不出 → 自相矛盾。
 
 实测代价（`measure_crossfile_alias.py` 量29 个项目）：
-  · trinity 16 处（占它 64 处基数的 25%）
-  · jarvis-registry 7 处（`type CurrentUser = ...`，PEP 695 语法）
-  rhesis 7 处大驼峰别名，0 处用到 → 那边无需动。
+  · sampleagent 16 处（占它 64 处基数的 25%）
+  · sampleagent2-registry 7 处（`type CurrentUser = ...`，PEP 695 语法）
+  sample 7 处大驼峰别名，0 处用到 → 那边无需动。
 
-真实形态（trinity / jarvis）
+真实形态（sampleagent / sampleagent2）
 ----------------------------
     # src/backend/dependencies.py
     AuthorizedAgentByName = Annotated[str, Depends(get_authorized_agent_by_name)]
@@ -22,7 +22,7 @@
     @router.get("/{agent_name}/terminal")
     async def terminal(agent_name: AuthorizedAgentByName, ...): ...
 
-★★ 防线：两条判据必须同步。少接一条就制造自相矛盾，
+★★ 防线：两条规则必须同步。少接一条就制造自相矛盾，
    而自相矛盾意味着**两个数字都不能信**。
 """
 import io
@@ -97,7 +97,7 @@ def routes_hit(res):
 
 
 # ---------------------------------------------------------------- 1
-print("\n=== 1. 经典 Annotated 别名（trinity 形态）===")
+print("\n=== 1. 经典 Annotated 别名（sampleagent 形态）===")
 res = run({"dependencies.py": DEPS, "routers/agents.py": ROUTES})
 got = routes_hit(res)
 check("1.1 用 CurrentUser 的 /secure 不报", "/secure" not in got, "报了")
@@ -109,7 +109,7 @@ check("1.4 只报1 处", res["unauth_endpoint"]["n_hits"] == 1,
       "报了 %d 处" % res["unauth_endpoint"]["n_hits"])
 
 # ---------------------------------------------------------------- 2
-print("\n=== 2. PEP 695 `type X = ...`（jarvis 形态）===")
+print("\n=== 2. PEP 695 `type X = ...`（sampleagent2 形态）===")
 res2 = run({"auth/dependencies.py": DEP695,
             "api/routes.py": ROUTES.replace("from dependencies import",
                                              "from auth.dependencies import")})
@@ -141,7 +141,7 @@ check("2.4 不含鉴权词根的别名 SessionCtx 也能认出来（真靠别名
       "报了 → 说明只靠 AUTH_HINT 认 Alias 名字里的词根")
 
 # ---------------------------------------------------------------- 3
-print("\n=== 3. ★ 两条判据必须同步（不自相矛盾）===")
+print("\n=== 3. ★ 两条规则必须同步（不自相矛盾）===")
 # 同一个项目里：别名端点 + 无别名端点
 res3 = run({"dependencies.py": DEPS, "routers/agents.py": ROUTES})
 ua = res3["unauth_endpoint"]["n_hits"]

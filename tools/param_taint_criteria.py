@@ -1,6 +1,6 @@
-"""② 新判据：**参数贯通性**（从"入口能到"到"参数真能带着 payload 到 sink"）。
+"""② 新规则：**参数贯通性**（从"入口能到"到"参数真能带着 payload 到 sink"）。
 
-★★ 为什么要加这一条（`docs/237` §四 与 2026-10-14 的两条实测）：
+★★ 为什么要加这一条：
 
   `find_entries_for_suspects.py` 只回答「**sink 所在函数有没有挂暴露标记的调用方**」——
   也就是「**入口能到**」。但它**没回答后半句**：
@@ -9,7 +9,7 @@
 
   2026-10-14 逐字复核两条候选，**两条都是误报、但根因不同**：
 
-  | 靶 | sink | 误报根因 | 本工具应给什么判决 |
+  | 目标 | sink | 误报根因 | 本工具应给什么判决 |
   |---|---|---|---|
   | sampletoolkit `open_api_toolkit.py` | `os.path.join` | `api_name` 是**从本地目录枚举出来的**（不是入参） | **本地生成** |
   | sampleassistant_ai `commodity_information.py` | `eval` | 参数**确实是工具入参**，但 `get_optional_fields()` 声明了 `Validator`，分发器 `execute_tool` 在 `execute()` **之前强制校验**（实测 payload 被降级成 `None`） | **有校验** |
@@ -448,7 +448,7 @@ def _selftest() -> int:
         ("sampleassistant_ai", "skills/uexcorp/uexcorp/tool/commodity_information.py", 104, "eval", "有校验"),
     ]
     print("=" * 78)
-    print("② 参数贯通性判据 · 自测（对着 2026-10-14 的两条已知案例）")
+    print("② 参数贯通性规则 · 自测（对着 2026-10-14 的两条已知案例）")
     print("=" * 78)
     ok = 0
     for proj, f, ln, sink, exp in cases:
@@ -504,7 +504,7 @@ def main() -> int:
     thru = [x for x in results if x["verdict"] == "直通"]
     thru_conf = [x for x in thru if x.get("callers")]
 
-    L = ["# ② 参数贯通性判据 · 探测结果\n",
+    L = ["# ② 参数贯通性规则 · 探测结果\n",
          "> ★ 零成本（纯 AST）。回答的问题是：**sink 的实参追不追得到形参，中间有没有校验**。",
          "> ★ 三档：`本地生成`（排除）/ `有校验`（排除）/ `直通`（**保留**）。",
          "> ⚠️ `直通` 只是**必要条件**（形参未被约束），**不等于「外面真能控制」** —— 还要经调用方确认。\n",
@@ -516,7 +516,7 @@ def main() -> int:
          f"- 不确定（源码缺 / 解析失败 / 追溯复杂）：**{cnt.get('不确定', 0)}**",
          f"- ★★ **合计排除**（本地生成 + 有校验）：**{cnt.get('本地生成', 0) + cnt.get('有校验', 0)}**"
          f" 条 = {100 * (cnt.get('本地生成', 0) + cnt.get('有校验', 0)) / max(len(results), 1):.0f}% 的候选**在花钱之前就被排掉**\n",
-         "## 分靶\n", "| 靶 | 直通 | 本地生成 | 有校验 | 不确定 | 合计 |", "|---|---|---|---|---|---|"]
+         "## 分目标\n", "| 目标 | 直通 | 本地生成 | 有校验 | 不确定 | 合计 |", "|---|---|---|---|---|---|"]
     for p, c in sorted(by_proj.items(), key=lambda kv: -sum(kv[1].values())):
         tot = sum(c.values())
         L.append(f"| {p} | **{c.get('直通', 0)}** | {c.get('本地生成', 0)} | "

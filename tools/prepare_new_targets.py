@@ -1,4 +1,4 @@
-"""把 `screened.json` 里 **passed_L2=True** 的那批新靶：**下载 → 建库**（边下边建）。
+"""把 `screened.json` 里 **passed_L2=True** 的那批新目标：**下载 → 建库**（边下边建）。
 
 ★★ 三条设计约束（都是踩过的坑逼出来的）：
 
@@ -12,7 +12,7 @@
    本项目实测：`run_in_background` 的子进程**会在"回合结束"时被杀**。
    ⇒ 所以：① 每建完一个库**立刻写一次报告**；② 重启时**已有库直接跳过**。
 
-3. **磁盘护栏** —— 97 个靶，剩余空间有限；低于 10GB 就**停下报数**，不赌。
+3. **磁盘护栏** —— 97 个目标，剩余空间有限；低于 10GB 就**停下报数**，不赌。
 
 用法：
     python tools/prepare_new_targets.py --status          # 只看还差多少
@@ -35,10 +35,10 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import fetch_target_sources as F  # noqa: E402  复用 fetch_tarball / count_py
 
-HOME = os.path.dirname(ROOT)                                  # 工作区根（项目目录的上一级）
-SRC = os.path.join(HOME, "_targets", "tp2x_src")
-DB = os.path.join(HOME, "_targets", "tp2x_db")
-CODEQL = os.path.join(HOME, "_tools", "codeql", "codeql.exe")
+HOME = os.path.dirname(ROOT)                                  # parent of the project (used for disk checks)
+SRC = os.environ.get("AF_SRC_DIR") or os.path.join(ROOT, "_targets", "src")
+DB = os.environ.get("AF_DB_DIR") or os.path.join(ROOT, "_targets", "db")
+CODEQL = os.environ.get("AF_CODEQL") or os.path.join(ROOT, "_tools", "codeql", "codeql.exe")
 SCREENED = os.path.join(ROOT, "data", "target_pool", "screened.json")
 REPORT = os.path.join(ROOT, "data", "target_pool", "new_targets_prepare_report.json")
 
@@ -81,8 +81,8 @@ def load_report() -> dict:
             return json.load(open(REPORT, encoding="utf-8"))
         except Exception:
             pass
-    return {"_meta": {"purpose": "新靶备料（下载+建库），可断点续跑",
-                      "rule": "判据是 .py 数与 db 大小，不是命令返回值"},
+    return {"_meta": {"purpose": "新目标准备（下载+建库），可断点续跑",
+                      "rule": "规则是 .py 数与 db 大小，不是命令返回值"},
             "results": []}
 
 
@@ -137,7 +137,7 @@ def main() -> int:
     if a.limit:
         pending = pending[:a.limit]
 
-    print(f"★ 目标靶 {len(tg)} 个 ｜ 已完成 {len(done)} 个 ｜ 本次待处理 {len(pending)} 个")
+    print(f"★ 目标目标 {len(tg)} 个 ｜ 已完成 {len(done)} 个 ｜ 本次待处理 {len(pending)} 个")
     print(f"  磁盘剩余 {free_gb():.1f} GB（护栏 {MIN_FREE_GB} GB）")
     if a.status:
         for t in pending[:30]:

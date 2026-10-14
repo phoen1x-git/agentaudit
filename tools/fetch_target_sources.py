@@ -1,12 +1,12 @@
-"""批量**只下载**靶源码（不建库）—— 给"大量扩充靶子"用。
+"""批量**只下载**目标源码（不建库）—— 给"大量扩充目标子"用。
 
 ★ 为什么不直接用 `tools/prepare_tp2x_targets.py`：
-  那个脚本的最后一步是 `codeql database create`，**每个靶要好几分钟**，
+  那个脚本的最后一步是 `codeql database create`，**每个目标要好几分钟**，
   会把"下载"这一步拖成十几倍。★ 用户要的是"**先下载**" ⇒ 下载与建库要分开。
 
 ★ 踩过的坑（来自 prepare_tp2x_targets 的 docstring，这里沿用）：
   · `git clone` 会**静默失败**（返回 0 但目录是空的 / 被 export-ignore 掏空）
-  ⇒ **判据必须是数字**：数 `.py` 文件个数，不能看返回码。
+  ⇒ **规则必须是数字**：数 `.py` 文件个数，不能看返回码。
   · ★ **串行，绝不并发** —— 并发会静默失败。
 
 用法：
@@ -60,7 +60,7 @@ _BRANCHES = ("main", "master")
 def fetch_tarball(repo: str, dest: str, timeout: int = 600) -> tuple[bool, str]:
     """把 repo 的默认分支 tarball 下下来并解压到 dest。返回 (成功?, 说明)。
 
-    ★ 判据是**解压后数 .py 的个数**，不是"HTTP 200"——因为 200 也可能是个空壳（export-ignore）。
+    ★ 规则是**解压后数 .py 的个数**，不是"HTTP 200"——因为 200 也可能是个空壳（export-ignore）。
     """
     last = ""
     for br in _BRANCHES:
@@ -81,7 +81,7 @@ def fetch_tarball(repo: str, dest: str, timeout: int = 600) -> tuple[bool, str]:
                 # ★★★ 2026-10-14 提速关键：**只解压需要的文件**。
                 #   实测慢在哪：`extractall` 在 Windows 上解**大量小文件**极慢
                 #   （500 秒只处理了 1 个仓库）。而我们要的只是**能扫的源码**。
-                #   ⇒ 只挑 `.py` + 少量配置文件/README（判据要看依赖与说明），其它全丢。
+                #   ⇒ 只挑 `.py` + 少量配置文件/README（规则要看依赖与说明），其它全丢。
                 #   ★ 这不会影响扫描：CodeQL 只分析 .py。
                 KEEP_EXT = (".py", ".pyi", ".cfg", ".toml", ".ini", ".yaml", ".yml")
                 KEEP_NAME = ("requirements.txt", "README.md", "README.rst", "pyproject.toml")

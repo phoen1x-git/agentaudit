@@ -1,28 +1,28 @@
-# 内核 · 危险函数清单（sink registry）
+# Danger-call registry (sink registry).
 #
-# ★★ 2026-10-09 起它**不再只是文档**：`core/gen_ql.py` 会把它生成成 QL 代码。
-#    生成规则（这就是"开关 sink-registry"的实现）：
-#      is_sink(cn) = is_sink_paper(cn)        ← 论文原封不动那套（基线）
-#                    or is_sink_config(cn)    ← 本文件里 source=extra 的条目
-#    → ★ 只要 extra 为空，结果**必须与论文原版完全一致**
-#      （这是"开关可信"的前提，要回归核对，见 docs/104）
+# `core/gen_ql.py` turns this file into CodeQL queries:
+#     is_sink(call) = is_sink_paper(call)   # the baseline set
+#                   or is_sink_config(call) # entries below with source: extra
+# With no `extra` entries the generated queries are byte-compatible with the baseline,
+# which is what makes single-variable experiments possible.
 #
-# ★ 为什么要分 source：
-#   paper：从论文 ql/call/call.qll::is_sink 人工转写的清单（留档；**不参与生成**——
-#          论文那套里不少条目要"追定义点/类型"才能判，机械转写会走样）
-#   extra：我们自己**额外加**的（★ 只动这一段，才能做单变量实验）
-#
-# 字段：
-#   cls   : direct（按名字就能判）| structural（要追定义点，本轮不支持生成）
-#   obj   : 对象名；填 "*" 表示**任意对象**（★ 会很吵，慎用）
-#   func  : 方法名
-#   name  : 裸函数名（如 eval / exec）
+# Fields
+#   source     paper  -> baseline set (kept for reference, not generated)
+#              extra  -> everything added on top; this is the only part that changes results
+#   cls        direct     -> matchable by name alone
+#              structural -> requires chasing a definition site (not generated yet)
+#   obj        object name; "*" means any object (noisy, use sparingly)
+#   obj2       two-level attribute, e.g. `os.path` in `os.path.join(...)`
+#   obj_suffix object name must end with this string
+#   func       method name
+#   name       bare function name, e.g. `eval`
+#   group      switch group; disabled unless AF_SINKS_<GROUP>=1
 
 version: 2
-updated: 2026-10-09
+updated: 2026-10-14
 
 sinks:
-  # ---------- 论文原样（留档，不参与生成）----------
+  # ---------- baseline set (reference only; not generated) ----------
   - {id: subprocess.run,    source: paper, cls: direct, obj: subprocess, func: run}
   - {id: subprocess.Popen,  source: paper, cls: direct, obj: subprocess, func: Popen}
   - {id: os.system,         source: paper, cls: direct, obj: os,         func: system}
@@ -33,40 +33,23 @@ sinks:
   - {id: eval,              source: paper, cls: direct, name: eval}
   - {id: exec,              source: paper, cls: direct, name: exec}
   - {id: session.execute,   source: paper, cls: direct, obj: "*", func: execute,
-     note: 论文里是 print_function 匹配 %session.execute / connection.execute}
+     note: matches any object's .execute(...) }
 
-  # ---------- ★ 我们额外加的（参与生成；单变量实验只动这一段）----------
-  # ★★ 加它的直接理由（docs/103）：公告 <公开公告号> 指向 samplebi
-  #    `src/samplebi/legacy/google/bigquery_vector.py` 的 remove_training_data，
-  #    代码是  f"DELETE FROM ... WHERE id = '{id}'"  然后 self.conn.query(query)，
-  #    而论文清单里**没有 `conn.query(...)`** → 那个函数没被判成 Source，
-  #    连候选都不产生 → 精确召回 0/1。
-  #
-  # ⚠️ 实测代价（docs/104）：`obj: "*"` 版本**极度吵闹** ——
-  #    samplebi 57→97（+70%），samplewebapp 5→220（44×），
-  #    因为 `query` 同时撞上 SQLAlchemy ORM 的 `session.query(Model)` 与
-  #    向量库的 `collection.query(...)`，这些都不是 SQL。
-  #
-  # ★★ 收窄（docs/105）：只认**对象名以 `conn` 结尾**的 `.query(...)`。
-  #    一条规则同时覆盖 `conn.query(sql)` 与 `self.conn.query(sql)`，
-  #    两处都真的是「把 SQL 串交给 DB 客户端执行」；
-  #    而 `db.query` / `_session.query` / `sql_collection.query` / `Index.query`
-  #    全部被排除。这是"用结构（接收者名）而不是泛化的方法名"来定义 sink。
-
+  # ---------- database clients ----------
+  # Some DB clients expose .query(...) rather than .execute(...). Matching on the generic
+  # method name alone is far too noisy (an ORM's `.query(Model)` is not SQL), so the rule
+  # keys on the receiver name instead: only objects whose name ends in `conn`.
   - id: conn-query
     source: extra
     cls: direct
     obj_suffix: conn
     func: query
-    note: 对象名以 conn 结尾的 .query(...)（samplebi BigQuery/ClickHouse/DuckDB 客户端写法）
+    note: ".query(...) on any object whose name ends with `conn`"
 
-  # ---------- ★ 文件 I/O 类（开关 AF_SINKS_FS=1，**默认关**）----------
-  # 依据 `docs/136`：TaintP2X（Apache 2.0）的 ground truth 四类里就有「**任意文件读写**」，
-  #   而我们现在 `sinks.yml` **一条文件操作都没有** → 这一整类是零召回。
-  # ★ 只取**模块级对象名**能精确匹配的（os./shutil./tempfile.）——
-  #   `pathlib.Path` 是实例方法（`p.unlink()` 接收者是变量），本引擎按接收者名匹配，
-  #   覆盖不了，硬加会用 `obj:*` 变吵（`docs/104` 的教训）。→ 暂不加 pathlib 实例方法。
-  # ⚠️ 有意**不加裸 `open`**：它出现频率太高，会淹没候选。
+  # ---------- file I/O (switch AF_SINKS_FS=1, off by default) ----------
+  # Only module-level receivers that match exactly. pathlib's Path methods take a variable
+  # receiver and cannot be matched by receiver name here, so they are deliberately absent.
+  # Bare `open` is also absent on purpose: it is too common and drowns the candidate list.
   - {id: os.remove,   source: extra, group: fs, cls: direct, obj: os,     func: remove}
   - {id: os.unlink,   source: extra, group: fs, cls: direct, obj: os,     func: unlink}
   - {id: os.rename,   source: extra, group: fs, cls: direct, obj: os,     func: rename}
@@ -86,55 +69,31 @@ sinks:
   - {id: shutil.copytree, source: extra, group: fs, cls: direct, obj: shutil, func: copytree}
   - {id: shutil.move,     source: extra, group: fs, cls: direct, obj: shutil, func: move}
   - {id: shutil.rmtree,   source: extra, group: fs, cls: direct, obj: shutil, func: rmtree}
-  # ★★★ 2026-10-12 单变量实验：**加回裸 `open`** —— 结论：**实测无收益，默认不开**
-  #   动机：TaintP2X 210 正例里 File_Operation 72 条，其中 **`open` 一个名字占 61 次（85%）**，
-  #         而我们主动排除了它（理由："频率太高会淹没候选"）—— 这个取舍从没被量化过。
-  #   A/B（phidata + raggym，带判定层，`out/round-tp2xfsj`）：
-  #     · 候选数      39 → **58（+49%）**    （akinterp 49→148，RAG-Gym 9→20）
-  #     · 正例命中    6.2% → **6.2%（+0）**  ← ★ 一点没涨
-  #     · 负例命中    0.0% → **26.3%**       ← ★ 假阳暴增
-  #     · 净分辨力    +6.2pt → **−20.1pt**   ← ★ 变差
-  #   → ★★ **按「Y 不升就回滚」的判据，这三条应当回滚。** 保留在此只为留档：
-  #     **默认关，除非将来有别的靶证明它能提召回。**（细节见 `docs/175` §3.5）
+  # Bare `open` was added back as an A/B experiment and removed again: it raised candidates
+  # by ~49% and false positives from 0% to ~26% while true positives did not move at all.
+  # It stays gated behind the `fs` group, so it is off unless AF_SINKS_FS=1 and the
+  # experiment above has not been shown to pay off.
   - {id: open,  source: extra, group: fs, cls: direct, name: open}
-  - {id: save_to_file,   source: extra, group: fs, cls: direct, name: save_to_file}
+  - {id: save_to_file,     source: extra, group: fs, cls: direct, name: save_to_file}
   - {id: write_to_storage, source: extra, group: fs, cls: direct, name: write_to_storage}
+  # `urllib.request.urlretrieve` needs the two-level form: a `obj: urllib.request` entry
+  # never matched, because the receiver string for that expression is "Attribute".
   - {id: urllib.urlretrieve, source: extra, group: fs, cls: direct, obj2: urllib.request,
      func: urlretrieve}
-  # ★ 上面这条原来写的是 `obj: urllib.request` —— **从来没生效过**（同 os.path 的坑，见 docs/150）。
-  #   对 `urllib.request.urlretrieve(...)`，`getObject().getNode().toString()` 给的是 "Attribute"。
-  #   改成 obj2（两层属性）后才真的匹配。
-  # ---------- ★ 路径**构造**类（开关 AF_SINKS_FS=1，默认关）----------
-  # 依据（2026-10-11，外部真值 samplebot 上游单号 路径遍历漏检）：
-  #   `config.py:111  filename = os.path.join(CONFIG_DIR, f'{user_id}.json')`
-  #   报告点名这条，我们**零命中**。根因：上面的 fs 组全是**对路径做操作**
-  #   （remove/mkdir/move…），而**路径穿越的缺陷在"怎么拼路径"这一步** →
-  #   `os.path.join` 不在 sink 表里，整类**零覆盖**。
-  # ★★ 并且：`obj: os.path` **根本匹配不上**（实测，见 docs/150）——
-  #   对 `os.path.join(...)`，`getObject().getNode().toString()` 给出的是**类名 "Attribute"**，
-  #   不是 "os.path"（同 gen_ql.py:80 记的 `self.X` 陷阱）。实测三行输出：
-  #     config.py:111  toString=[Attribute]  attrName=[path]
-  #   可用钩子是 `getObject().(AttrNode).getNode().getName()` = "path"（内层属性名）。
-  #   → 用 obj2 表达「两层属性」（见 gen_ql.py 的 `obj2` 实现），形如
-  #     `.join(...)` 且 外层对象是 `.path` 且 它的对象是 `os`。
-  # ★ 语义上它是**构造器**而非执行器：单独看无害，凡拼接就报 → 一定会吵。
-  #   按 docs/104 的规矩：默认关、只看「加了能不能命中真值 + 噪声涨多少」。
-  # ★★ group 用 **path**（不是 fs）：实测（docs/150 §4.5）obj2 自身只 +3/+0/+0/+2 条噪声，
-  #   而整个 fs 组 +44 → **两者解耦**，这样"要路径遍历检测"不必连带打开 14 条高噪声 fs 操作 sink。
-  #   开关：`AF_SINKS_PATH=1`（gen_ql 的 _GROUP_ENV 会兜底映射为 AF_SINKS_PATH）。
+
+  # ---------- path construction (switch AF_SINKS_PATH=1, off by default) ----------
+  # Path traversal lives in how a path is *built*, not in what is done with it afterwards,
+  # so `os.path.join` has to be treated as a sink or the whole class is invisible.
+  # It is a constructor rather than an executor, so on its own it reports a lot:
+  # group `path` is deliberately separate from `fs` so the two can be enabled independently.
   - {id: os.path.join,    source: extra, group: path, cls: direct, obj2: os.path, func: join}
   - {id: os.path.abspath, source: extra, group: path, cls: direct, obj2: os.path, func: abspath}
 
-  # ---------- ★ httpx / aiohttp 类（开关 AF_SINKS_HTTP=1，**默认关**）----------
-  # 依据（2026-10-11，扩真值来源时实测）：现代 LLM/Agent 栈**已从 requests 迁到 httpx**——
-  #   litellm 485 个文件用 httpx、fastmcp 58、pydantic-ai 31、lfx 31。
-  #   而 `is_sink_paper` 只认 `requests.get/post/request` 与一条很窄的
-  #   「参数注解为 httpx.%Client 的 .request(...)」→ **httpx 模块级调用零覆盖**。
-  #   ★ 已知真值实证：fastmcp `utilities/openapi/director.py`（GHSA SSRF, CRITICAL）用的就是
-  #     `httpx.Request(...)` / httpx 客户端 → 我们扫过 fastmcp 但**没命中**（n_hit=0）。
-  #     pydantic-ai `_ssrf.py`（CVE-2026-25580 SSRF）同理。
-  # ⚠️ 这是**召回补丁**，一定会吵（每加一类 sink 候选都涨）；按 docs/104 的规矩，
-  #    加完必须量「召回 delta / 噪声 delta」两个数，且默认关。
+  # ---------- httpx / aiohttp (switch AF_SINKS_HTTP=1, off by default) ----------
+  # Modern LLM/agent stacks have largely moved from `requests` to `httpx`, while the
+  # baseline set only knows requests.*. Module-level httpx calls are therefore uncovered
+  # unless this group is on. `httpx.Request(...)` is included because that is where the URL
+  # is assembled, which is the actual source for SSRF.
   - {id: httpx.get,     source: extra, group: http, cls: direct, obj: httpx,  func: get}
   - {id: httpx.post,    source: extra, group: http, cls: direct, obj: httpx,  func: post}
   - {id: httpx.put,     source: extra, group: http, cls: direct, obj: httpx,  func: put}
@@ -143,30 +102,18 @@ sinks:
   - {id: httpx.head,    source: extra, group: http, cls: direct, obj: httpx,  func: head}
   - {id: httpx.request, source: extra, group: http, cls: direct, obj: httpx,  func: request}
   - {id: httpx.stream,  source: extra, group: http, cls: direct, obj: httpx,  func: stream}
-  # ★ `httpx.Request(...)`（大写 = 构造请求对象，URL 在此处拼装）—— fastmcp SSRF
-  #   (GHSA, CRITICAL) 的公告点名的就是 `director.py:71 return httpx.Request(url=url)`。
-  #   它是"URL 组装点"，正是 SSRF 的源头，必须算 sink（否则从 URL 到发送整条链看不到）。
   - {id: httpx.Request, source: extra, group: http, cls: direct, obj: httpx,  func: Request}
-  # ★ httpx 传输层（真正的发送在 transport 里）
-  - {id: httpx.HTTPTransport,       source: extra, group: http, cls: direct, obj: httpx, func: HTTPTransport}
-  - {id: httpx.AsyncHTTPTransport,  source: extra, group: http, cls: direct, obj: httpx, func: AsyncHTTPTransport}
-  - {id: httpx.Client,  source: extra, group: http, cls: direct, obj: httpx,  func: Client}
+  - {id: httpx.HTTPTransport,      source: extra, group: http, cls: direct, obj: httpx, func: HTTPTransport}
+  - {id: httpx.AsyncHTTPTransport, source: extra, group: http, cls: direct, obj: httpx, func: AsyncHTTPTransport}
+  - {id: httpx.Client,      source: extra, group: http, cls: direct, obj: httpx, func: Client}
   - {id: httpx.AsyncClient, source: extra, group: http, cls: direct, obj: httpx, func: AsyncClient}
 
-  # ---------- ★ 动态导入 / 动态分派类（开关 AF_SINKS_DYNIMP=1，**默认关**）----------
-  # 依据（2026-10-12）：TaintP2X 的 100% 射程内靶 **vibe-coding-penetration-tester**
-  #   （`vulnerability_types` 全为 Code_Execution，8 条正例）我们**零命中**，而它不是
-  #   射程外的类型 → ★ **第一个反例**（推翻"射程内 → 必命中"）。
-  #   查源码找到了确切机制（`agents/agent_factory.py:395 _find_function`）：
-  #       module_prefix = function_name.split("_")[0]        # ← function_name 来自 LLM 的 tool_call
-  #       importlib.import_module(f"tools.{module_prefix}_tools")   # ← 模块名由 LLM 派生
-  #       getattr(module, function_name)                             # ← 按名字取函数
-  #       func(**arguments)                                          # ← 用 LLM 给的实参执行
-  #   → **LLM 决定"调哪个函数"** → 我们 sink 表里没有 `import_module` / `__import__`
-  #     / 动态 `getattr` → 整条链认不出来（日志实证：`[parse] 原始结果 0 条`，
-  #     但 `[argsrc] 26 行覆盖 26 个 sink 位置` → **sink 有，链没连上**）。
-  # ⚠️ 动态导入在正常代码里**极常见**（懒加载、插件）→ 一定会吵，**默认关**、按 docs/104 规矩量 delta。
+  # ---------- dynamic import / dispatch (switch AF_SINKS_DYNIMP=1, off by default) ----------
+  # When the name of the function to call is derived from model output, the dangerous call
+  # itself is `import_module` / `__import__` / a dynamic `getattr`, none of which are in the
+  # baseline set. Dynamic imports are common in ordinary code (lazy loading, plugins), so
+  # this group is noisy and off by default.
   - {id: importlib.import_module, source: extra, group: dynimp, cls: direct, obj: importlib, func: import_module}
   - {id: __import__,             source: extra, group: dynimp, cls: direct, name: __import__}
-  # ★ `from importlib import import_module` 之后是**裸名调用** → 单独一条
+  # `from importlib import import_module` produces a bare-name call, so it needs its own entry.
   - {id: import_module,          source: extra, group: dynimp, cls: direct, name: import_module}

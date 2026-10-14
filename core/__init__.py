@@ -1,4 +1,1 @@
-"""内核包（CodeQL 静态前端 + 判定 + 落盘）。
-
-★ 词汇隔离自查：本目录里不许出现 抽样 / 置信区间 / Wilson / 对照组 / 消融。
-"""
+"""Kernel package: CodeQL static frontend, triage, and persistence."""

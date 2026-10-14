@@ -1,11 +1,11 @@
-# ── 与本工具无关的运行产物（★ 一律不进版本库）────────────────
+# ── run artefacts (never committed) ─────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
 
-# ★ 数据与结果：含「扫了哪些靶、哪些点位」这类**未披露信息**
+# data and results: local scan output, fetched sources, databases
 data/
 out/
 logs/
@@ -13,7 +13,7 @@ _targets/
 *.sqlite
 *.db
 
-# ★ 密钥与关注名单：**不进版本库**
+# secrets and local lists
 .env
 *.key
 *.token
@@ -22,7 +22,10 @@ _targets/
 opensource_targets.txt
 AF_TARGET_MAP.json
 
-# 编辑器 / 系统
+# local assistant workspace
+.workbuddy/
+
+# editor / OS
 .vscode/
 .idea/
 .DS_Store

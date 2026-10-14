@@ -1,51 +1,53 @@
 # -*- coding: utf-8 -*-
-"""★ 可达性预筛（把「第 0 关」自动化）—— 判断一条候选**能不能被真正调到**。
+"""Reachability pre-filter: can a candidate sink actually be reached from outside?
 
-## 为什么需要
-`docs/206` 立的「第 0 关」：**在问"有没有校验"之前，先问"这个函数谁能调到"**。
-- 反例（不算）：`samplenodeapp` 的节点参数 —— 是**用户在工作流里手填的**，不是 LLM 决定的（`docs/215` 实测）
-- 正例（算）：`sampletoolkit` 的 `get_tools()` 白名单 / `sampleassistant_ai` 的 `@tool` / FastAPI 端点
+Before asking "is there a validator?", ask "who is able to call this function at all?".
+A site reachable only from a locally-enumerated table is far less interesting than one
+wired to a tool decorator or an HTTP route.
 
-但这一关**一直是人工做的**，而台账里"待处理"已积 330 条 ⇒ **人工一条条看不可行**。
-这个工具先把明显调不到的筛掉，人工面才收得窄。
+Not counted (example): a parameter the **user types into a workflow** rather than one the
+model supplies.
+Counted (examples): a `get_tools()` whitelist, an `@tool` decorator, a FastAPI route.
 
-## 判据（全部静态，不调 LLM、不花钱）
+## Checks (all static; no LLM, no cost)
 
-**第 0 步 · 是不是产品代码**（先砍一批）
-路径落在 `.github/` `tests/` `test/` `docs/` `examples/` `benchmarks/` 或文件名以 `mock_` 开头
-⇒ `·不可达(非产品代码/示例)` —— 这些不是随产品发布、用户跑不到的代码。
+**Step 0 - is this production code at all?**
+A path under `.github/` `tests/` `docs/` `examples/` `benchmarks/`, or a filename starting
+with `mock_`, is marked `unreachable (non-production)`.
 
-**第 1 步 · 同文件精查**（AST 层，证据最硬）—— 沿候选所在函数的**外层链**逐层看：
-| 看到什么 | 判 |
+**Step 1 - same-file exact check** (AST level, strongest evidence). Walking up the enclosing
+chain of the candidate's function:
+
+| What is found | Verdict |
 |---|---|
-| 装饰器里有 `tool`（`@tool(...)`） | ★ **可达(LLM工具)** |
-| 类里 `get_tools()` / `FunctionTool(self.xxx)` 引用了它 | ★ **可达(LLM工具)** |
-| 装饰器形如 `@app.post(...)` / `@router.get(...)` / ★ **`@bp.route(...)`**（Flask 蓝图） | ★ **可达(HTTP端点)** |
-| 装饰器里有 `register_microservice` | ★ **可达(服务端点)** |
+| a decorator containing `tool` (`@tool(...)`) | reachable (LLM tool) |
+| `get_tools()` / `FunctionTool(self.xxx)` referencing it | reachable (LLM tool) |
+| a decorator like `@app.post(...)` / `@router.get(...)` / `@bp.route(...)` (Flask) | reachable (HTTP endpoint) |
+| a decorator containing `register_microservice` | reachable (service endpoint) |
 
-**第 2 步 · 跨文件兜底**（★ 必需 —— 很多 Agent 项目把"工具壳"放在**另一个文件**里，
-例：`sampletoolkit/interpreters/*.py` 的 `run()` 是被 `sampletoolkit/toolkits/*.py` 里的 `FunctionTool(...)` 暴露的）
-⇒ 扫**整棵源码树**收集"暴露点附近文本"（`FunctionTool(` / `@*tool*` / `@*.route|get|post|...` / `register_microservice`
-附近的 ±2 行），若候选函数名出现在其中 ⇒ **可达(跨文件)**。
+**Step 2 - cross-file fallback.** Many agent projects put the tool shell in a *different*
+file, so the whole source tree is scanned for text near an exposure point
+(`FunctionTool(`, `@*tool*`, `@*.route|get|post|...`, `register_microservice`, +/- 2 lines).
+A name match marks the candidate reachable (cross-file).
 
-**第 3 步 · 都没暴露**
-| 条件 | 判 |
+**Step 3 - nothing found**
+| Condition | Verdict |
 |---|---|
-| 所在类有 `INPUT_TYPES`（SampleNodeApp 节点） | `·不可达(UI参数)` —— 参数由工作流填，不是 LLM 给 |
-| 其他 | `?存疑(未看到暴露点)` —— **不等于不可达**，可能经更绕的路径被调到 |
+| the enclosing class has `INPUT_TYPES` (a workflow node) | unreachable (workflow parameter) |
+| otherwise | unknown (no exposure point seen) -- **this is not "unreachable"** |
 
-★ **注意它只回答"调不调得到"，不回答"有没有洞"** —— 可达 ≠ 有洞（可达只说明值得继续看）。
-★ 已知局限见文件末尾。
+This answers "can it be called", never "is there a bug". Reachable only means worth a look.
 
-用法：
-    python tools/reachability_triage.py                     # 筛台账里所有"待处理"
-    python tools/reachability_triage.py --verdict vuln      # 只筛 LLM 判 vuln 的
-    python tools/reachability_triage.py --limit 20          # 试跑
+Usage:
+    python tools/reachability_triage.py --findings out/round-my-round/findings.tsv
+    python tools/reachability_triage.py --findings ... --verdict vuln    # only rows triaged vuln
+    python tools/reachability_triage.py --findings ... --limit 20        # run a small sample
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import csv
 import json
 import re
 import sys
@@ -54,7 +56,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from core import candidate_ledger as CL  # noqa: E402
 
 OUT_JSON = ROOT / "data" / "target_pool" / "reachability_triage.json"
 OUT_MD = ROOT / "data" / "target_pool" / "reachability_triage.md"
@@ -82,7 +83,7 @@ SNIPPET_SKIP = ("/tests/", "/test/", "/docs/", "/examples/", "/example/",
 
 # --------------------------------------------------------------------------
 def src_root_map() -> dict[str, Path]:
-    """靶短名 → 源码根目录（读 targets*.yml）。"""
+    """目标短名 → 源码根目录（读 targets*.yml）。"""
     import yaml
     m: dict[str, Path] = {}
     for y in sorted((ROOT / "core" / "config").glob("targets*.yml")):
@@ -189,7 +190,7 @@ def triage_one(short: str, rel: str, line: int, roots: dict[str, Path],
                snips: list[tuple[str, int, str]] | None) -> dict:
     root = roots.get(short)
     if not root:
-        return {"verdict": NO_FILE, "why": "目标表里没有这个靶的 src", "fn": "", "klass": ""}
+        return {"verdict": NO_FILE, "why": "目标表里没有这个目标的 src", "fn": "", "klass": ""}
     rel_posix = rel.replace("\\", "/")
     low = "/" + rel_posix.lstrip("/")
     if any(k in low for k in NONPROD) or rel_posix.split("/")[-1].startswith("mock_"):
@@ -253,23 +254,30 @@ def triage_one(short: str, rel: str, line: int, roots: dict[str, Path],
 
 # --------------------------------------------------------------------------
 def main() -> int:
-    ap = argparse.ArgumentParser(description="可达性预筛（第 0 关自动化）")
+    ap = argparse.ArgumentParser(description="reachability pre-filter")
+    ap.add_argument("--findings", required=True,
+                    help="path to a findings.tsv produced by app/run_round.py")
     ap.add_argument("--verdict", default="vuln,needs_human",
-                    help="筛哪些 LLM 判定（逗号分隔；all=全部待处理）")
-    ap.add_argument("--limit", type=int, default=0, help="只跑前 N 条（试跑用）")
+                    help="which ai_verdict values to triage (comma-separated; all = every row)")
+    ap.add_argument("--limit", type=int, default=0, help="only run the first N rows")
     a = ap.parse_args()
 
     wanted = ({"vuln", "needs_human"} if a.verdict == "all"
               else {x.strip() for x in a.verdict.split(",") if x.strip()})
-    st = CL.derive(CL.read_events())
+    with open(a.findings, encoding="utf-8-sig", newline="") as fh:
+        src_rows = list(csv.DictReader(fh, delimiter="\t"))
     rows = []
-    for fp, d in sorted(st.items()):
-        if d["status"] != "pending" or d["llm_verdict"] not in wanted:
+    for r in src_rows:
+        v = (r.get("ai_verdict") or "").strip()
+        if v not in wanted:
             continue
-        m = d["meta"] or {}
-        rows.append({"fp": fp, "project": m.get("project") or "", "file": m.get("file") or "",
-                     "line": m.get("line") or 0, "sink": m.get("sink") or "",
-                     "llm": d["llm_verdict"]})
+        try:
+            line = int(r.get("line") or 0)
+        except ValueError:
+            line = 0
+        rows.append({"fp": r.get("fingerprint") or "", "project": r.get("project") or "",
+                     "file": r.get("file") or "", "line": line,
+                     "sink": r.get("sink") or "", "llm": v})
     if a.limit:
         rows = rows[:a.limit]
 
@@ -296,8 +304,8 @@ def main() -> int:
     print("   ── 可以先不看的（不可达）= %d 条"
           % (cnt.get(NO_UI, 0) + cnt.get(NO_NONPROD, 0)))
 
-    L = ["# 可达性预筛（第 0 关）—— 哪些候选真的能被调到", "",
-         f"> 候选 **{len(rows)}** 条 ｜ 判据见 `tools/reachability_triage.py` 头部",
+    L = ["# 可达性预筛（第0步）—— 哪些候选真的能被调到", "",
+         f"> 候选 **{len(rows)}** 条 ｜ 规则见 `tools/reachability_triage.py` 头部",
          "> ★ **可达 ≠ 有洞**，只说明值得继续看；**「存疑」不等于不可达**。", ""]
     L.append("| 判定 | 条数 |")
     L.append("|---|---|")
@@ -329,7 +337,7 @@ def main() -> int:
             continue
         L.append(f"## {k}（{len(sub)} 条，可以先不看）")
         L.append("")
-        L.append("| 靶 | 条数 |")
+        L.append("| 目标 | 条数 |")
         L.append("|---|---|")
         for p, n in Counter(r["project"] for r in sub).most_common():
             L.append(f"| {p} | {n} |")
@@ -338,7 +346,7 @@ def main() -> int:
     L.append("")
     L.append("1. **跨文件兜底是文本匹配**（按函数名），**可能有同名误判** —— 判成「可达(跨文件)」的要瞄一眼证据行。")
     L.append("2. 「存疑」= **没看到暴露点**，**不等于不可达**（可能经更绕的调用被调到）。")
-    L.append("3. 判据只看**静态注册/装饰器**；**运行时动态注册**（`getattr`/插件扫描）看不出来。")
+    L.append("3. 规则只看**静态注册/装饰器**；**运行时动态注册**（`getattr`/插件扫描）看不出来。")
     L.append("4. ★ **它不判断「有没有洞」** —— 可达只是「值得看」的必要条件。")
     OUT_MD.write_text("\n".join(L), encoding="utf-8")
     print(f"\n→ {OUT_MD}\n→ {OUT_JSON}")

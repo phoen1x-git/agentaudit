@@ -3,7 +3,7 @@
 
     python tools/compare_rounds.py out/round-batch3 out/round-batch3-oparg
 
-★ 为什么要它：改动判据后必须同时看「稳定性」和「刻度」（docs/109）。
+★ 为什么要它：改动规则后必须同时看「稳定性」和「刻度」。
   本工具给：① ai_verdict 分布差 ② 逐条结论变化（谁翻了、翻成什么）
   ③ 关键主观字段（by_design / scope_exceeds / guards_real / arg_source）的变动数。
 ★ 用来比的两轮**必须同目标、同静态前端**，否则比较无意义（脚本会检查目标集合）。

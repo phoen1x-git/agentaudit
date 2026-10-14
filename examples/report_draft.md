@@ -1,74 +1,59 @@
-# 报告草稿（自动生成）· **未经实跑验证**
+# Report draft (generated) - **not verified by execution**
 
-> ★ 口径声明：本报告的判定由 **AI 复核**产出，并经**人工审阅措辞**（只审『话有没有超出代码』，
-> **不等于**确认漏洞）。文中所有推断均已降级为疑问句。**可利用性未验证。**
->
-> ⚠️ **本文件是合成示例** —— `demo-agent` 是虚构项目，代码是编的，见 [`README.md`](README.md)。
+> The verdicts in this report were produced by **AI-assisted triage**. Every inference below is phrased as a question and **exploitability is unverified**. Treat the entries as **candidates**, not as confirmed vulnerabilities.
 
-- 轮次：`demo-round`　生成时间：2026-01-01T00:00:00
-- 判据版本戳：`rubric=ab12cd3` `sinks.yml=ef45ab6` `filters.yml=90cd12e`
-- 判定花费：本轮实付 0.42 元（14 次调用 / 3 次命中缓存）。
-  ★ 若要报『判定一批多少钱』，用**首次未命中**那一轮的值，别用命中缓存那轮的 0
-- 候选总数 5 → 判成 vuln **1** 条（其余为 not_vuln / needs_human，不在本报告）
+- Round: `demo_round`  |  generated: 2026-01-01T00:00:00
+- Rule stamps: `rubric=ab12cd3` `sinks=ef45ab6` `filters=90cd12e`
+- Triage cost this run: 0.42 CNY (14 calls / 3 served from cache). To quote a per-batch price, use the first uncached run, not a cached one that reports 0.
+- Candidates 4 -> triaged `vuln` **1** (the rest are not_vuln / needs_human and are not listed here)
 
-## 汇总
+## Summary
 
-> ★ 「台账」列 = 这条候选**在候选台账里的当前状态**。查详情：`python core/candidate_ledger.py show <指纹>`
+| # | Project | Location | Type | Confidence | Upstream |
+|---|---|---|---|---|---|
+| 1 | demo-agent | `src/tools/shell_tool.py:31` | command execution | 0.78 | not checked |
 
-| # | 项目 | 位置 | 类型 | 置信度 | 措辞审阅 | 上游 | 台账 |
-|---|---|---|---|---|---|---|---|
-| 1 | demo-agent | `src/tools/shell_tool.py:31` | 代码执行（命令） | 0.78 | 已审 通过 | 未查 | todo |
-
-## ★ 可报性结论（据上游核实，**列事实、不替人拍板**）
-
-- **1. demo-agent `src/tools/shell_tool.py:31`** → 未见明显阻碍
-
-> ★ 上面每一条都只是**事实**。『报不报』是人拍的，不是工具拍的；
-> 但在按下去之前，每一条都必须先回答：**上游还在不在？有没有人已经报过？维护者会不会修？**
+> Every line above is a **fact**. Whether to disclose is a human decision, not the tool's; but before acting, each entry still has to answer: **is it still there? has anyone reported it? will the maintainers fix it?**
 
 ---
 
-## 1. demo-agent · `src/tools/shell_tool.py:31` — 代码执行（命令）
+## Findings
 
-**身份指纹**：`demo-agent/src/tools/shell_tool.py:4f2a91c7de`　（★ 查重/去重用它，**不要用行号**，行号会漂）
-**AI 判定**：`vuln`　置信度 0.78　（是不是本项目本来的功能：yes；超出预期范围：yes）
-**措辞审阅**：已审 · 通过　—— 未出现"确认/已验证"字样，推断均为疑问句
+## 1. demo-agent - `src/tools/shell_tool.py:31` - command execution
 
-### 已核实（读过源码）
+**Fingerprint**: `demo-agent/src/tools/shell_tool.py:4f2a91c7de` (for deduplication -- do **not** key on line numbers, they drift)
+**AI verdict**: `vuln`  confidence 0.78  (designed feature: yes; exceeds intended scope: yes)
+
+### Verified (source was read)
 
 ```python
 31: result = subprocess.run(command, shell=True, capture_output=True)
 ```
 
-事实：`subprocess.run` 在第 31 行被调用。以上代码为**直接摘录**，可逐字对照。
+Fact: `subprocess.run` is called at line 31. The excerpt above is a **verbatim** quote.
 
-### 未核实（未跑）
+### Unverified (not executed)
 
-以下均为**推断**，没有实跑验证，措辞按疑问处理：
+Everything below is an **inference**. Nothing here was executed:
 
-- **可控性**：`command` 是否来自 LLM 的工具入参？
-  ↳ 依据：`arg0:param(command@shell_tool.py:22)` —— 跨过程数据流显示它是本函数形参；
-  调用方 `run_tool:88` 传的是上层变量（是否可控**尚未追到底**）
-- **可利用性**：`shell=True` 是否会按 shell 语法解释 `command`？
-  ↳ 依据：该调用点源码（已摘录，见上）显示 `shell=True` —— ★ **未实跑**
-- **影响面**：能否读写本机文件 / 发起外连？**未验证**
-- **是不是设计功能**：判定层认为**是本项目功能**（该工具名就叫 shell 工具），
-  但认为**超出了预期范围**（没有白名单/沙箱）—— ★ 这一条**最可能被上游驳回**，见下
+- **Argument source**: **may** come from "LLM output"
+  - evidence: arg0:param(command@shell_tool.py:22) -- command is a parameter of ShellTool.run, and the caller passes the value returned by the model's tool call.
+- **Guards along the path**: **may not** effectively constrain the target value
+  - evidence: No validator, whitelist or sandbox between the tool argument and subprocess.run in the excerpt.
+- **Designed feature?**: Yes (this call is part of what the project is for)
+  - evidence: The tool is named shell_tool and exists to run commands, so executing a command is intended; the absence of any restriction is what exceeds the intended scope.
+- **Exceeds intended scope?**: **Possibly** (no isolation where one would be expected / may point anywhere)
+  - evidence: The tool is named shell_tool and exists to run commands, so executing a command is intended; the absence of any restriction is what exceeds the intended scope.
+- **Conclusion**: A command execution risk **may** exist here; **exploitability is unverified**
 
-### 上游状态（由实际查询动作填充）
+### Upstream status (filled in by an actual lookup)
 
-> ★ 只写『我们查了哪些渠道、什么时间、结论是什么』；**不许**写成『此漏洞从未被发现』。
+> Record only which channels were checked, when, and what was found. Do **not** write "this has never been reported".
 
-- GitHub issue / PR 关键词查重：**未执行**
-- 该包公开安全公告：**未执行**
-- 仓库是否归档 / 是否仍活跃：**未执行**
+- **Not checked** (the upstream lookup was not run this round). Before disclosing, this still needs: (1) the default branch, (2) a snippet search to see whether the site is still present, (3) a search of public advisories for the repo/package.
 
-★ 结论：**上游状态未知** ⇒ 按本项目的规矩，**这一步没做完就不该报**。
+### Possible directions (effectiveness not verified)
 
-### 可能的修法方向（未验证有效性）
-
-- 去掉 `shell=True`，改为传参数列表 + 明确的白名单；
-  或在该工具入口对 `command` 做命令白名单校验（★ **有效性未验证**，且
-  ★ **「加参数校验」这类建议很可能被维护者以「这是设计功能」为由驳回**）
+- avoid shell=True; whitelist or strictly escape the arguments
 
 ---

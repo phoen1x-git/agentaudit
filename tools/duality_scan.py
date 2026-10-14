@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""★★★ 第 9 条判据：「同函数内两种写法并存」
+"""★★★ 第 9 条规则：「同函数内两种写法并存」
 
 ═══ 为什么这条信号最强 ═══
 今天挖到的 5 个漏洞里，有 2 个最强的证据不是「分析出来的」，
@@ -22,9 +22,9 @@
 ★ 这是**唯一一类「零误报信号」**：两处写法功能等价时，
   写错的那处**在语义上一定是错的**。
 
-═══ 为什么它比 LLM 判定更适合做判据 ═══
-LLM 判据要花钱、有随机性、会「太松」或「太紧」。
-★ 这条判据是**纯语法模式匹配**：
+═══ 为什么它比 LLM 判定更适合做规则 ═══
+LLM 规则要花钱、有随机性、会「太松」或「太紧」。
+★ 这条规则是**纯语法模式匹配**：
   扫一遍文件，确定性的，零成本，可复现。
 
 ═══ 要扫的模式对 ═══
@@ -49,7 +49,7 @@ sys.path.insert(0, HERE)
 import recheck
 
 POOL = os.path.join(HERE, "..", "data", "target_pool")
-OUT = os.path.join(POOL, "criterion9_duality.json")
+OUT = os.path.join(POOL, "duality_scan.json")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -108,7 +108,7 @@ def scan_file(path, src):
             if not w_hit:
                 continue
             if not s_hit:
-                # ★ 没有强写法 → 这是「全项目都没防护」，属另一个判据的事
+                # ★ 没有强写法 → 这是「全项目都没防护」，属另一个规则的事
                 continue
             out.append({
                 "cat": cat, "desc": desc, "func": node.name,
@@ -153,7 +153,7 @@ def main():
             d = json.loads(line)
             recs[d["repo"]] = d.get("branch") or "main"
 
-    print("★ 第9 条判据：「同函数内两种写法并存」")
+    print("★ 第9 条规则：「同函数内两种写法并存」")
     print("  共 %d 对等价写法" % len(DUALITY_PAIRS))
     print()
     allhits = []

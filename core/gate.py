@@ -5,7 +5,7 @@
 ★ 这道门存在的直接原因：2026-10-09 那轮 5 条候选最后 0 条值得报，
   其中两个仓库已归档、一个被 issue 报遍。**那次不是检测错了，是目标不该扫。**
 
-★★ 两个模式（2026-10-10 加，`docs/113` §八）：
+★★ 两个模式：
    **「能不能报出去」≠「能不能检出」—— 用途不同，门槛就不该一样。**
 
    | 模式 | 用途 | 归档 / 长期不维护 | 为什么 |
@@ -83,7 +83,7 @@ def check(repo: str, cfg: dict | None = None, tok: str | None = None,
 
     `mode`：`alive`（默认，报给开发者）或 `detect`（验证检出能力）。
     ★ detect 模式下**跳过"归档 / 长期不维护"这两条** —— 因为"能不能检出"跟
-      仓库活不活着无关，而把有真洞的归档目标筛掉会让能力测不出来（`docs/113` §八）。
+      仓库活不活着无关，而把有真洞的归档目标筛掉会让能力测不出来。
       fork / 停用 仍然检查（fork 的洞上游不认，跟用途无关）。
     """
     cfg = cfg or load_cfg()
@@ -113,7 +113,7 @@ def check(repo: str, cfg: dict | None = None, tok: str | None = None,
 
     if cfg.get("skip_if_fork", True) and out["fork"]:
         out["reasons"].append("是 fork（上游不认 fork 的洞）")
-    # ★★ detect 模式下**不查**归档 / 维护活跃度 —— 见函数 docstring 与 `docs/113` §八
+    # ★★ detect 模式下**不查**归档 / 维护活跃度 —— 见函数 docstring 与  §八
     if not detect:
         if cfg.get("skip_if_archived", True) and out["archived"]:
             out["reasons"].append("★ 仓库已归档（不会再有修复）")
