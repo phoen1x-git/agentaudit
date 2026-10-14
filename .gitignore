@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 venv/
 
+# packaging artefacts (from `pip install .`)
+build/
+dist/
+.eggs/
+
 # test artefacts
 .pytest_cache/
 .coverage

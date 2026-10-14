@@ -57,6 +57,10 @@ model reading the evidence".
 - **Nothing is a conclusion.** Every row is a **candidate** and needs a human to read the
   source next to it. `--explain` prints exactly the evidence the scan collected, which is
   what that reading should start from.
+- **What you exclude, you do not scan.** `core/config/filters.yml` and `--ignore` both remove
+  files before any check runs, and both are recorded in the round. A round with a filter on is
+  not comparable to one without it, and "no candidates in `vendor/`" means nothing if
+  `vendor/` was excluded.
 
 ---
 

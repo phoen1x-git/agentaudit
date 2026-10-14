@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import json
 import os
 import re
@@ -77,20 +78,33 @@ def _sink_of(kind: str, snippet: str, fallback: str) -> str:
     return fallback
 
 
-def collect_sources(src_root: Path) -> dict[str, str]:
+def collect_sources(src_root: Path, ignore: list[str] | None = None) -> dict[str, str]:
+    """Read every .py file under `src_root`.
+
+    `ignore` is a list of glob patterns matched against the path relative to `src_root`
+    (e.g. "vendor/**", "*/generated/*.py"), so generated or vendored trees can be excluded.
+    """
+    import fnmatch
+    pats = [p.replace("\\", "/") for p in (ignore or [])]
     files: dict[str, str] = {}
     for p in sorted(src_root.rglob("*.py")):
-        if any(part in SKIP_DIRS for part in p.parts):
+        rel = p.relative_to(src_root).as_posix()
+        # Check the parts *relative to src_root*. Using the absolute parts would skip every
+        # file when the project itself happens to live under a directory called `build`,
+        # `venv` or `site-packages` -- e.g. an installed copy, or a checkout under ~/build.
+        if any(part in SKIP_DIRS for part in Path(rel).parts[:-1]):
+            continue
+        if any(fnmatch.fnmatch(rel, pat) for pat in pats):
             continue
         try:
-            files[p.relative_to(src_root).as_posix()] = p.read_text(encoding="utf-8", errors="replace")
+            files[rel] = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
     return files
 
 
 def scan_dir(src_root: str | os.PathLike, project: str | None = None,
-             on_log=None) -> list[F.Finding]:
+             on_log=None, ignore: list[str] | None = None) -> list[F.Finding]:
     """Run the AST checks plus the strong/weak-form check over a source tree."""
     root = Path(src_root)
     project = project or root.name
@@ -98,7 +112,7 @@ def scan_dir(src_root: str | os.PathLike, project: str | None = None,
     if not root.is_dir():
         raise SystemExit(f"source directory not found: {root}")
 
-    files = collect_sources(root)
+    files = collect_sources(root, ignore=ignore)
     res, failed = A.analyze_files(files)
     if failed:
         log(f"[ast] {len(failed)} file(s) failed to parse: {failed[:5]}")
@@ -129,6 +143,9 @@ def scan_dir(src_root: str | os.PathLike, project: str | None = None,
 
     # Strong/weak form coexistence within one function.
     du = DX.scan_dir(root, project, on_log=log)
+    pats = [p.replace("\\", "/") for p in (ignore or [])]
+    if pats:
+        du = [f for f in du if not any(fnmatch.fnmatch(f.sink_uri.replace("\\", "/"), p) for p in pats)]
     for fd in du:
         fd.rule = "ast/duality"
         fd.chain = fd.chain.replace("弱[", "weak[").replace("] vs 强 ", "] vs strong ")
@@ -186,8 +203,10 @@ def main() -> int:
     ap.add_argument("--project", default="", help="project name used in fingerprints and reports")
     ap.add_argument("--tag", default="astscan")
     ap.add_argument("--out", default=str(ROOT / "out"))
+    ap.add_argument("--ignore", action="append", default=[], metavar="GLOB",
+                    help="skip paths matching this glob, relative to --path (repeatable)")
     a = ap.parse_args()
-    fnd = scan_dir(a.path, a.project or Path(a.path).name, on_log=print)
+    fnd = scan_dir(a.path, a.project or Path(a.path).name, on_log=print, ignore=a.ignore)
     rd = write_round(Path(a.out), a.tag, fnd,
                      meta_extra={"scanner": "ast-only", "source_root": str(Path(a.path).resolve())})
     print(json.dumps({"round_dir": str(rd), "n_findings": len(fnd)}, ensure_ascii=False))

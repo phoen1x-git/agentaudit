@@ -7,24 +7,41 @@ the output overstate what was actually established.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
+pip install -e .                     # optional: gives you the `agentaudit` command
 python tools/run_selftests.py        # the rule self-tests
 python -m pytest -q                  # the suite CI runs
 ```
 
 A full scan also needs the CodeQL CLI; `./scripts/setup.sh` installs it. The offline mode
-(`python app/scan.py --demo`) works without it, and most development does not need it either.
+(`python app/scan.py --demo`, or `agentaudit scan --demo`) works without it, and most
+development does not need it either.
 
 ## What CI runs
 
 In order, and all of it must pass:
 
 ```
+pip install -e . && agentaudit --version && agentaudit validate
 python -m compileall -q app core tools demo tests
 python tools/validate_config.py
 python tools/run_selftests.py
 python app/scan.py --demo --tag ci
 python -m pytest -q
 ```
+
+## Registering a new command
+
+`app/cli.py` is a table of `name -> script`. A new entry point should be a script under
+`app/` or `tools/` with the usual `main()` and `if __name__ == "__main__"` guard; add one
+line to `COMMANDS` and it is reachable as `agentaudit <name>`. `tests/test_cli.py` checks the
+help lists every command and that exit codes survive the hop.
+
+## Where output goes
+
+Working output (`out/`, `data/`, `_targets/`) is resolved through `core.workspace()`:
+`AGENTAUDIT_HOME` if set, otherwise the current directory. Never hard-code the package
+directory for output — an installed copy would then write into `site-packages`, which the
+tests catch but is easy to forget.
 
 ## The one rule that matters most
 

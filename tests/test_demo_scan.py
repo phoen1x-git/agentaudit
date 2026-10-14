@@ -81,3 +81,34 @@ def test_offline_scan_writes_a_readable_round(tmp_path, findings):
         assert (rd / name).exists(), f"{name} was not written"
     head = (rd / "findings.tsv").read_text(encoding="utf-8-sig").splitlines()[0]
     assert head.split("\t")[:4] == ["fingerprint", "project", "rule", "sink"]
+
+
+def test_a_project_under_a_skipped_directory_name_is_still_scanned(tmp_path):
+    """Regression: the skip list is about subdirectories of the target, not the target's path.
+
+    An installed copy lives under site-packages, and plenty of checkouts live under a
+    directory called `build` or `venv`. Matching the skip list against the *absolute* path
+    made the scanner report almost nothing for those, which is the worst kind of failure:
+    quietly finding less.
+    """
+    nested = tmp_path / "build" / "venv" / "site-packages" / "myproject"
+    nested.mkdir(parents=True)
+    (nested / "app.py").write_text(
+        "import subprocess\n\n\ndef run(cmd):\n    return subprocess.run(cmd, shell=True)\n",
+        encoding="utf-8")
+    found = ast_scan.scan_dir(nested, "myproject")
+    assert found, "nothing was found for a project under build/venv/site-packages"
+    assert any(f.rule == "ast/dangerous-call" for f in found)
+
+
+def test_subdirectories_are_still_skipped(tmp_path):
+    """The skip list must keep doing its actual job."""
+    root = tmp_path / "proj"
+    (root / "build").mkdir(parents=True)
+    (root / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "build" / "generated.py").write_text(
+        "import subprocess\n\n\ndef run(cmd):\n    return subprocess.run(cmd, shell=True)\n",
+        encoding="utf-8")
+    files = ast_scan.collect_sources(root)
+    assert "app.py" in files
+    assert not any(k.startswith("build/") for k in files)

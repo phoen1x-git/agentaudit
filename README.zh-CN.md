@@ -14,7 +14,7 @@
 | | |
 |---|---|
 | 规则 | 一个 YAML 里 52 条危险调用规则，外加几类非调用检查（[CONFIGURING.md](CONFIGURING.md)） |
-| 自测 | 10 套规则自测，34 个测试（[CHANGELOG.md](CHANGELOG.md)） |
+| 自测 | 10 套规则自测，56 个测试（[CHANGELOG.md](CHANGELOG.md)） |
 | 试一下 | `python app/scan.py --demo` —— 不用 CodeQL、不用 API key、不用下载 |
 | 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) |
 

@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from core import cfg as CFG                      # noqa: E402
 from core import duality as DX                   # noqa: E402
 from core import finding as F                    # noqa: E402
+from core import workspace                       # noqa: E402
 from core import static_frontend as SF           # noqa: E402
 import ast_scan                                  # noqa: E402
 
@@ -128,6 +129,31 @@ def fetch_repo(repo: str, dst_root: Path) -> Path:
     return dst
 
 
+def count_source_files(src: Path, ignore: list[str]) -> int:
+    """How many .py files the scan would look at. Counted, not read.
+
+    The skip list is matched against the path *relative to the source root*, so a project that
+    itself lives under a directory called `build` or `site-packages` is not skipped wholesale.
+    """
+    import fnmatch
+    pats = [p.replace("\\", "/") for p in ignore]
+    n = 0
+    for p in src.rglob("*.py"):
+        rel = p.relative_to(src).as_posix()
+        if any(part in ast_scan.SKIP_DIRS for part in Path(rel).parts[:-1]):
+            continue
+        if any(fnmatch.fnmatch(rel, pat) for pat in pats):
+            continue
+        n += 1
+    return n
+
+
+def _matches_ignore(rel: str, ignore: list[str]) -> bool:
+    import fnmatch
+    rel = rel.replace("\\", "/")
+    return any(fnmatch.fnmatch(rel, p.replace("\\", "/")) for p in ignore)
+
+
 def changed_files(src: Path, ref: str) -> set[str]:
     """Files changed since `ref`, as posix paths relative to `src` (tracked + untracked)."""
     if not shutil.which("git"):
@@ -156,6 +182,31 @@ def changed_files(src: Path, ref: str) -> set[str]:
     return out
 
 
+def _write_stats_log(*, mode: str, findings, src: Path, ignore: list[str],
+                     elapsed: float, db: Path | None) -> None:
+    """Append one statistics-only record to the local scan log.
+
+    See tools/scan_log.py: counts and settings, never source, paths or project names.
+    """
+    try:
+        import scan_log
+        if not scan_log.logging_enabled():
+            _log("[log] disabled by AGENTAUDIT_NO_LOG")
+            return
+        codeql = scan_log.codeql_version_of(_codeql_exe()) if db is not None else ""
+        stamp = ast_scan._stamp()
+        rules_hash = "".join(sorted(stamp.values()))[:16]
+        rec = scan_log.build_record(
+            mode=mode, n_files=count_source_files(src, ignore), findings=findings,
+            elapsed_sec=elapsed, codeql_version=codeql,
+            n_ignore_patterns=len(ignore), rules_hash=rules_hash)
+        scan_log.append(rec)
+        _log(f"[log] recorded {rec['n_files']} files / {rec['n_candidates']} candidates "
+             f"-> {scan_log.log_path()}  (statistics only; `--no-log` to skip)")
+    except Exception as e:      # never fail a scan over bookkeeping
+        _log(f"[log] not recorded ({type(e).__name__}: {e})")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="scan a target with one command")
     src_grp = ap.add_mutually_exclusive_group(required=True)
@@ -164,7 +215,8 @@ def main() -> int:
     src_grp.add_argument("--repo", help="a GitHub repository, owner/name")
     ap.add_argument("--project", default="", help="project name used in reports (default: derived)")
     ap.add_argument("--tag", default="", help="round name (default: derived from the target)")
-    ap.add_argument("--out", default=str(ROOT / "out"), help="output root")
+    ap.add_argument("--out", default=str(workspace() / "out"),
+                    help="where to write the round (default: ./out)")
     ap.add_argument("--llm", action="store_true",
                     help="triage the candidates with an LLM (spends API credits; off by default)")
     ap.add_argument("--no-codeql", action="store_true",
@@ -177,6 +229,13 @@ def main() -> int:
     ap.add_argument("--fail-on", default="none", choices=["none", "any", "vuln"],
                     help="exit non-zero when a candidate is reported (any) or when one was "
                          "triaged vuln (vuln); default: always exit 0")
+    ap.add_argument("--ignore", action="append", default=[], metavar="GLOB",
+                    help="skip paths matching this glob, relative to the source root "
+                         "(repeatable), e.g. --ignore 'vendor/**'")
+    ap.add_argument("--serve", action="store_true",
+                    help="after the scan, serve the round directory on localhost")
+    ap.add_argument("--no-log", action="store_true",
+                    help="do not append to the local statistics log (see tools/scan_log.py)")
     a = ap.parse_args()
 
     if a.demo:
@@ -192,7 +251,7 @@ def main() -> int:
     else:
         if a.no_codeql:
             pass
-        src = fetch_repo(a.repo, ROOT / "_targets" / "src")
+        src = fetch_repo(a.repo, workspace() / "_targets" / "src")
         project = a.project or a.repo.split("/")[-1]
         tag = a.tag or _safe_name(a.repo)
 
@@ -210,8 +269,9 @@ def main() -> int:
     t0 = time.time()
     sarif_out = rd / "results.sarif"
     findings: list[F.Finding] = []
+    db = None
     if mode == "full":
-        db = ROOT / "_targets" / "db" / f"{project}-db"
+        db = workspace() / "_targets" / "db" / f"{project}-db"
         if not build_db(src, db):
             _log("[warn] could not build the CodeQL database -> falling back to the AST-only mode")
             mode = "offline"
@@ -227,7 +287,13 @@ def main() -> int:
         if not a.no_codeql and not findings:
             _log("[note] running the AST checks only.")
             _log("       see the README for how to install CodeQL; a full run finds more.")
-        findings = ast_scan.scan_dir(src, project, on_log=_log)
+        findings = ast_scan.scan_dir(src, project, on_log=_log, ignore=a.ignore)
+    if a.ignore and mode == "full":
+        before = len(findings)
+        findings = [f for f in findings if not _matches_ignore(f.sink_uri, a.ignore)]
+        _log(f"[ignore] {len(a.ignore)} pattern(s) -> {before} candidates filtered to {len(findings)}")
+    elif a.ignore:
+        _log(f"[ignore] {len(a.ignore)} pattern(s) applied while collecting sources")
 
     llm_cost = 0.0
     llm_calls = 0
@@ -267,6 +333,11 @@ def main() -> int:
         cmd = [sys.executable, str(ROOT / "app" / script), str(rd), *args]
         subprocess.run(cmd, check=False)
 
+    # Logged last, so the elapsed time means the same thing as the "done in" line below.
+    if not a.no_log:
+        _write_stats_log(mode=mode, findings=findings, src=src, ignore=a.ignore,
+                         elapsed=time.time() - t0, db=(db if mode == "full" else None))
+
     _log("")
     _log("=" * 74)
     _log(f"done in {time.time() - t0:.1f}s")
@@ -276,6 +347,16 @@ def main() -> int:
     if (rd / "results.sarif").exists():
         _log(f"  sarif   {rd / 'results.sarif'}")
     _log("=" * 74)
+
+    if a.serve and a.fail_on == "none":
+        # Hand over to the local viewer. Note it does not return until Ctrl-C, so it is not
+        # combined with --fail-on (which is meant for a non-interactive build step).
+        _log("[serve] starting the local viewer; Ctrl-C to stop")
+        os.execv(sys.executable,
+                 [sys.executable, str(ROOT / "app" / "serve.py"), str(rd)])
+    elif a.serve:
+        _log("[serve] skipped: --serve and --fail-on are for different situations "
+             "(one is interactive, the other is a build gate)")
 
     if a.fail_on == "any" and findings:
         _log(f"[fail-on] {len(findings)} candidate(s) reported -> exit 1")

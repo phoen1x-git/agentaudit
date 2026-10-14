@@ -6,7 +6,42 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
-## Unreleased
+## 0.3.0 — 2026-10-14
+
+### Added
+
+- **A local scan log, and an optional way to share it** (`tools/scan_log.py`). Every scan
+  appends counts only — files, candidates, the split across checks and verdicts, elapsed time,
+  version, and hashes of the rule configuration. Source, paths, project names, snippets and
+  fingerprints are never written, and the record is checked against that rule before it is
+  logged. Nothing is uploaded: `--export` writes a small aggregate, runs a redaction check
+  over it, and refuses to write anything that fails. `--no-log` or `AGENTAUDIT_NO_LOG=1`
+  turns it off, `log --clear` deletes it.
+- **`agentaudit` command** and an installable package (`pyproject.toml`). `pip install -e .`
+  gives one entry point for the whole tool; `agentaudit --help` lists the subcommands. The
+  scripts still run directly, and nothing about that changed.
+- **`agentaudit serve <round>`** (`app/serve.py`): reads a round in a browser. It binds to
+  127.0.0.1 only, serves one directory, and refuses directory listings and path traversal.
+- **`--ignore GLOB`** on `app/scan.py` (repeatable), to skip vendored or generated trees.
+- `AGENTAUDIT_HOME` for where output goes. Working output no longer has to live in the
+  installation.
+
+### Fixed
+
+- **The skip list was matched against the file's absolute path**, so a project that itself
+  lived under a directory called `build`, `venv` or `site-packages` was skipped almost
+  entirely — an installed copy reported one candidate instead of thirteen. It is now matched
+  against the path relative to the source root, and there are regression tests for both
+  directions (nested paths still scanned, real subdirectories still skipped).
+- `app/cli.py` swallowed `SystemExit("message")`, so a script's own error text was lost.
+- The round's `elapsed_sec` in the scan log is now measured over the same span as the
+  "done in" line the user sees.
+
+### Changed
+
+- `demo/` is a package so `--demo` also works from an installed copy.
+
+## 0.3.0 — 2026-10-14
 
 ### Added
 

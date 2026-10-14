@@ -102,6 +102,19 @@ as a fallback for environment paths such as `miniconda`).
 absolute one, so a directory named `test` somewhere above your checkout no longer excludes
 the whole project. `AF_NO_FILTER=1` disables the filter entirely.
 
+### Excluding files for one scan only
+
+For a one-off ("ignore the vendored tree, just this time"), use the command line instead of
+editing the config:
+
+```bash
+agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.py'
+```
+
+Patterns are globs relative to the source root. They are recorded in the round's `meta.json`,
+so a filtered round is not mistaken for a clean one — excluding files lowers what a scan can
+find, and the record is what stops that from being invisible later.
+
 ---
 
 ## The rules that are on by default

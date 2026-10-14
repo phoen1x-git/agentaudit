@@ -14,7 +14,7 @@ The output is a list of **candidates** to review, not a list of confirmed vulner
 | | |
 |---|---|
 | Rules | 52 dangerous-call rules in one YAML file, plus the non-call checks ([CONFIGURING.md](CONFIGURING.md)) |
-| Self-tests | 10 rule suites, 34 tests ([CHANGELOG.md](CHANGELOG.md#unreleased)) |
+| Self-tests | 10 rule suites, 56 tests ([CHANGELOG.md](CHANGELOG.md)) |
 | Try it | `python app/scan.py --demo` — no CodeQL, no API key, no downloads |
 | What it misses | [LIMITATIONS.md](LIMITATIONS.md) |
 
@@ -49,23 +49,66 @@ to hide behind a confident-looking guess.
 ## Install
 
 Requires **Python 3.10+** and the
-[CodeQL CLI](https://github.com/github/codeql-cli-binaries) (a few hundred MB).
+[CodeQL CLI](https://github.com/github/codeql-cli-binaries) (a few hundred MB, optional —
+without it the scanner runs in the offline mode).
 
 ```bash
-pip install -r requirements.txt
-
-# CodeQL: unpack it next to the project by default, or point AF_CODEQL at it.
-#   default lookup: ./_tools/codeql/codeql(.exe)
+git clone <this repo> && cd agentaudit
+./scripts/setup.sh                 # dependency + CodeQL CLI, or:
+pip install -e .                   # dependency only; gives you the `agentaudit` command
 ```
+
+Either way the scripts can be run directly (`python app/scan.py ...`). With the editable
+install there is also a single command:
+
+```bash
+agentaudit scan --demo
+agentaudit explain out/round-demo --index 3
+agentaudit serve out/round-demo
+agentaudit --help
+```
+
+Where does output go? To `./out` under the current directory, or to `$AGENTAUDIT_HOME` if you
+set it. Nothing is written into the installation.
 
 ### Smoke test (offline, no API key, no CodeQL)
 
 ```bash
-python tools/run_selftests.py                        # the whole self-test suite
+agentaudit selftest                # or: python tools/run_selftests.py
+agentaudit scan --demo             # 13 candidates from the bundled sample project
 ```
 
-These run in seconds and confirm the checks behave as their labelled cases expect —
-the fastest way to know the setup is sane before scanning anything.
+These run in seconds and confirm the checks behave as their labelled cases expect — the
+fastest way to know the setup is sane before scanning anything.
+
+---
+
+## Reading the results
+
+```bash
+agentaudit explain out/round-x --index 3     # why was this one reported?
+agentaudit serve out/round-x                 # read the whole round in a browser (localhost only)
+```
+
+`serve` binds to `127.0.0.1`, serves exactly that one directory, and refuses directory
+listings and path traversal.
+
+### The scan log
+
+Every scan appends one line to `./data/scan_log.jsonl`, containing **counts only**: how many
+files, how many candidates, how they split across checks and verdicts, the elapsed time, the
+version, and hashes of the rule configuration. No source, no paths, no project names — the
+record is checked against that promise before it is written.
+
+```bash
+agentaudit log                    # summarise what you have scanned
+agentaudit log --export           # a small aggregate you can paste somewhere
+agentaudit log --clear            # delete it
+```
+
+Nothing is ever uploaded. `--export` runs a redaction check and refuses to write anything that
+fails it, so the export is safe to read before you decide what to do with it. Use `--no-log`
+(or `AGENTAUDIT_NO_LOG=1`) to turn the log off.
 
 ---
 
@@ -193,6 +236,15 @@ python app/scan.py --path ./myproject --diff origin/main   # only files changed 
 `--diff` needs the source tree to be a git checkout, and is meant for "did this pull request
 introduce anything", not for a full audit.
 
+### Skipping parts of a tree
+
+```bash
+agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.py'
+```
+
+Patterns are globs relative to the source root, and are recorded in the round so two rounds
+stay comparable.
+
 ### The manual pipeline
 
 `app/scan.py` wraps the same engine that can be driven stage by stage, which is what you want
@@ -285,6 +337,8 @@ Secrets are always read from files or environment variables, never committed.
 | `AF_PATH_FILTER` | path filter mode (`rel` = project-relative) | `rel` |
 | `AF_SOURCES_FILE` | alternative untrusted-source list | `core/config/sources.yml` |
 | `AF_NO_DATAFLOW` | disable inter-procedural argument-source analysis | `0` |
+| `AGENTAUDIT_HOME` | where output (`out/`, `data/`) goes | the current directory |
+| `AGENTAUDIT_NO_LOG` | set to `1` to stop recording scan statistics | unset |
 
 ---
 
@@ -294,7 +348,7 @@ Secrets are always read from files or environment variables, never committed.
 core/            the kernel (static frontend, triage, reachability, taint tracing, CodeQL queries)
 core/config/     the rules: sinks.yml, sources.yml, filters.yml  -- see CONFIGURING.md
 tools/           reusable tooling (target selection, fetching, individual checks, self-tests)
-app/             entry points (scan.py for one target, run_all.py for a batch, explain.py)
+app/             entry points (scan.py, run_all.py, explain.py, serve.py, cli.py)
 demo/            a deliberately vulnerable sample project, for `--demo`
 examples/        synthetic sample output
 tests/           the test suite CI runs

@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentaudit"
+description = "Code audit for AI agents: static analysis plus an LLM triage layer that can answer 'I don't know'."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "汪钶楠", email = "wkn18458609327@163.com" }]
+keywords = ["security", "static-analysis", "codeql", "llm", "agent", "taint-analysis", "sast"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+dynamic = ["version"]
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+agentaudit = "app.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/REPO"
+Issues = "https://github.com/OWNER/REPO/issues"
+Changelog = "https://github.com/OWNER/REPO/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+# The kernel, the tooling, the entry points and the sample project are top-level packages
+# rather than one nested one. That keeps `python app/scan.py` working straight from a
+# checkout, which is how this tool is normally run: it needs a real source tree, not just an
+# importable module. `demo` is packaged so `--demo` also works from an installed copy.
+packages = ["core", "tools", "app", "demo", "demo.agent"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "core.__version__" }
+
+[tool.setuptools.package-data]
+core = ["config/*.yml", "ql/*", "ql_src/*", "modelpack/**/*"]
+demo = ["README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
