@@ -90,6 +90,8 @@ docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
     agentaudit --path /scan/myproj --tag myproj --out /scan/out
 ```
 
+构建时会按目标架构下载对应的 CodeQL 二进制，所以 x64 和 arm64（含 Apple Silicon）都能构建。
+
 镜像的入口（entry point）是 `agentaudit scan`，所以上面那些参数和你本机敲的完全一样。
 其它子命令要单独指定入口：
 

@@ -94,6 +94,9 @@ docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
     agentaudit --path /scan/myproj --tag myproj --out /scan/out
 ```
 
+The build picks the CodeQL binary for the architecture it is building for, so x64 and arm64
+both work, Apple Silicon included.
+
 The image entry point is `agentaudit scan`, so the arguments are the same ones you would type
 locally. Other subcommands need their own entry point:
 
