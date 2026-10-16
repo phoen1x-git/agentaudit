@@ -32,6 +32,16 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 - A `docker` job in CI that builds the image and exercises it (CodeQL present and runnable, the
   entry point works, the bundled sample produces a round).
 - A `tests/test_interactive.py` suite.
+- `tests/test_ci.py`, which parses the workflow and fails if a `run:` step is unnamed or calls a
+  script that does not exist. A malformed workflow does not fail loudly; it does not start.
+- `tests/test_packaging.py`: every third-party import is declared in `pyproject.toml`, the
+  requirements files restate nothing, the CodeQL version has one home, and the query list is
+  imported rather than copied.
+- `tests/test_no_leaks.py`, which fails on a machine path, a secret, the private project's
+  vocabulary, or a date in a source comment — the last one because a date is a reliable sign
+  that a comment was copied out of a private work log and says nothing to a reader.
+- `agentaudit targets`, which is the target screener; it was reachable only as a script.
+- `assets/demo.gif`, under the headline table of both READMEs: `scan --demo`, then `explain`.
 
 ### Fixed
 
@@ -48,14 +58,21 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Changed
 
-- The "at a glance" table at the top of both READMEs had an **empty header row**, and its
-  numbers were assertions a reader had no way to check. Each row now says how to check it
-  (`agentaudit validate`, `agentaudit selftest`, `pytest`), and all three numbers — 52 rules,
-  10 rule suites, 117 tests — are re-derived by `tests/test_docs.py` from the configuration and
-  from pytest's own collection. A count in a README is marketing until something verifies it.
-- The CI badge is commented out rather than pointing at a repository that does not exist yet,
-  which rendered as a broken image at the top of the page. Uncommenting is a one-line edit
-  after the repo has a URL.
+- **The numbers in the documents are re-derived instead of asserted.** The rule count in the
+  README (52), the rule-suite count (10) and the test count ("more than 120") in
+  `CONTRIBUTING.md` are checked by `tests/test_docs.py` against the configuration and against
+  pytest's own collection, so a number that drifts fails the build. A number in a README is
+  marketing until something verifies it.
+- The "at a glance" table at the top of both READMEs had an empty header row. It is down to the
+  two rows that answer a reader's first two questions, and both are things they can run.
+- **The badge and the issue links point at the real repository.** A placeholder that ships is
+  worse than a missing link, because it looks like a link: it renders, it is clickable, and it
+  goes nowhere. A test now fails on it anywhere in the tree.
+- **The private project this grew out of no longer leaves fingerprints.** A directory of
+  internal notes was being shipped as package data — a real target's file name and line number,
+  the size of the corpus, notes attributing decisions. It is gone, and `tests/test_no_leaks.py`
+  checks for machine paths, secrets, that vocabulary and dates in source comments, so the next
+  one fails the build instead of shipping.
 - **Both READMEs were restructured around what a reader actually does.** The old order put
   "Reading the results" before "Quick start", with the internals ("Pipeline", "What the output
   looks like") sitting between them — so a first-time reader hit output files for a scan they
@@ -73,6 +90,21 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 - The Dockerfile runs the CodeQL CLI during the build, so a wrong release layout fails the build
   loudly instead of producing an image whose scanner cannot run. Its entry point is
   `agentaudit scan`, and the image also has the `agentaudit` command available.
+- **`tools/target_screener.py` no longer carries a list of real repositories.** It moves to
+  `core/config/known_targets.yml`, which is not shipped; `known_targets.example.yml` documents
+  the format and starts empty. Its self-test runs offline, against synthetic cases.
+- **The image builds for arm64 as well as x64.** The Dockerfile named the x64 CodeQL archive
+  directly, so an arm64 build could not have succeeded. The archive is chosen from `TARGETARCH`
+  now, and an architecture with no CodeQL release stops the build with a message.
+- **The CI `docker` job's last step could never pass.** It started a second container and looked
+  there for the first container's output, which by then no longer existed. It is one container
+  now, with a volume mounted, and it asserts the findings file landed on the host.
+- The one-line banner's ASCII fallback marks the line with `>_` rather than `[]`, which readers
+  took for a missing glyph rather than a mark.
+- A pass over the tree for code with no live caller removed the dead functions, the duplicate
+  declarations and the scripts nothing reached, and matched the documentation to the code.
+- Both READMEs were rewritten in a plain register. The Chinese one had been translated sentence
+  by sentence from the English, which is why it read like a translation.
 - `AGENTAUDIT_INTERACTIVE=0` explicitly disables interactive mode.
 
 ## 0.3.0 — 2026-10-14
@@ -100,6 +132,18 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 - **`--ignore GLOB`** on `app/scan.py` (repeatable), to skip vendored or generated trees.
 - `AGENTAUDIT_HOME` for where output goes. Working output no longer has to live in the
   installation.
+- `app/explain.py` — prints why a candidate was reported: the surrounding source, the call
+  chain that reaches it, the guards on that path, and where the dangerous argument comes from.
+  It says "not determined by this scan" when that is the case, rather than staying silent.
+- `--fail-on none|any|vuln` on `app/scan.py`, so a scan can gate a build.
+- `--diff [REF]` on `app/scan.py`, to report only candidates in files changed since `REF`.
+- `tools/validate_config.py` — validates `core/config/*.yml`. This closes a silent failure
+  mode: a misspelled field name made the generator skip an entry, so the check quietly stopped
+  covering that function.
+- `CONFIGURING.md` (the rule field reference, with the generated rule table) and
+  `LIMITATIONS.md` (what the tool does not find, and which of its silences are meaningful).
+- `tests/` and a GitHub Actions workflow running on Python 3.10 and 3.12.
+- `scripts/setup.sh` — installs the Python dependency and the CodeQL CLI.
 
 ### Fixed
 
@@ -115,26 +159,6 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 ### Changed
 
 - `demo/` is a package so `--demo` also works from an installed copy.
-
-## 0.3.0 — 2026-10-14
-
-### Added
-
-- `app/explain.py` — prints why a candidate was reported: the surrounding source, the call
-  chain that reaches it, the guards on that path, and where the dangerous argument comes from.
-  It says "not determined by this scan" when that is the case, rather than staying silent.
-- `--fail-on none|any|vuln` on `app/scan.py`, so a scan can gate a build.
-- `--diff [REF]` on `app/scan.py`, to report only candidates in files changed since `REF`.
-- `tools/validate_config.py` — validates `core/config/*.yml`. This closes a silent failure
-  mode: a misspelled field name made the generator skip an entry, so the check quietly stopped
-  covering that function.
-- `CONFIGURING.md` (the rule field reference, with the generated rule table) and
-  `LIMITATIONS.md` (what the tool does not find, and which of its silences are meaningful).
-- `tests/` and a GitHub Actions workflow running on Python 3.10 and 3.12.
-- `scripts/setup.sh` — installs the Python dependency and the CodeQL CLI.
-
-### Changed
-
 - The round's `findings.json` also records `src_root`, so `--explain` can show the source
   lines of a run that used the batch pipeline.
 
