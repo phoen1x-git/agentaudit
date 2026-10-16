@@ -130,7 +130,7 @@ agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 ```
 
 **要一次扫很多个仓库？** 那是另一条路 —— 先筛候选、再下源码建库、然后成批扫。
-见 [批量扫描](#批量扫描)。
+完整步骤在下面「它怎么工作」里的 [批量扫描](#scanning-a-batch) 一节。
 
 ### 或者用菜单
 
@@ -397,6 +397,8 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 另外两个横跨在上面：`core/consistency.py` 判断"证据支持不了什么"并拒绝报它，
 `core/cfg.py` 管规则配置。`core/gate.py`（这个目标值不值得扫）和
 `core/upstream.py`（是不是已经有人报过）**只在批量路径里用**。
+
+<a id="scanning-a-batch"></a>
 
 ### 批量扫描
 

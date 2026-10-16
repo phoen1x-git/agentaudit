@@ -137,7 +137,7 @@ agentaudit scan --repo owner/name       # fetch a GitHub repo and scan it
 
 **Scanning many repositories rather than one?** That is a different path — find and screen
 candidates, fetch sources and build databases, then scan the batch. See
-[Scanning a batch](#scanning-a-batch).
+[Scanning a batch](#scanning-a-batch) under "How it works".
 
 ### Or use the menu
 
@@ -416,6 +416,8 @@ Two more sit across those: `core/consistency.py` decides what the evidence does 
 refuses to report it, and `core/cfg.py` owns the rule configuration. `core/gate.py` (is this
 target worth scanning at all) and `core/upstream.py` (has this already been reported upstream)
 are used by the batch path only.
+
+<a id="scanning-a-batch"></a>
 
 ### Scanning a batch
 

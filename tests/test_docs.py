@@ -174,26 +174,63 @@ def test_every_switch_the_code_reads_is_documented():
     assert not missing, f"read by the code but not listed in CONFIGURING.md: {missing}"
 
 
+ASCII_ANCHOR = re.compile(r"^[a-z0-9-]+$")
+
+
 def _slug(heading: str) -> str:
-    """The anchor GitHub generates for a heading: lower case, punctuation dropped, spaces
-    become hyphens. CJK characters are kept as they are."""
-    text = re.sub(r"`([^`]*)`", r"\1", heading)      # code spans lose their backticks
-    text = re.sub(r"\[([^]]*)]\([^)]*\)", r"\1", text)   # links keep their label
+    """The anchor a renderer generates for a heading, when the heading is ASCII.
+
+    Only ASCII headings are considered. A CJK heading is not given a usable anchor by every
+    renderer -- the first version of this test assumed GitHub's behaviour (CJK kept as-is) and
+    passed while the link was broken in the renderer the README was actually read in. A check
+    built on an assumption about a renderer cannot verify anything about that renderer.
+    """
+    text = re.sub(r"`([^`]*)`", r"\1", heading)              # code spans lose their backticks
+    text = re.sub(r"\[([^]]*)]\([^)]*\)", r"\1", text)           # links keep their label
     text = text.strip().lower()
-    text = re.sub(r"[^\w\s\-一-鿿]", "", text)
+    text = re.sub(r"[^\w\s\-]", "", text)
     return re.sub(r"\s+", "-", text)
 
 
-@pytest.mark.parametrize("readme", [EN, ZH], ids=["en", "zh"])
-def test_in_document_links_point_at_a_real_heading(readme):
-    """`[batch](#scanning-a-batch)` is a link that does nothing if the heading is renamed.
+def _all_markdown():
+    """Every Markdown file, not just the two READMEs: a broken anchor in CONFIGURING.md is
+    just as broken."""
+    skip = {".git", ".workbuddy", "out", "data", "_targets", "__pycache__"}
+    return sorted(p for p in ROOT.rglob("*.md")
+                  if not any(x in p.relative_to(ROOT).parts for x in skip))
 
-    Relative-path links were already checked; anchors were not, so a rename would break them
-    silently -- in the one place a reader is most likely to click.
+
+@pytest.mark.parametrize("readme", _all_markdown(), ids=lambda p: p.name)
+def test_in_document_links_point_at_a_real_heading(readme):
+    """Two rules, and the first one is the important one.
+
+    1. An anchor must be ASCII. `#\u6279\u91cf\u626b\u63cf` works on GitHub and does not work
+       everywhere else, so a heading in another script gets an explicit `<a id="...">` target.
+    2. It must point at something: either a heading that slugs to it, or one of those ids.
     """
     text = readme.read_text(encoding="utf-8")
-    headings = {_slug(h) for h in re.findall(r"^#{1,6}\s+(.+)$", text, re.M)}
     anchors = set(re.findall(r"]\(#([^)]+)\)", text))
-    assert anchors, f"{readme.name} has no in-document links; the pattern may be wrong"
-    broken = sorted(a for a in anchors if a not in headings)
+    if readme in (EN, ZH):
+        # the two READMEs are known to have one; if this trips, the pattern is wrong
+        assert anchors, f"{readme.name} has no in-document links; the pattern may be wrong"
+    if not anchors:
+        return
+
+    non_ascii = sorted(a for a in anchors if not ASCII_ANCHOR.match(a))
+    assert not non_ascii, (
+        f"{readme.name} uses anchors that are not ASCII: {non_ascii}. "
+        'Give the heading an explicit `<a id="ascii-name"></a>` and link to that.')
+
+    targets = {_slug(h) for h in re.findall(r"^#{1,6}\s+(.+)$", text, re.M)}
+    targets |= set(re.findall(r'<a id="([^"]+)"></a>', text))
+    broken = sorted(a for a in anchors if a not in targets)
     assert not broken, f"{readme.name} links to headings that do not exist: {broken}"
+
+
+def test_the_anchor_targets_are_ascii_too():
+    """The ids themselves, not just the links, must be ASCII -- otherwise the same problem
+    comes back from the other side."""
+    for readme in _all_markdown():
+        ids = re.findall(r'<a id="([^"]+)"></a>', readme.read_text(encoding="utf-8"))
+        for i in ids:
+            assert ASCII_ANCHOR.match(i), f"{readme.name} declares a non-ASCII anchor id: {i!r}"
