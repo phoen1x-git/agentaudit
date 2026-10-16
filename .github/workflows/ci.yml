@@ -60,8 +60,13 @@ jobs:
       - name: Does the entry point work?
         run: docker run --rm --entrypoint agentaudit agentaudit --version
 
-      - name: Scan the bundled sample inside the image
-        run: docker run --rm agentaudit --demo --tag ci-docker
-
-      - name: Did a round come out?
-        run: docker run --rm --entrypoint ls agentaudit -la /scan/out/round-ci-docker/
+      # One step, and one container. These were two docker runs, and the second one could
+      # never have worked: each `docker run` starts a fresh container, so the round the first
+      # one wrote was gone by the time the second looked for it. Mounting a volume fixes the
+      # check and tests the documented way of getting output out of the image.
+      - name: Scan the bundled sample, and check the round landed on the host
+        run: |
+          mkdir -p docker-out
+          docker run --rm -v "$PWD/docker-out:/scan/out" agentaudit --demo --tag ci-docker
+          test -f docker-out/round-ci-docker/findings.tsv
+          ls -la docker-out/round-ci-docker/
