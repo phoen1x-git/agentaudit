@@ -77,11 +77,9 @@ def _imported_roots() -> dict[str, set[str]]:
     return found
 
 
-# A module imported by an orphan script that is not in the repository:
-# `tools/fetch_src_probe.py:286` imports `probe_attack_surface`, which no longer exists, so
-# that script raises ImportError if it is ever run. It is on the list to be deleted, and until
-# then the set is pinned here -- so a *new* dangling import still fails this test.
-KNOWN_MISSING = {"probe_attack_surface"}
+# No exceptions. One used to be here: `tools/fetch_src_probe.py` imported a module that was
+# not in the repository. That file is gone, so a dangling import now fails outright.
+KNOWN_MISSING: set[str] = set()
 
 
 def test_every_third_party_import_is_declared():

@@ -121,6 +121,7 @@ CI builds and smoke-tests the image on every push.
 | `agentaudit selftest` | run the rule self-tests |
 | `agentaudit validate` | check `core/config/*.yml` |
 | `agentaudit log` | show or export the local scan statistics |
+| `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo |
 
 ---
 
@@ -396,46 +397,48 @@ The complete list, including the triage-layer patches and the switches for A/B r
 
 ## How it works
 
-For anyone reading the code, or running a batch rather than a single target.
+For anyone reading the code, or running a batch rather than a single repository.
 
-```
-select targets -> fetch & build CodeQL DBs -> static frontend (CodeQL)
-  -> reachability triage -> entry-point tracing -> parameter-taint check
-  -> LLM triage -> report material
-```
+One target goes through four stages, and `agentaudit scan` drives all of them:
 
-| Stage | Entry point | What it does |
+| Stage | Where | What it does |
 |---|---|---|
-| Select targets | `tools/target_screener.py` | filter repos by stars / activity / "is this an agent at all?" |
-| Fetch & build | `tools/prepare_new_targets.py` | download sources and build CodeQL databases; resumable |
-| Static frontend | `core/static_frontend.py` | run the CodeQL queries, parse SARIF |
-| Reachability | `tools/reachability_triage.py` | can this sink be reached from outside at all? |
-| Entry tracing | `tools/find_entries_for_suspects.py` | walk up to callers, look for exposure markers |
-| **Parameter taint** | `tools/param_taint_criteria.py` | is the argument controllable, and is it constrained on the way? |
-| LLM triage | `core/llm_judge.py` | five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
-| One-shot run | `app/run_all.py` | prepare → scan → report |
+| Static frontend | `core/static_frontend.py` | build a CodeQL database, run the queries in `core/ql/`, parse the SARIF |
+| Strong/weak duality | `core/duality.py` | one function doing the same job safely on one line and unsafely on another |
+| Triage | `core/llm_judge.py` | the five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
+| Report material | `app/make_report.py`, `app/make_index.py`, `tools/to_sarif.py` | the draft, the sortable table, the SARIF |
 
-`app/scan.py` wraps the same engine. Drive it stage by stage when you are scanning a whole batch:
+Two more sit across those: `core/consistency.py` decides what the evidence does not support and
+refuses to report it, and `core/cfg.py` owns the rule configuration. `core/gate.py` (is this
+target worth scanning at all) and `core/upstream.py` (has this already been reported upstream)
+are used by the batch path only.
+
+### Scanning a batch
+
+A batch has two slow, restartable stages. Both can be stopped and re-run; finished work is
+skipped.
 
 ```bash
-# 1) offline self-check (free)
-agentaudit selftest
+# 1) build a candidate list (needs a GitHub token, and a few minutes)
+agentaudit targets fetch        # -> data/target_pool/pool.json
+agentaudit targets screen       # -> data/target_pool/screened.json
 
-# 2) select targets (needs a GitHub token)
-python tools/target_screener.py fetch
-python tools/target_screener.py screen
+# 2) pick the ones you want into a batch file, then fetch sources and build databases
+python app/prepare_targets.py data/target_pool/batch1.json
 
-# 3) fetch sources and build CodeQL databases (restartable; finished work is skipped)
-python tools/prepare_new_targets.py --status
-python tools/prepare_new_targets.py
-
-# 4) run one round
-agentaudit round --tag my-round --targets-file core/config/targets.yml
-
-# 5) render the report draft and the HTML index
-agentaudit report out/round-my-round --lang en
-agentaudit index  out/round-my-round --lang en
+# 3) scan and write the reports
+agentaudit round    --tag my-round --targets-file core/config/targets.yml
+agentaudit report   out/round-my-round
+agentaudit index    out/round-my-round
 ```
+
+`agentaudit all --tag my-round --batch data/target_pool/batch1.json --targets-file
+core/config/targets.yml` chains those steps, skipping whatever is already done.
+
+The screener excludes repositories you have already looked at, which is what makes "not yet
+examined" mean something. That list lives in `core/config/known_targets.yml`, which does not
+ship -- copy the example and add your own. It is a file rather than a constant in the code
+because a list of real repositories says more about whoever wrote the tool than about the tool.
 
 > **Mind the cost.** The triage stage spends LLM credits. Scripts print an estimated cost up
 > front, and `AF_LLM_MAX_CNY` hard-stops a run when the cap is reached.

@@ -41,7 +41,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+
+import yaml
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(HERE)
@@ -178,45 +181,28 @@ def days_since(s):
     return (datetime.now(timezone.utc) - t).days
 
 
-# ---------------------------------------------------------------- 已知事实
+# ---------------------------------------------------------------- already-covered list
 
-# AgentFuzz AgentFuzz Dataset.md 里测过的 20 个 —— 必须排除，否则没有「未测过」可言
-PAPER_TARGETS = {
-    "significant-gravitas/autogpt", "langgenius/dify", "langflow-ai/langflow",
-    "quivrhq/quivr", "chatchat-space/langchain-chatchat", "infiniflow/ragflow",
-    "microsoft/sample-toolkit", "stitionai/samplecoder", "transformeroptimus/superagi",
-    "gaizhenbiao/chuanhuchatgpt", "eosphoros-ai/db-gpt", "sinaptik-ai/sampleframe",
-    "sample-toolkit/sample-toolkit", "sampleplat/sampleplat", "samplexa/samplexa",
-    "sampletask/sampletask", "microsoft/sampledelegate", "samplescope/samplescope",
-    "samplezero/samplezero", "xlang-ai/sampledesktops",
-}
+# Repositories that should be excluded because they have already been examined -- by a paper,
+# by someone else, or by you. This is what makes "not yet examined" mean something.
+#
+# It is a file rather than a constant here, and the file ships empty. A list of real
+# repositories says more about whoever wrote the tool than about the tool, and a list that is
+# half anonymised says even more: the placeholders mark the ones somebody thought worth hiding.
+#
+#   cp core/config/known_targets.example.yml core/config/known_targets.yml
+KNOWN_FILE = Path(os.environ.get("AF_KNOWN_TARGETS")
+                  or os.path.join(PROJ, "core", "config", "known_targets.yml"))
 
-# 我们已经实测过的（含改名）：命中即视作「已研究过」
-KNOWN_TRIED = {
-    "samplezero/samplezero", "samplezero/samplezero", "sample-toolkit/sample-toolkit",
-    "microsoft/sampledelegate", "sinaptik-ai/sampleframe", "sampleframe/sampleframe",
-}
 
-# ★ 标准答案：用来验规则本身（跑 selftest）。
-#   依据是 an internal note 里 的上游核实结果。
-KNOWN_TRUTH = {
-    "samplezero/samplezero": {
-        "archived": False, "expect_excluded": True,
-        "why": "头部 2万+星，三个 bug 上游全修 —— 已被审计过",
-    },
-    "sample-toolkit/sample-toolkit": {
-        "archived": True, "expect_excluded": True,
-        "why": "仓库已归档",
-    },
-    "microsoft/sampledelegate": {
-        "archived": True, "expect_excluded": True,
-        "why": "仓库已归档，防护 bug 已修",
-    },
-    "sampleframe/sampleframe": {
-        "archived": False, "expect_excluded": True,
-        "why": "停更，server/ 整个从 main 删除",
-    },
-}
+def load_known() -> tuple[set, set]:
+    """(already covered, already tried). Both empty when there is no config file."""
+    if not KNOWN_FILE.exists():
+        return set(), set()
+    doc = yaml.safe_load(KNOWN_FILE.read_text(encoding="utf-8")) or {}
+    to_lower = lambda xs: {str(x).strip().lower() for x in (xs or []) if str(x).strip()}
+    return to_lower(doc.get("already_covered")), to_lower(doc.get("already_tried"))
+
 
 # ---------------------------------------------------------------- 规则
 
@@ -224,9 +210,9 @@ KNOWN_TRUTH = {
 #   （教训：按名字匹配 = 换个名字就瞎，栽过四次）
 #
 # ★★ 词表要宽。规则的目的是**召回** Agent 项目，不是精确分类。
-#   第一版把 LLM 维度只认 "llm/gpt/openai"，结果把 Biomni（描述写 "biomedical
-#   AI agent"）、Paper2Poster（"Multi-agent Poster"）全误杀了 —— 现代项目的
-#   描述早就不写 LLM 了，写 AI / model / 生成式。
+#   #   第一版 LLM 维度只认 "llm/gpt/openai"，于是把描述写 "biomedical AI agent" 的
+#   项目、以及写 "multi-agent poster" 的项目全误杀了 —— 现代项目的描述早就不
+#   一定写 LLM，写的是 AI / model / 生成式，
 AGENT_TOPIC_WORDS = {
     "agent", "agents", "ai-agent", "ai-agents", "agentic", "autonomous-agent",
     "agentops", "llm-agent", "llm-agents", "multi-agent", "multi-agent-system",
@@ -292,9 +278,8 @@ def looks_like_agent(name, desc, topics):
         reasons.append("有工具/行动类信号")
 
     # ★★★ 三个维度，每个维度的信号来源都是「topics 或 描述」（两个都算）。
-    #   第一版只让描述提供 LLM 信号，结果把 Paper2Poster（多智能体海报生成，
-    #   描述里没有 llm 字样）、stepfun-ai/gelab-zero（GUI agent）、
-    #   HumanSignal/one SDK（自主数据标注 agent 框架）全误杀了。
+    #   第一版只让描述提供 LLM 信号，于是漏掉了一批真项目：多智能体海报生成、
+#   GUI agent、自主数据标注的 agent 框架 —— 它们都是 agent，只是描述里不写 "LLM"。
     #   → 结论：现代 Agent 项目的自我描述在 topics 上比在 description 上更完整。
     #     只看一个字段就等于"按名字匹配"的另一种形式。
     dim_hit = (t_agent > 0) or (d_agent > 0)
@@ -314,11 +299,10 @@ def looks_like_agent(name, desc, topics):
         # ★ maybe 的门槛是「有 agent 属性 + 至少另一个维度有信号」。
         #   候选池本身就是 topic:agent 检索来的，所以"是不是 LLM 项目"在这里
         #   几乎是恒真的 —— 把它当硬门槛只会误杀：
-        #   Paper2Poster（多智能体海报生成，描述里没 llm 字样）、
-        #   stepfun-ai/gelab-zero（GUI agent）、HumanSignal/one SDK（数据标注 agent 框架）
-        #   都被卡在 no 上。改成"不排斥"而非"必须命中"。
-        #   → 真正该排掉的是 lorax / vllm-ascend 这类**没有 agent 属性**的
-        #     推理服务器，它们 dim_hit=False，落在 no 上，规则仍然对。
+        #   #   一批真 agent 项目卡在 no 上：多智能体海报生成、GUI agent、数据标注
+        #   agent 框架。改成"不排斥"而非"必须命中"。
+        #   → 真正该排掉的是**没有 agent 属性**的推理服务器，它们 dim_hit=False，
+        #     落在 no 上，规则仍然对。
         verdict = "maybe"
     else:
         verdict = "no"
@@ -458,9 +442,9 @@ def deep_one(full_name, branch):
 
     # 2) server/api 层：★ 按路径**内容**找，不限层级、不限顶层
     #    ★★ 但"名字里带 api/server"不等于服务端。三类必须排掉（实测踩到的）：
-    #       - 第三方 vendor 代码（clearml_agent/_vendor/jwt/api_jwk.py）
-    #       - CLI 入口（sampleproj/api/cli/commands/*.py 是命令行工具）
-    #       - 调用别人的 API 的客户端（one project/nodes/tools/http_api_call.py）
+    #       - 第三方 vendor 代码（比如随包带进来的 _vendor/ 下面的实现）
+    #       - CLI 入口（api/cli/commands/*.py 这类）
+    #       - 调用别人的 API 的客户端（nodes/tools/ 下面那些只是转发请求的）
     #    → 规则收紧为：**有明确服务端职责信号**才算攻击面。
     srv_real = []
     for p in low:
@@ -495,7 +479,7 @@ def deep_one(full_name, branch):
         re.match(r"^(server|servers|api|backend|webapp)/", p) for p in low)
 
     # 3) 工具/插件机制：★ 也不能只看目录名。
-    #    one project/nodes/tools/ 里全是"调用工具的节点配置"，不是攻击面；
+    #    某项目的 nodes/tools/ 里全是"调用工具的节点配置"，不是攻击面；
     #    真正有意义的是**工具的注册/实现**（LLM 能调的那些）。
     #    信号：文件名像工具实现，或目录里有注册表/base/factory。
     tool_real = []
@@ -542,8 +526,8 @@ def load_pool():
     return {"repos": {}, "queries": [], "fetched_at": None}
 
 
-# ★ 规范化名缓存：AgentFuzz目标/已知目标可能改名（samplezero: frdel/ → agent0ai/）
-#   按旧名匹配 = 漏排除。canonical 文件由 `resolve` 命令生成。
+# ★ 规范化名缓存：排除表里的项目会改名，按旧名匹配就会漏排除。
+#   canonical 文件由 `resolve` 命令生成。
 CANON_FILE = os.path.join(OUT, "canonical.json")
 
 # GitHub 会把改名仓库 301 重定向到规范名。urllib 自动跟随，
@@ -565,14 +549,14 @@ def canon_map():
 
 
 def cmd_resolve(args):
-    """把AgentFuzz 20 个目标 + 已知目标的**规范名**解析出来并缓存。
+    """Resolve the names in the exclusion list to their current canonical names, and cache that.
 
-    ★ 为什么必须做：samplezero 已从 frdel/ 改名到 agent0ai/。
-      排除表里若只有旧名，改名后的仓库会**漏排除**，
-      于是「AgentFuzz已测过」这条规则在最该拦的那个项目上失效。
-      （同类教训：按名字匹配 = 换个名字就瞎）
+    Why it matters: repositories get renamed, and an exclusion list that holds only the old
+    name stops matching exactly when it is needed most. Matching by name is only as good as
+    the names being current.
     """
-    names = sorted(PAPER_TARGETS | KNOWN_TRIED)
+    covered, tried = load_known()
+    names = sorted(covered | tried)
     cm = canon_map()
     print("解析 %d 个仓库的规范名...\n" % len(names))
     changed = []
@@ -617,7 +601,8 @@ def is_paper_target(full_lower):
         if new == full_lower:
             cand.add(old)
     cand.discard(None)
-    return bool(cand & PAPER_TARGETS) or bool(cand & KNOWN_TRIED)
+    covered, tried = load_known()
+    return bool(cand & covered) or bool(cand & tried)
 
 
 def cmd_fetch(args):
@@ -889,79 +874,6 @@ def cmd_report(args):
     return 0
 
 
-def probe_repo_surface(full_name, branch, clone_dir=None):
-    """★ 源码级攻击面探针。
-
-    ★★ 为什么不直接 git clone（实测踩过，别再试）：
-       本机 git 走WorkBuddy 的代理时 CONNECT 被拒：
-           git clone          → CONNECT tunnel failed, response 502（8/8 全失败）
-           git 不用代理        → Could not connect to server:443
-       而 curl 走同一个代理是通的（200）。所以这是代理策略挡了 git 的 CONNECT，
-       不是配置问题，改配置也没用。
-       改用 fetch_src_probe 走 API 按需取关键文件（core 额度 60/小时，带缓存）。
-    """
-    import fetch_src_probe as fsp
-    return fsp.probe_remote(full_name, branch or "main")
-
-
-def cmd_probe(args):
-    """对候选目标跑源码级探针。★ 走 git clone，不花 GitHub API 额度。"""
-    if not os.path.exists(SCREEN_FILE):
-        print("先跑 screen", file=sys.stderr)
-        return 1
-    with open(SCREEN_FILE, "r", encoding="utf-8") as f:
-        scr = json.load(f)
-
-    deep = {}
-    if os.path.exists(DEEP_FILE):
-        with open(DEEP_FILE, "r", encoding="utf-8") as f:
-            deep = {k.lower(): v for k, v in
-                    (json.load(f).get("items") or {}).items()}
-
-    targets = [r for r in scr["items"] if r.get("passed_L1")]
-    if args.repos:
-        want = set(s.strip().lower() for s in args.repos.split(","))
-        targets = [r for r in targets if r["full_name"].lower() in want]
-    if args.limit:
-        targets = targets[:args.limit]
-
-    print("对 %d 个目标跑源码探针（走 API 按需取文件，带缓存）\n" % len(targets))
-    for i, t in enumerate(targets, 1):
-        fn = t["full_name"]
-        key = fn.lower()
-        prev = deep.get(key) or {}
-        # ★★ 过期记录必须清掉，否则会永久遮蔽后来的成功（踩过）：
-        #    git 时代留下的 {"clone_ok": false, "error": "CONNECT 502"} 会让
-        #    后续成功的探针被当成"已缓存"跳过 —— 报告里于是写着「未跑源码探针」
-        #    而实际上 samplecli 早就跑出了 11 处危险执行点。
-        #    → 判断缓存有效性时，认字段名（ok vs clone_ok），
-        #      认不认识的记录一律作废重跑。
-        if prev.get("ok"):
-            print("[%d/%d] %s (已缓存)" % (i, len(targets), fn))
-            continue
-        if prev:
-            print("[%d/%d] %s (旧格式记录已作废，重跑)" % (i, len(targets), fn))
-        deep.pop(key, None)
-        print("[%d/%d] %s" % (i, len(targets), fn), flush=True)
-        deep[key] = probe_repo_surface(fn, t.get("default_branch") or "main")
-        v = deep[key]
-        if v.get("ok"):
-            vd = v.get("verdict") or {}
-            print("      HTTP端点=%s MCP=%s 工具注册=%s 危险执行点=%s | "
-                  "危险点文件数=%d" % (
-                      vd.get("has_http_endpoint"), vd.get("has_mcp_server"),
-                      vd.get("has_tool_registration"),
-                      vd.get("has_dangerous_exec"),
-                      (v.get("counts_by_file") or {}).get("dangerous_exec", 0)))
-        else:
-            print("      取源码失败：%s" % v.get("error"))
-        _save(DEEP_FILE, {"deep_at": now_utc(), "items": deep})
-
-    _save(DEEP_FILE, {"deep_at": now_utc(), "items": deep})
-    print("\n-> %s" % DEEP_FILE)
-    return 0
-
-
 def score_target(r, d):
     """给目标打分（0–100）。★ 每条分数都要给得出来的理由。
 
@@ -1067,73 +979,87 @@ def score_target(r, d):
 
 
 def cmd_selftest(args):
-    """★ 验规则本身。
+    """Test the screening rules themselves. Offline, on synthetic repositories.
 
-    规矩：跑任何实验前先自己验规则（零成本）。规则坏了，跑出来的数字全是废的。
-    这里拿 5 个已知真实状态的目标当标准答案，检查筛规则能不能把它们正确排除。
+    This used to fetch repositories from the GitHub API and compare against canned answers
+    about their upstream status. Two problems with that: it needed the network, and when the
+    requests failed it printed "passed" anyway, having asserted nothing. A test that reports
+    success when it checked nothing is worse than no test, because it is believed.
+
+    So the cases below are built from dictionaries that look like search results, and the
+    rules are what is being checked.
     """
     print("=" * 66)
-    print("规则自测：用已知上游状态的标准答案验筛选逻辑")
+    print("rule self-test (offline, synthetic inputs)")
     print("=" * 66)
-    print("标准答案来源：an internal note 的 上游核实")
+
+    def ago(days: int) -> str:
+        """A GitHub-style timestamp `days` in the past."""
+        return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    active, stale = ago(10), ago(MAX_DAYS_SINCE_PUSH + 30)
+
+    def repo(**kw):
+        base = {
+            "full_name": "someone/agent-kit",
+            "name": "agent-kit",
+            "description": "an LLM agent framework with tools to execute actions",
+            "topics": ["llm", "agent", "tools"],
+            "language": "Python",
+            "archived": False,
+            "fork": False,
+            "pushed_at": active,
+            "stargazers_count": (STAR_MIN + STAR_MAX) // 2,
+        }
+        base.update(kw)
+        return base
+
+    cases = [
+        ("a live Python agent project passes", repo(), True),
+        ("an archived repository is excluded", repo(archived=True), False),
+        ("a fork is excluded", repo(fork=True), False),
+        ("a non-Python repository is excluded", repo(language="Go"), False),
+        ("a stale repository is excluded", repo(pushed_at=stale),
+         False),
+        ("a repository with no push date is excluded", repo(pushed_at=None), False),
+        ("too many stars is excluded -- it has been audited already",
+         repo(stargazers_count=STAR_MAX + 1000), False),
+        ("too few stars is excluded", repo(stargazers_count=max(0, STAR_MIN - 1)), False),
+        ("a project that does not look like an agent is excluded",
+         repo(name="csv-tools", description="a small CSV helper", topics=["csv"]), False),
+        ("an agent project with no tool/action signal is only a 'maybe', not a 'yes'",
+         repo(description="an LLM agent framework", topics=["llm", "agent"]), True),
+    ]
+
+    failures = []
+    for label, item, expect_pass in cases:
+        passed, reasons = screen_item(item)
+        ok = passed is expect_pass
+        print(f"  [{'ok' if ok else 'FAIL'}] {label}")
+        if not ok:
+            print(f"        expected pass={expect_pass}, got pass={passed}; reasons={reasons}")
+            failures.append(label)
+
     print()
-
-    fails = []
-    for full, truth in KNOWN_TRUTH.items():
-        print("--- %s" % full)
-        print("    标准答案：archived=%s，应被排除=%s（%s）" % (
-            truth["archived"], truth["expect_excluded"], truth["why"]))
-
-        d = http_json("https://api.github.com/repos/%s" % full)
-        if "_error" in d or d.get("message") == "Moved Permanently":
-            print("    [跳过] API 返回 %s（改名/网络）" % (
-                d.get("message") or d.get("_error")))
-            if d.get("message") == "Moved Permanently":
-                print("            → 真名：%s" % d.get("url"))
-            continue
-
-        got_arch = bool(d.get("archived"))
-        print("    实测：archived=%s  star=%s  pushed=%s  安全公告数=%s" % (
-            got_arch, d.get("stargazers_count"),
-            (d.get("pushed_at") or "")[:10], "见下"))
-        print("    重定向到：%s" % (d.get("full_name") or "(未重定向)"))
-
-        # 验规则 1：archived 规则
-        if got_arch != truth["archived"]:
-            fails.append("%s: archived 规则错了，标准答案=%s 实测=%s" % (
-                full, truth["archived"], got_arch))
-            print("    [FAIL] archived 规则与标准答案不符")
-        else:
-            print("    [OK] archived 规则正确")
-
-        # 验规则 2：star 区间能把头部排除掉
-        st = d.get("stargazers_count") or 0
-        if st > STAR_MAX:
-            print("    [OK] star=%d > %d → 会被 star 区间排除（头部已被审计）" % (
-                st, STAR_MAX))
-        else:
-            print("    [ ] star=%d 未触发区间排除，需靠其它规则" % st)
-
-        # 验规则 3：安全公告数（未被审计的直接信号）
-        adv = http_json("https://api.github.com/repos/%s/security-advisories?per_page=100" % full)
-        if isinstance(adv, list):
-            print("    安全公告：%d 条" % len(adv))
-            for a in adv[:3]:
-                print("      - %s %s" % (a.get("cve_id") or a.get("ghsa_id"),
-                                        (a.get("summary") or "")[:58]))
-            if len(adv) > 0:
-                print("    [OK] 有公告 → 印证「已被审计过」，这条规则可用")
-        else:
-            print("    安全公告：查不到（%s）" % str(adv)[:60])
-        print()
+    for name, desc, topics, expected in [
+        ("agent-kit", "an LLM agent framework with tools to execute actions",
+         ["llm", "agent"], "yes"),
+        ("helper", "a small utility", ["utility"], "no"),
+    ]:
+        verdict, score, reasons = looks_like_agent(name, desc, topics)
+        ok = verdict == expected
+        print(f"  [{'ok' if ok else 'FAIL'}] looks_like_agent({name!r}) -> {verdict}"
+              f" (expected {expected})")
+        if not ok:
+            failures.append(f"looks_like_agent({name!r})")
 
     print("=" * 66)
-    if fails:
-        print("自测不通过：")
-        for f in fails:
-            print("  [FAIL] %s" % f)
+    if failures:
+        print("self-test FAILED:")
+        for f in failures:
+            print(f"  [FAIL] {f}")
         return 1
-    print("自测通过：规则与已知上游状态一致")
+    print(f"self-test passed: {len(cases) + 2} cases, none skipped")
     return 0
 
 
@@ -1158,9 +1084,6 @@ def main():
     pr.add_argument("--top", type=int, default=0, help="只写前 N 个")
     sub.add_parser("selftest", help="验规则本身")
     sub.add_parser("resolve", help="把AgentFuzz目标解析成规范名（防改名漏排除）")
-    pp = sub.add_parser("probe", help="★ 源码级攻击面探针（git clone，不花 API 额度）")
-    pp.add_argument("--limit", type=int, default=0, help="只查前 N 个")
-    pp.add_argument("--repos", default="", help="只查指定项目（逗号分隔）")
 
     a = p.parse_args()
     if a.cmd == "fetch":
@@ -1171,8 +1094,6 @@ def main():
         return cmd_deep(a)
     if a.cmd == "report":
         return cmd_report(a)
-    if a.cmd == "probe":
-        return cmd_probe(a)
     if a.cmd == "resolve":
         return cmd_resolve(a)
     if a.cmd == "selftest":

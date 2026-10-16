@@ -24,6 +24,11 @@ and add nothing to the picture.
 1. **`findings.tsv`** — one row per candidate. The interesting columns are
    `ai_verdict`, `by_design` / `scope_exceeds` (is it a designed feature, and does it
    exceed its intended scope?) and `arg_source` (where does the dangerous value come from?).
+
+   ★ `arg_source` together with `guards` is where *controllability* is written down, and the
+   four rows above cover the four outcomes: `llm_output` with no guards is a pass-through;
+   `constant` never came from outside; `tool_arg` with two guards was constrained on the way;
+   and `unknown` means the analysis could not tell. That last one is the honest one.
 2. **`report_draft.md`** — only `vuln` rows, written up for a human. Note the header:
    it states plainly that this is **AI-assisted and not verified by execution**.
 3. **`agentaudit.sarif`** — the same candidates in the format a code-scanning UI or an editor

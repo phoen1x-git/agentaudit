@@ -226,6 +226,8 @@ added without being documented.
 | `AF_NO_DATAFLOW` | `0` | disable the inter-procedural argument-source query |
 | `AF_ARGFLOW_ATTR` | `0` | also treat attribute reads as taint steps in that query |
 | `AF_DUALITY_SDK` | `0` | turn on the SDK-aware part of the strong/weak-form check |
+| `AF_KNOWN_TARGETS` | `core/config/known_targets.yml` | where the screener's exclusion list lives |
+| `AF_KNOWN_TARGETS` | `core/config/known_targets.yml` | where the screener's exclusion list lives |
 
 ### The triage layer
 

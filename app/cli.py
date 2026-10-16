@@ -40,6 +40,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "selftest": ("tools/run_selftests.py", "run the rule self-tests"),
     "validate": ("tools/validate_config.py", "validate core/config/*.yml"),
     "log": ("tools/scan_log.py", "show or export the local scan statistics log"),
+    "targets": ("tools/target_screener.py", "find and screen GitHub targets for a batch"),
     "interactive": ("app/interactive.py", "a menu, for when you don't want to remember flags"),
 }
 

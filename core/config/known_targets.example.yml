@@ -1,0 +1,19 @@
+# Repositories the screener should skip because they have already been examined.
+#
+# This is what makes "not yet examined" mean anything. Copy it into place and add your own:
+#
+#   cp core/config/known_targets.example.yml core/config/known_targets.yml
+#
+# The shipped file is deliberately empty. A list of real repositories says more about whoever
+# wrote the tool than about the tool -- and a list that is only half anonymised says more
+# still, because the placeholders mark the entries somebody thought worth hiding.
+#
+# Override the location with AF_KNOWN_TARGETS.
+
+# Covered by a paper, a blog post or somebody else's audit.
+already_covered: []
+#   - owner/name
+
+# Already scanned by you. Kept separate so the report can say which kind of exclusion it was.
+already_tried: []
+#   - owner/name

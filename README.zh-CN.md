@@ -115,6 +115,7 @@ CI 每次 push 都会构建 + 冒烟测试这个镜像。
 | `agentaudit selftest` | 跑规则自测 |
 | `agentaudit validate` | 校验 `core/config/*.yml` |
 | `agentaudit log` | 查看 / 导出本机的扫描统计 |
+| `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库） |
 
 ---
 
@@ -379,46 +380,46 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 
 ## 它怎么工作
 
-给要读代码的人，以及要**批量**扫而不是扫单个目标的人。
+给要读代码的人，以及要**批量**扫而不是只扫一个仓库的人。
 
-```
-选择目标 -> 下载并建 CodeQL 库 -> 静态前端（CodeQL）
-  -> 可达性筛选 -> 追入口 -> 参数贯通检查
-  -> LLM 复核 -> 报告素材
-```
+单个目标走四个阶段，`agentaudit scan` 会把四个都跑完：
 
-| 阶段 | 入口 | 做什么 |
+| 阶段 | 在哪 | 做什么 |
 |---|---|---|
-| 选择目标 | `tools/target_screener.py` | 按 star / 活跃度 /「是不是 Agent」筛仓库 |
-| 下载 + 建库 | `tools/prepare_new_targets.py` | 下源码 + 建 CodeQL 库；**可断点续跑** |
-| 静态前端 | `core/static_frontend.py` | 跑 CodeQL 查询，解析 SARIF |
-| 可达性 | `tools/reachability_triage.py` | 这个 sink 从外面**根本调得到吗**？ |
-| 追入口 | `tools/find_entries_for_suspects.py` | 往上找调用方，看有没有暴露标记 |
-| **参数贯通** | `tools/param_taint_criteria.py` | 实参可控吗？沿途被约束了吗？ |
+| 静态前端 | `core/static_frontend.py` | 建 CodeQL 库、跑 `core/ql/` 里的查询、解析 SARIF |
+| 强弱写法 | `core/duality.py` | 同一个函数里，同一件事一行写得安全、一行写得不安全 |
 | LLM 复核 | `core/llm_judge.py` | 五个维度：`verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
-| 一键跑 | `app/run_all.py` | 下载 → 扫描 → 出报告 |
+| 报告素材 | `app/make_report.py`、`app/make_index.py`、`tools/to_sarif.py` | 报告草稿、可排序清单页、SARIF |
 
-`app/scan.py` 包的是同一套引擎。**要扫一整批目标时**，就按阶段手动跑：
+另外两个横跨在上面：`core/consistency.py` 判断"证据支持不了什么"并拒绝报它，
+`core/cfg.py` 管规则配置。`core/gate.py`（这个目标值不值得扫）和
+`core/upstream.py`（是不是已经有人报过）**只在批量路径里用**。
+
+### 批量扫描
+
+批量有两个又慢又能断点续跑的阶段，随时可以停、可以重跑，做完的部分会跳过。
 
 ```bash
-# 1) 离线自测（免费）
-agentaudit selftest
+# 1) 先攒一份候选清单（需要 GitHub token，要几分钟）
+agentaudit targets fetch        # -> data/target_pool/pool.json
+agentaudit targets screen       # -> data/target_pool/screened.json
 
-# 2) 选目标（需要 GitHub token）
-python tools/target_screener.py fetch
-python tools/target_screener.py screen
+# 2) 挑出你要的写进批文件，然后下源码 + 建库
+python app/prepare_targets.py data/target_pool/batch1.json
 
-# 3) 下源码 + 建 CodeQL 库（可重跑；已完成的部分会跳过）
-python tools/prepare_new_targets.py --status
-python tools/prepare_new_targets.py
-
-# 4) 跑一轮
-agentaudit round --tag my-round --targets-file core/config/targets.yml
-
-# 5) 出报告草稿和 HTML 清单页
-agentaudit report out/round-my-round --lang en
-agentaudit index  out/round-my-round --lang en
+# 3) 扫这批，然后出报告
+agentaudit round  --tag my-round --targets-file core/config/targets.yml
+agentaudit report out/round-my-round
+agentaudit index  out/round-my-round
 ```
+
+`agentaudit all --tag my-round --batch data/target_pool/batch1.json --targets-file
+core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳过。
+
+筛选中会排除**你已经看过的仓库** —— 这正是"还没看过"这句话有意义的前提。
+那份名单放在 `core/config/known_targets.yml`，**不随仓库发布**：把示例复制一份自己填。
+它做成文件而不是代码里的常量，是因为**一份真实仓库清单，透露的关于写它的人的信息，
+比关于这个工具的信息更多**。
 
 > **注意花费。** 复核阶段会消耗 LLM 额度。脚本会**事先印出预估花费**，
 > `AF_LLM_MAX_CNY` 到限会**硬停**。
