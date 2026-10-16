@@ -71,6 +71,23 @@ agentaudit --help
 Where does output go? To `./out` under the current directory, or to `$AGENTAUDIT_HOME` if you
 set it. Nothing is written into the installation.
 
+#### All the commands
+
+| Command | What it does |
+|---|---|
+| `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
+| `agentaudit scan` | scan a target — `--demo`, `--path DIR`, `--repo OWNER/NAME` |
+| `agentaudit explain <round>` | show why a candidate was reported |
+| `agentaudit serve <round>` | read a round in a browser (localhost only) |
+| `agentaudit report <round>` | render the report draft |
+| `agentaudit index <round>` | render the HTML index |
+| `agentaudit sarif <round>` | export the round as SARIF 2.1.0 |
+| `agentaudit round --tag NAME` | run one round over a target table |
+| `agentaudit all --tag NAME` | prepare → scan → report, resumable |
+| `agentaudit selftest` | run the rule self-tests |
+| `agentaudit validate` | check `core/config/*.yml` |
+| `agentaudit log` | show or export the local scan statistics |
+
 ### Smoke test (offline, no API key, no CodeQL)
 
 ```bash
@@ -172,6 +189,20 @@ python app/scan.py --path ./myproject      # a project already on disk
 python app/scan.py --repo owner/name       # fetch a GitHub repo and scan it
 ```
 
+If you would rather not remember flags, a bare `agentaudit` opens a menu in the terminal:
+
+```
+  1  Scan a target
+  2  Open a previous round
+  3  Run the rule self-tests
+  4  Validate the rule configuration
+  5  Scan statistics (local, statistics only)
+  6  List the commands
+```
+
+It echoes the command line it runs, so the menu teaches the flags instead of hiding them, and
+it refuses to start when there is no terminal (a pipe or CI) rather than blocking on input.
+
 Output lands in `out/round-<tag>/`:
 
 | File | What it is |
@@ -209,6 +240,20 @@ docker run --rm agentaudit                                             # bundled
 docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
     agentaudit --path /scan/myproj --tag myproj --out /scan/out
 ```
+
+The image entry point is `agentaudit scan`, so the arguments above are the same ones you would
+type locally. Other subcommands need their own entry point:
+
+```bash
+docker run --rm --entrypoint agentaudit agentaudit log
+docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
+```
+
+**On verifying the image.** The `Dockerfile` was written on a machine without Docker, so the
+first build is the test. It is built to fail loudly rather than quietly: the CodeQL CLI is
+executed *during* the build, so a wrong release layout stops the build instead of producing an
+image whose scanner cannot run. CI builds and smoke-tests the image on every push (the `docker`
+job), which is the practical way to keep it honest.
 
 ### LLM triage is off by default
 

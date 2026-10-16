@@ -6,6 +6,43 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## 0.4.0 — 2026-10-16
+
+### Added
+
+- **Interactive mode** (`agentaudit`, or `agentaudit interactive`). A menu for when you do not
+  want to remember flags: scan a target, open a previous round, run the self-tests, validate
+  the configuration, or look at the scan statistics. It echoes the command line it runs, so the
+  menu teaches the flags rather than hiding them, and it starts only when there is a terminal —
+  piped or in CI it prints usage and exits, so nothing can hang waiting for input.
+  `AGENTAUDIT_INTERACTIVE=1` forces it on, which is how the tests drive it.
+- `tests/test_docs.py`: keeps the two READMEs structurally in step, checks that every
+  subcommand is documented in both, that every documented script exists, and that the rule
+  count quoted in the READMEs matches the configuration.
+- A `docker` job in CI that builds the image and exercises it (CodeQL present and runnable, the
+  entry point works, the bundled sample produces a round).
+- A `tests/test_interactive.py` suite.
+
+### Fixed
+
+- **Interactive mode spun forever at end of input.** Ctrl-D (or an exhausted script) made the
+  menu loop print "no such option" as fast as it could. "The input ended" now has its own
+  signal instead of sharing one with "the user pressed Enter".
+- **Interactive mode could not run a scan when the workspace was elsewhere.** It resolved the
+  script path against the workspace instead of against the checkout, so any run with
+  `AGENTAUDIT_HOME` (or simply a different working directory) failed with exit code 2 and no
+  explanation.
+- The Chinese README had fallen several sections behind the English one (install, reading the
+  results, the scan log, `--ignore`, the SARIF row). Both are now in step, and the new test
+  above makes that a build failure rather than something nobody notices.
+
+### Changed
+
+- The Dockerfile runs the CodeQL CLI during the build, so a wrong release layout fails the build
+  loudly instead of producing an image whose scanner cannot run. Its entry point is
+  `agentaudit scan`, and the image also has the `agentaudit` command available.
+- `AGENTAUDIT_INTERACTIVE=0` explicitly disables interactive mode.
+
 ## 0.3.0 — 2026-10-14
 
 ### Added

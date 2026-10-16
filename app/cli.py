@@ -40,6 +40,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "selftest": ("tools/run_selftests.py", "run the rule self-tests"),
     "validate": ("tools/validate_config.py", "validate core/config/*.yml"),
     "log": ("tools/scan_log.py", "show or export the local scan statistics log"),
+    "interactive": ("app/interactive.py", "a menu, for when you don't want to remember flags"),
 }
 
 
@@ -59,7 +60,16 @@ def usage(stream=sys.stdout) -> None:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    if not argv or argv[0] in ("-h", "--help", "help"):
+    if not argv:
+        # A bare `agentaudit` opens the menu -- but only when there is a terminal to talk to.
+        # Piped or in CI it prints usage and exits, so nothing can hang waiting for input.
+        from app.interactive import wants_interactive
+        if wants_interactive():
+            from app.interactive import main as interactive_main
+            return interactive_main([])
+        usage()
+        return 0
+    if argv[0] in ("-h", "--help", "help"):
         usage()
         return 0
     if argv[0] in ("-V", "--version", "version"):

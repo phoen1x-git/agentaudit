@@ -46,21 +46,78 @@ handler = eval(spec_name)          # spec_name 来自本文件里的一张内置
 
 ## 安装
 
-需要 **Python 3.10+** 和 [CodeQL CLI](https://github.com/github/codeql-cli-binaries)（几百 MB）。
+需要 **Python 3.10+** 和 [CodeQL CLI](https://github.com/github/codeql-cli-binaries)
+（几百 MB，**可选** —— 没有它就走离线模式）。
 
 ```bash
-pip install -r requirements.txt
-
-# CodeQL：默认放在项目下的 ./_tools/codeql/，或用 AF_CODEQL 指定路径。
+git clone <本仓库> && cd agentaudit
+./scripts/setup.sh                 # 装依赖 + 下载 CodeQL CLI；或者只：
+pip install -e .                   # 只装依赖，但会给你一条 `agentaudit` 命令
 ```
+
+两种方式都能直接跑脚本（`python app/scan.py ...`）。做了可编辑安装之后还多一条统一入口：
+
+```bash
+agentaudit scan --demo
+agentaudit explain out/round-demo --index 3
+agentaudit serve out/round-demo
+agentaudit --help
+```
+
+**产物写到哪？** 写进当前目录下的 `./out`；设了 `$AGENTAUDIT_HOME` 就写到那儿。
+**不会往安装目录里写任何东西。**
+
+#### 全部命令
+
+| 命令 | 做什么 |
+|---|---|
+| `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
+| `agentaudit scan` | 扫一个目标 —— `--demo`、`--path 目录`、`--repo 用户名/仓库名` |
+| `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
+| `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
+| `agentaudit report <轮次>` | 生成报告草稿 |
+| `agentaudit index <轮次>` | 生成 HTML 清单页 |
+| `agentaudit sarif <轮次>` | 把该轮导出成 SARIF 2.1.0 |
+| `agentaudit round --tag 名字` | 按目标表跑一轮 |
+| `agentaudit all --tag 名字` | 下载 → 扫描 → 出报告，可断点续跑 |
+| `agentaudit selftest` | 跑规则自测 |
+| `agentaudit validate` | 校验 `core/config/*.yml` |
+| `agentaudit log` | 查看 / 导出本机的扫描统计 |
 
 ### 冒烟测试（离线、不用 API key、不用 CodeQL）
 
 ```bash
-python tools/run_selftests.py        # 全部自测（10 套，纯内存用例，几秒钟）
+agentaudit selftest                # 等价于 python tools/run_selftests.py
+agentaudit scan --demo             # 拿自带的示例项目跑一遍，出 13 条候选
 ```
 
 这是确认环境是否就绪最快的办法。
+
+---
+
+## 读结果
+
+```bash
+agentaudit explain out/round-x --index 3     # 这条为什么被标出来？
+agentaudit serve out/round-x                 # 在浏览器里看整轮（只绑本机）
+```
+
+`serve` 只绑 `127.0.0.1`、只服务那一个目录、关闭目录列表、路径穿越返回 404。
+
+### 扫描日志
+
+每次扫描会往 `./data/scan_log.jsonl` 追加一行，**只记统计量**：文件数、候选数、
+各检查与各判定的分布、耗时、版本、规则配置的哈希。**不含源码、不含路径、不含项目名** ——
+记录在落盘之前就要过这道校验，不合格直接拒绝写入。
+
+```bash
+agentaudit log                    # 汇总本机扫过什么（只有数字）
+agentaudit log --export           # 导出一份可以贴出去的小聚合
+agentaudit log --clear            # 删掉
+```
+
+**任何东西都不会被上传。** `--export` 会做一次脱敏校验，不通过就不写出文件，
+所以你可以先自己读一遍再决定要不要发出去。`--no-log`（或 `AGENTAUDIT_NO_LOG=1`）可以关掉。
 
 ---
 
@@ -117,6 +174,20 @@ python app/scan.py --path ./myproject      # 扫本地已有的一个项目
 python app/scan.py --repo owner/name       # 拉一个 GitHub 仓库来扫
 ```
 
+不想记参数的话，直接敲 `agentaudit` 就会在终端里开一个菜单：
+
+```
+  1  扫一个目标
+  2  打开之前某一轮的结果
+  3  跑规则自测
+  4  校验规则配置
+  5  看扫描统计（本地、只有统计量）
+  6  列出所有命令
+```
+
+它会**把真正执行的命令行回显出来** —— 菜单是用来教你参数的，不是把参数藏起来。
+另外**没有终端时（管道、CI）它会拒绝进入交互模式**，不会卡在那儿等输入。
+
 产物在 `out/round-<tag>/`：
 
 | 文件 | 是什么 |
@@ -124,7 +195,13 @@ python app/scan.py --repo owner/name       # 拉一个 GitHub 仓库来扫
 | `report_draft.md` | 报告草稿，一条候选一节 |
 | `index.html` | 可排序 / 可搜索的候选表 |
 | `findings.tsv` | 原始候选表 |
-| `results.sarif` | 标准 SARIF，可进 GitHub Code Scanning 或编辑器（仅 full 模式） |
+| `agentaudit.sarif` | 候选清单导成 SARIF 2.1.0，可进 code-scanning 界面或编辑器 |
+| `results.sarif` | CodeQL 前端自己的原始输出（仅 full 模式） |
+
+导出的 SARIF **只写相对路径** —— 没有绝对路径，也没有 `originalUriBaseIds`，
+所以从你机器上拿走的文件**带不走你的目录结构**。所有结果的 level 一律是 `warning`，
+判定结果放在 `properties` 里，因为读 SARIF 的工具看不到那些"这是候选、不是结论"的上下文。
+已经判成 `not_vuln` 的行默认不导出，`agentaudit sarif --all` 可以带上。
 
 ### 两种模式
 
@@ -146,6 +223,19 @@ docker run --rm agentaudit                                             # 扫自�
 docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
     agentaudit --path /scan/myproj --tag myproj --out /scan/out
 ```
+
+镜像的 entry point 是 `agentaudit scan`，所以上面那些参数和你本机敲的完全一样。
+其它子命令要单独指定 entry point：
+
+```bash
+docker run --rm --entrypoint agentaudit agentaudit log
+docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
+```
+
+**关于怎么验证这个镜像。** `Dockerfile` 是在一台**没有 Docker** 的机器上写的，
+所以**第一次构建就是验证**。它是照着"要炸就炸在明处"写的：CodeQL CLI 会在**构建过程中被执行**，
+布局不对就直接让构建失败，而不是产出一个"扫描器根本跑不起来"的镜像。
+CI 每次 push 都会构建 + 冒烟测试这个镜像（`docker` 那个 job），这才是让它保持可信的实际办法。
 
 ### LLM 复核默认**关**
 
@@ -177,6 +267,14 @@ python app/scan.py --path ./myproject --diff origin/main   # 只看改动过的�
 ```
 
 `--diff` 要求源码是一份 git 检出，用途是「这个 PR 有没有引入新东西」，**不是**做全量审计。
+
+### 跳过树里的某些部分
+
+```bash
+agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.py'
+```
+
+模式是相对源码根的 glob，并会写进轮次记录，这样两轮之间仍然可比。
 
 ### 手动跑流水线
 
@@ -263,6 +361,8 @@ python app/make_index.py  out/round-my-round --lang zh
 | `AF_PATH_FILTER` | 路径过滤模式（`rel` = 相对项目） | `rel` |
 | `AF_SOURCES_FILE` | 另一份不可信源头清单 | `core/config/sources.yml` |
 | `AF_NO_DATAFLOW` | 关掉跨过程实参来源分析 | `0` |
+| `AGENTAUDIT_HOME` | 产物（`out/`、`data/`）写到哪 | 当前目录 |
+| `AGENTAUDIT_NO_LOG` | 设成 `1` 就不记扫描统计 | 未设置 |
 
 ---
 

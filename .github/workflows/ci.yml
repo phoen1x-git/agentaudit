@@ -42,3 +42,27 @@ jobs:
 
       - name: Tests
         run: python -m pytest -q
+
+  # The Dockerfile cannot be checked by reading it, and the machine it was written on has no
+  # Docker. This job is how it gets verified. A wrong CodeQL release layout fails the build
+  # itself -- see step 2 in the Dockerfile.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t agentaudit .
+
+      - name: Is the CodeQL CLI actually in there, and does it run?
+        run: docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
+
+      - name: Does the entry point work?
+        run: docker run --rm --entrypoint agentaudit agentaudit --version
+
+      - name: Scan the bundled sample inside the image
+        run: docker run --rm agentaudit --demo --tag ci-docker
+
+      - name: Did a round come out?
+        run: docker run --rm --entrypoint ls agentaudit -la /scan/out/round-ci-docker/
