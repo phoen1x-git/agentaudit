@@ -19,7 +19,7 @@
 #   group      switch group; disabled unless AF_SINKS_<GROUP>=1
 
 version: 2
-updated: 2026-10-14
+updated:
 
 sinks:
   # ---------- baseline set (reference only; not generated) ----------

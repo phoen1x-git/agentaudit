@@ -36,6 +36,15 @@ INTERNAL_TERMS = [
     "\u7ea2\u7ebf",                  # red line
     "\u65cb\u94ae",                  # knob (experiment switch)
     "\u4e0a\u6e38\u5355\u53f7",      # upstream ticket number
+    # the scanned projects were called "\u9776" (a target / the target range) internally
+    "\u771f\u9776",                  # a real target
+    "\u9776\u5e93",                  # the target corpus
+    "\u9776\u540d",                  # a target's name
+    "\u9776\u6807",                  # a target
+    # and decisions were attributed to "the user" in the work log
+    "\u7528\u6237\u62cd\u677f",      # the user ruled
+    "\u7528\u6237\u6279\u51c6",      # the user approved
+    "\u7528\u6237\u8981\u6c42",      # the user asked for
 ]
 
 PATTERNS = {
@@ -49,8 +58,16 @@ PATTERNS = {
     "the author's machine account": re.compile(r"\bphoenix\b"),
 }
 
+# A bare date is a reliable sign that a comment was copied out of a private work log: it says
+# nothing to a reader of this repository. Checked as a separate test so the exemptions are
+# explicit -- a changelog is supposed to have dates, and the synthetic sample output carries
+# a timestamp on purpose.
+BARE_DATE = re.compile(r"20\d\d-\d\d-\d\d")
+DATE_EXEMPT = {"CHANGELOG.md"}
+DATE_EXEMPT_DIRS = {"examples"}
 
-def _text_files():
+
+def _text_files(include_dated: bool = False):
     self_path = Path(__file__).resolve()
     for p in sorted(ROOT.rglob("*")):
         if not p.is_file():
@@ -58,7 +75,10 @@ def _text_files():
         if p.resolve() == self_path:
             # This file contains the patterns it searches for, so it would always match.
             continue
-        if any(part in SKIP_DIRS for part in p.relative_to(ROOT).parts):
+        rel = p.relative_to(ROOT)
+        if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        if not include_dated and (p.name in DATE_EXEMPT or rel.parts[0] in DATE_EXEMPT_DIRS):
             continue
         if p.suffix.lower() not in TEXT_EXT and p.name not in TEXT_NAMES:
             continue
@@ -78,6 +98,23 @@ def test_no_machine_specific_or_secret_strings(label, pattern):
             if pattern.search(line):
                 offenders.append(f"{p.relative_to(ROOT)}:{i}  {line.strip()[:110]}")
     assert not offenders, f"found {label}:\n" + "\n".join(offenders[:20])
+
+
+def test_no_dates_from_a_private_work_log():
+    """A date in a source comment is provenance, not documentation.
+
+    This is the check that would have caught the worst leak found in this repository: a
+    directory of internal lab notes, with dates, a target's file name and line number, and
+    the size of the private target corpus -- shipped as package data, and missed by every
+    other check here.
+    """
+    offenders = []
+    for p in _text_files(include_dated=False):
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if BARE_DATE.search(line):
+                offenders.append(f"{p.relative_to(ROOT)}:{i}  {line.strip()[:110]}")
+    assert not offenders, (
+        "these lines carry a date from the private work log:\n" + "\n".join(offenders[:20]))
 
 
 def test_no_internal_vocabulary():

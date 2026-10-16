@@ -24,7 +24,7 @@ import python
  }
 
 // ======== 路径过滤（由 core/gen_ql.py 生成，不要手改）========
-// ★ 修的是什么（2026-10-12）：
+// ★ 修的是什么：
 //   论文用 `s.matches("%test%")` 判路径（s = loc.toString()，**绝对路径**）
 //   → **仓库目录名里含 "test" 就整仓被排除**。
 //   实证：靶 `firetix/vibe-coding-penetration-**tester**`

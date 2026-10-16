@@ -4,10 +4,10 @@
 
 起因
 ----
-10-05 07:2x 第三次重排分片。前两次都犯了同一个错：
+第三次重排分片。前两次都犯了同一个错：
 **按"仓库名看起来大不大"分片**，而不是按实际文件数。
 结果 v3_1~4 每片都混进了一个巨无霸：
-    sampleagent(1561 py / 967 测试) · another project · another-org/another-agent
+    sampleagent(1561 py / 967 测试) · another project · another project
 → 4 片里有 3 片卡在同一个项目上，另几片早就跑完了在空转。
 
 ★ 为什么不能沿用旧分片：

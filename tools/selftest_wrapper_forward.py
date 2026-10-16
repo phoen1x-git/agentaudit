@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""★ 第 6 种写法的「转发层」缺陷（10-07 修）。
+"""★ 第 6 种写法的「转发层」缺陷。
 
 ★ 缺陷是什么
 ------------
@@ -96,7 +96,7 @@ def get_admin_memory(x_astra_admin_token: str = Header(default=None), x_session:
     return {"ok": True}
 ''',
     True,
-    "★★ 这是 astra-quant-agent app.py:209-121 的**逐字形态**。"
+    "★★ 这是 astra-quant-agent app.py:21 的**逐字形态**。"
     " 包装层 require_admin_header 自己什么都不做（连 token 字样都没有），"
     " 真逻辑在 current_admin → require_admin_token 里。"
     "★ 我第一版自测（1.1）把 HTTPException 直接写在 current_admin 里，"

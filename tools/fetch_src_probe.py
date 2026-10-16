@@ -4,7 +4,7 @@
 按需取源码（省额度版）
 ======================
 
-背景与踩坑（2026-10-04）
+背景与踩坑
 -----------------------
 要让规则落到源码上，第一反应是 `git clone`。实测在这台机器上：
 
@@ -76,7 +76,7 @@ def _cache(name):
 
 def api_get(url, cache_name, force=False):
     """带磁盘缓存的 API GET。缓存命中不花额度。"""
-    cp = _cache(re.sub(r"[^A-Za-z0-9_.-]", "_", cache_name)[:170] + ".json")
+    cp = _cache(re.sub(r"[^A-Za-z_.-]", "_", cache_name)[:170] + ".json")
     if not force and os.path.exists(cp):
         try:
             with open(cp, "r", encoding="utf-8") as f:
@@ -117,7 +117,7 @@ def api_get(url, cache_name, force=False):
 
 def api_raw(full_name, path, branch, cache_name):
     """取单个文件的原始文本。走 contents + raw Accept。"""
-    cp = _cache(re.sub(r"[^A-Za-z0-9_.-]", "_", cache_name)[:170] + ".txt")
+    cp = _cache(re.sub(r"[^A-Za-z_.-]", "_", cache_name)[:170] + ".txt")
     if os.path.exists(cp):
         try:
             with open(cp, "r", encoding="utf-8") as f:

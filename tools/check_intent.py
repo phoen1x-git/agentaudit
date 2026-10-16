@@ -86,7 +86,7 @@ def find_declarations(repo):
         pats = [pt.pattern for pt in DECL_PATTERNS if pt.search(txt)]
         if pats:
             # 抓出声明的路径字面量
-            paths = set(re.findall(r'["\'](/[A-Za-z0-9_{}\-/.]*)["\']', txt))
+            paths = set(re.findall(r'["\'](/[A-Za-z_{}\-/.]*)["\']', txt))
             hits.append({
                 "file": base[22:] if base.startswith("f__") else base,
                 "patterns": pats,

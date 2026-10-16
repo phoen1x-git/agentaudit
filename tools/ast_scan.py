@@ -39,7 +39,7 @@ RULES = {
 }
 
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "site-packages", "node_modules", "build", "dist"}
-_SINK_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*)\s*$")
+_SINK_RE = re.compile(r"([A-Za-z_][A-Za-z_.]*)\s*$")
 
 
 def _name_of(node) -> str:

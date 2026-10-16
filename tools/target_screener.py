@@ -89,7 +89,7 @@ def ensure_dirs():
 
 
 def _cache_path(key):
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:180]
+    safe = re.sub(r"[^A-Za-z_.-]", "_", key)[:180]
     return os.path.join(CACHE, safe + ".json")
 
 
@@ -184,37 +184,37 @@ def days_since(s):
 PAPER_TARGETS = {
     "significant-gravitas/autogpt", "langgenius/dify", "langflow-ai/langflow",
     "quivrhq/quivr", "chatchat-space/langchain-chatchat", "infiniflow/ragflow",
-    "microsoft/sampleagent2", "stitionai/samplecoder", "transformeroptimus/superagi",
+    "microsoft/sample-toolkit", "stitionai/samplecoder", "transformeroptimus/superagi",
     "gaizhenbiao/chuanhuchatgpt", "eosphoros-ai/db-gpt", "sinaptik-ai/sampleframe",
-    "samplebi/samplebi", "sampleplat/sampleplat", "samplexa/samplexa",
+    "sample-toolkit/sample-toolkit", "sampleplat/sampleplat", "samplexa/samplexa",
     "sampletask/sampletask", "microsoft/sampledelegate", "samplescope/samplescope",
     "samplezero/samplezero", "xlang-ai/sampledesktops",
 }
 
 # 我们已经实测过的（含改名）：命中即视作「已研究过」
 KNOWN_TRIED = {
-    "samplezero/samplezero", "samplezero/samplezero", "samplebi/samplebi",
+    "samplezero/samplezero", "samplezero/samplezero", "sample-toolkit/sample-toolkit",
     "microsoft/sampledelegate", "sinaptik-ai/sampleframe", "sampleframe/sampleframe",
 }
 
 # ★ 标准答案：用来验规则本身（跑 selftest）。
-#   依据是 00_交接_第二版.md 里 2026-10-04 的上游核实结果。
+#   依据是 an internal note 里 的上游核实结果。
 KNOWN_TRUTH = {
     "samplezero/samplezero": {
         "archived": False, "expect_excluded": True,
         "why": "头部 2万+星，三个 bug 上游全修 —— 已被审计过",
     },
-    "samplebi/samplebi": {
+    "sample-toolkit/sample-toolkit": {
         "archived": True, "expect_excluded": True,
-        "why": "仓库已归档（2026-03-29）",
+        "why": "仓库已归档",
     },
     "microsoft/sampledelegate": {
         "archived": True, "expect_excluded": True,
-        "why": "仓库已归档（2026-03-23），防护 bug 已修",
+        "why": "仓库已归档，防护 bug 已修",
     },
     "sampleframe/sampleframe": {
         "archived": False, "expect_excluded": True,
-        "why": "2025-10-28 停更，server/ 整个从 main 删除",
+        "why": "停更，server/ 整个从 main 删除",
     },
 }
 
@@ -294,7 +294,7 @@ def looks_like_agent(name, desc, topics):
     # ★★★ 三个维度，每个维度的信号来源都是「topics 或 描述」（两个都算）。
     #   第一版只让描述提供 LLM 信号，结果把 Paper2Poster（多智能体海报生成，
     #   描述里没有 llm 字样）、stepfun-ai/gelab-zero（GUI agent）、
-    #   HumanSignal/SampleSDK（自主数据标注 agent 框架）全误杀了。
+    #   HumanSignal/one SDK（自主数据标注 agent 框架）全误杀了。
     #   → 结论：现代 Agent 项目的自我描述在 topics 上比在 description 上更完整。
     #     只看一个字段就等于"按名字匹配"的另一种形式。
     dim_hit = (t_agent > 0) or (d_agent > 0)
@@ -315,7 +315,7 @@ def looks_like_agent(name, desc, topics):
         #   候选池本身就是 topic:agent 检索来的，所以"是不是 LLM 项目"在这里
         #   几乎是恒真的 —— 把它当硬门槛只会误杀：
         #   Paper2Poster（多智能体海报生成，描述里没 llm 字样）、
-        #   stepfun-ai/gelab-zero（GUI agent）、HumanSignal/SampleSDK（数据标注 agent 框架）
+        #   stepfun-ai/gelab-zero（GUI agent）、HumanSignal/one SDK（数据标注 agent 框架）
         #   都被卡在 no 上。改成"不排斥"而非"必须命中"。
         #   → 真正该排掉的是 lorax / vllm-ascend 这类**没有 agent 属性**的
         #     推理服务器，它们 dim_hit=False，落在 no 上，规则仍然对。
@@ -426,9 +426,9 @@ def deep_one(full_name, branch):
     ★★ 第一版这里有两个错，都是同一个病根：
        (a) 用 contents/SECURITY.md 判断，返回的是 dict 不是 list，
            于是 `isinstance(sec, list)` 恒为 False → **所有目标都报「无 SECURITY.md」**。
-           dynamiq 实测根目录就有 SECURITY.md。
+           one project 实测根目录就有 SECURITY.md。
        (b) 只看**顶层**目录名找 server/api 层，而真实项目里 server 代码
-           常在 examples/ 或子包内（如 dynamiq 的 examples/.../http_server_fastapi.py），
+           常在 examples/ 或子包内（如 one project 的 examples/.../http_server_fastapi.py），
            于是 has_server_dir 全线 False → **等于没看**。
        教训：「该出现的东西出现了」≠「它出现在该在的地方、并且被看见」。
        现在改成：只用一次树请求，所有规则都从**完整路径列表**里按内容找。
@@ -460,7 +460,7 @@ def deep_one(full_name, branch):
     #    ★★ 但"名字里带 api/server"不等于服务端。三类必须排掉（实测踩到的）：
     #       - 第三方 vendor 代码（clearml_agent/_vendor/jwt/api_jwk.py）
     #       - CLI 入口（sampleproj/api/cli/commands/*.py 是命令行工具）
-    #       - 调用别人的 API 的客户端（dynamiq/nodes/tools/http_api_call.py）
+    #       - 调用别人的 API 的客户端（one project/nodes/tools/http_api_call.py）
     #    → 规则收紧为：**有明确服务端职责信号**才算攻击面。
     srv_real = []
     for p in low:
@@ -495,7 +495,7 @@ def deep_one(full_name, branch):
         re.match(r"^(server|servers|api|backend|webapp)/", p) for p in low)
 
     # 3) 工具/插件机制：★ 也不能只看目录名。
-    #    dynamiq/nodes/tools/ 里全是"调用工具的节点配置"，不是攻击面；
+    #    one project/nodes/tools/ 里全是"调用工具的节点配置"，不是攻击面；
     #    真正有意义的是**工具的注册/实现**（LLM 能调的那些）。
     #    信号：文件名像工具实现，或目录里有注册表/base/factory。
     tool_real = []
@@ -1001,7 +1001,7 @@ def score_target(r, d):
             why.append("%d天前有提交，偏冷，减分" % dd)
 
     # ★ 反直觉规则：没有 SECURITY.md = 没人管安全 = 洞不会被快速修掉
-    #   （samplebi 有3条安全公告、sampledelegate 有2条，印证「有人在管」的都被审过）
+    #   （sample-toolkit 有3条安全公告、sampledelegate 有2条，印证「有人在管」的都被审过）
     if d.get("security_md") is False:
         score += 20; facts += 20
         why.append("无SECURITY.md，安全响应不可靠（★反直觉规则）")
@@ -1075,7 +1075,7 @@ def cmd_selftest(args):
     print("=" * 66)
     print("规则自测：用已知上游状态的标准答案验筛选逻辑")
     print("=" * 66)
-    print("标准答案来源：00_交接_第二版.md 的 2026-10-04 上游核实")
+    print("标准答案来源：an internal note 的 上游核实")
     print()
 
     fails = []

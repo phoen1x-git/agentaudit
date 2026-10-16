@@ -18,7 +18,7 @@
 # ★ 说明：这一层只影响"要不要把这条结果交给人看"，不影响查询本身。关掉它 = 回到baseline behaviour。
 
 version: 1
-updated: 2026-10-09
+updated:
 
 # 路径段精确匹配（大小写不敏感）；命中的都是"非项目自身业务代码"
 path_segments:
@@ -40,7 +40,7 @@ path_segments:
   - newrepo
   - miniconda
   - anaconda
-  # ★★ 2026-10-09 新加：**夹带 / vendored 代码**
+  # ★★ 新加：**夹带 / vendored 代码**
   #    起因：第一批新目标里 sampleservice 报的 20 条几乎全在
   #    `backend/builtin_skills/{pptx,xlsx,docx}/scripts/office/...` ——
   #    那是仓库里**夹带的第三方"技能"脚本副本**，不是项目自己的攻击面。

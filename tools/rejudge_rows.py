@@ -2,7 +2,7 @@
 
 用法：
     python tools/rejudge_rows.py --rounds round-maybe,round-c-on \
-        --rows "samplebi-v2:sql_runner.py:63,samplebi-v2:base.py:880,sampledelegate:app.py:120"
+        --rows "sample-toolkit-v2:sql_runner.py:63,sample-toolkit-v2:base.py:880,sampledelegate:app.py:120"
 """
 from __future__ import annotations
 

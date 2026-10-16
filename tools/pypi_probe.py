@@ -1,6 +1,6 @@
 """探 PyPI 某个版本的发包体积（给"按包建目标"路线用）。
 
-    python tools/pypi_probe.py sample-index==0.10.37 samplebi==0.3.4
+    python tools/pypi_probe.py sample-index==0.10.37 sample-toolkit==0.3.4
 
 ★ 为什么需要：仓库 tarball 动辄几十 MB（本机 ~26 KB/s，拉不动），
   而 **sdist / wheel 通常只有几 MB** —— 想按"公告指的那个版本"评估，

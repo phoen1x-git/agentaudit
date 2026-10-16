@@ -41,7 +41,7 @@ def enclosing_function(path: str, line: int, max_lines: int = 120) -> tuple[str,
     node, lo, hi = best
     _all = src.splitlines()[lo - 1:hi]
     if len(_all) > max_lines:
-        # ★★★ 2026-10-13 修（用户批准的"提升质量第 2 条"）—— **不再从头截**。
+        # ★★★ 修—— **不再从头截**。
         #   旧行为：`body[:max_lines]` = 只看函数的**前 N 行**，后面的**全丢**。
         #   ★ 后果：9 条结论翻转里**有 1 条**的理由原文就是
         #     「给定函数源码被截断、看不到 o…」—— 而**危险调用恰恰常在函数末尾**。

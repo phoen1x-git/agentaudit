@@ -12,7 +12,7 @@
 ★★ 新增「常量 / 净化过滤」：
   measured on new targets, the 12 hits reported**全是误报**，原因**完全一致**：
   被内插的值要么是**常量**（`__init__` 里的表名字面量），要么**已被上游净化**
-  （`re.sub("[^A-Za-z0-9_-]", "_", x)`）。it only looks at local inconsistency，
+  （`re.sub("[^A-Za-z_-]", "_", x)`）。it only looks at local inconsistency，
   不看那个值是什么 —— 这里补上：解析弱写法里的实参，能证成「常量/净化返回值」→ 丢掉。
 
 ★ 实现说明：判定**直接在 AST 上做**(not by regex on unparsed lines, as the older script did)——
@@ -58,7 +58,7 @@ _SANITIZER = re.compile(
 # ★ Python 常量命名约定：全大写（可带下划线前缀）→ 视为常量。
 #   为什么需要：`from .x import Y as _Z` 这类**import 进来的常量**，本文件里没有赋值，
 #   作用域表看不到（实测漏掉 memora 的 `_IMPORT_MARKER_KEY`）。
-_UPPER = re.compile(r"^_?[A-Z][A-Z0-9_]*$")
+_UPPER = re.compile(r"^_?[A-Z][A-Z_]*$")
 
 
 # ─────────────────────────── AST 小工具 ───────────────────────────
@@ -249,7 +249,7 @@ def classify_suspects(suspects, fn, tree) -> str | None:
 
 
 # ★★ 「SDK 客户端构造参数」这一类 —— 补的是**已知真值自测暴露的缺口**：
-#   SampleSDK 那条真漏洞是 `AsyncOpenAI(api_key=…, base_url=<请求头>)` —— SSRF **发生在客户端构造**
+#   one SDK 那条真漏洞是 `AsyncOpenAI(api_key=…, base_url=<请求头>)` —— SSRF **发生在客户端构造**
 #   而不是 `requests.get(url)`，所以 sink 表（按调用名匹配）**天生认不出它**。
 #   这里用 AST 判：**任何带 base_url / api_base 关键字实参、且该值不是常量**的调用 → 候选。
 #   ★ 常量 base_url（写死的官方地址）会被 `_classify` 判成 const → 自动过滤，噪声可控。

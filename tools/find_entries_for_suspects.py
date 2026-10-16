@@ -35,13 +35,13 @@ import resolve_needs_human_callers as R  # noqa: E402  复用 find_callers
 TRIAGE = os.path.join(ROOT, "data", "target_pool", "reachability_triage.json")
 OUT = os.path.join(ROOT, "data", "target_pool", "suspect_entry_probe.md")
 
-# ★ 目标源码根目录（与 prepare_tp2x_targets 的落盘位置一致；找不到就跳过并如实报出来）
+# ★ 目标源码根目录（与 prepare_targets 的落盘位置一致；找不到就跳过并如实报出来）
 SRC_ROOTS = [
     os.path.join(ROOT, "..", "_targets", "tp2x_src"),
     os.path.join(ROOT, "..", "_targets", "src"),
 ]
 
-# ★★ 测试代码识别（2026-10-14 加）—— 起因：实测发现 `find_callers` 找出来的"调用方"
+# ★★ 测试代码识别—— 起因：实测发现 `find_callers` 找出来的"调用方"
 #    经常是 `def test_handle_message(self)` 这种**单元测试**，而测试函数**永远不会有**产品入口标记
 #    （`@tool` / `@app.route`）⇒ 会把"有调用方"这一档灌满噪声。
 #    ★ 排除它们之后，"有调用方但没暴露"这一档才真的表示"**产品代码调用了它，但那个调用者没暴露**"。
@@ -64,12 +64,12 @@ EXPOSE_PAT = re.compile(
 
 def find_src_root(project: str):
     """在 SRC_ROOTS 里按项目短名模糊找源码根。"""
-    key = re.sub(r"[^a-z0-9]", "", project.lower())
+    key = re.sub(r"[^a-z]", "", project.lower)
     for base in SRC_ROOTS:
         if not os.path.isdir(base):
             continue
         for d in os.listdir(base):
-            dn = re.sub(r"[^a-z0-9]", "", d.lower())
+            dn = re.sub(r"[^a-z]", "", d.lower)
             if key and (key in dn or dn.endswith(key)):
                 p = os.path.join(base, d)
                 if os.path.isdir(p):
@@ -124,7 +124,7 @@ def main() -> int:
             if not callers:
                 miss.append((r, "找不到调用方"))
                 continue
-            # ★★★ 2026-10-14 修 bug：`find_callers` 返回的源码字段叫 **`body`**，
+            # ★★★ 修 bug：`find_callers` 返回的源码字段叫 **`body`**，
             #   我原先写成 `c.get("src")` ⇒ 取到 None ⇒ **暴露标记永远匹配不到**，
             #   于是"调用方直接有暴露标记 = 0"这个结论**是被 bug 造出来的**。
             #   ★ 教训：跨模块复用别人返回的 dict 时，**字段名要用打印/断言核一遍**，别按印象写。

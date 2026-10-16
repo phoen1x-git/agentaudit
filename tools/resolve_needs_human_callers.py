@@ -13,7 +13,7 @@
   3. 把**调用方函数源码**拼进 user prompt（在原有上下文之后，不改 rubric）；
   4. 重跑判定层 → 看结论有没有变、变了几条。
 
-★★ 2026-10-13 修（第一轮实测逼出来的）：
+★★ 修（第一轮实测逼出来的）：
   第一轮（35 条）跑完发现——判定层**已经拿到了调用方源码**，却仍把
   `predict(..., image_url=None, ...)`（SampleComps/ipex）判成 `vuln`：
   ★ 它**没有识别出"调用处传的是字面量 None"**。原因不是它看到了没懂，而是
@@ -70,7 +70,7 @@ def _expr_text(node, limit: int = 80) -> str:
 def _nature(node) -> str:
     """给实参标一个「性质」。
 
-    ★★ 这是本次修复的核心（起因见 §工具头部「2026-10-13 修」）：
+    ★★ 这是本次修复的核心（起因见 §工具头部「修」）：
       判定层曾经**看到了调用方源码**，却仍把 `predict(image_url=None, ...)` 判成 vuln ——
       因为「实参是写死的 None」这件事要它自己去长函数体里找，它会漏。
       把性质显式写出来，「不可控的调用点」就能被一眼排除。
@@ -112,7 +112,7 @@ def _fmt_call_args(call) -> list[str]:
 def _entry_names(entry_name: str) -> list[str]:
     """`predict.load_image` → `['load_image', 'predict']`（由内到外，最多 3 层）。
 
-    ★★ 为什么要拆（2026-10-13 实测逼出来的）：
+    ★★ 为什么要拆：
       sink 常出现在**嵌套函数（闭包）**里。此时 entry 形如 `outer.inner`，
       而 `inner` 只会被 `outer` 调用。若只按 `inner` 这个名字去搜，
       会搜到**别处的同名函数** —— 实测：ipex 的 `load_image` 闭包，
@@ -217,7 +217,7 @@ def build_user_with_callers(fd: F.Finding, cache: dict, callers: list[dict]) -> 
     user, _ = LJ._build_user(fd, cache)
     if not callers:
         return user
-    # ★★ 2026-10-13 二修：把**整条链的实参**按「最外层 → sink」平铺在最前面。
+    # ★★ 二修：把**整条链的实参**按「最外层 → sink」平铺在最前面。
     #    动机（实测）：一修让实参可见了，但判定层**只看了第一层调用方** ——
     #    面对 `predict.load_image`（闭包）这种嵌套，它看到「`predict` 调 `load_image` 时传的是变量
     #    `image_url`」就判 `vuln`，**没有沿链往上追**到 `llm_generate` 传的是字面量 `None`。
@@ -245,7 +245,7 @@ def build_user_with_callers(fd: F.Finding, cache: dict, callers: list[dict]) -> 
                      "则这条链在本仓库内**不可控**，请据此判定，不要因为中间层是变量就判可控。")
         chain_block = "\n".join(lines) + "\n"
 
-    # ★★ 2026-10-13 三修：**去噪**。
+    # ★★ 三修：**去噪**。
     #    实测（`--tag callerfix_v2`）：312/327 即使把最外层的 `image_url=None` 摆在第一条，
     #    判定层仍判 `vuln` —— 因为它同时还看到 4 个「按名匹配」的**同名噪声**
     #    （`utils.py` 里另有同名 `load_image`，传的是变量 `img_path` / `f.name`），被带偏。
@@ -326,7 +326,7 @@ def collect(rounds: list[str], only: list[str],
         except Exception:
             continue
         for fp, r in d.items():
-            # ★ 2026-10-13 加：verdicts 可调 —— 默认只收 needs_human（原行为不变），
+            # ★ 加：verdicts 可调 —— 默认只收 needs_human（原行为不变），
             #   但验证"修完之后 vuln 会不会被纠正"时必须能收 vuln 条目。
             if verdicts and (r.get("ai_verdict") or "").strip() not in verdicts:
                 continue
@@ -334,7 +334,7 @@ def collect(rounds: list[str], only: list[str],
                 continue
             if only and (r.get("project") or "").lower() not in only:
                 continue
-            # ★ 2026-10-13 加：`--rows` 小批回归（格式 `project:文件名:行号`）
+            # ★ 加：`--rows` 小批回归（格式 `project:文件名:行号`）
             if rows:
                 key = "%s:%s:%s" % ((r.get("project") or "").lower(),
                                     os.path.basename(r.get("file") or ""),
@@ -354,20 +354,20 @@ def main():
     ap.add_argument("--only", default="", help="限定 project 短名，逗号分隔")
     ap.add_argument("--mt", default="8000")
     ap.add_argument("--tag", default="20261011")
-    # ★★ 2026-10-13 加：按 sink 关键词过滤。
+    # ★★ 加：按 sink 关键词过滤。
     #    动机：单轮 `needs_human` 可有 200+ 条（全跑 ≈6.7 元），而"优先族"
     #    （requests/httpx/urllib/client，≈35 条 ≈1.1 元）才是值得先验证的。
     #    ★ 没这个参数就只能全跑，等于放弃"先小批验证再决定"的省钱纪律。
     ap.add_argument("--sinks", default="",
                     help='按 sink 关键词过滤（小写子串，逗号分隔）。例：--sinks "requests,httpx,urllib,client"')
-    # ★ 2026-10-13 加：`--rows` 小批回归（改完工具必须先拿已知样本验，再跑全量）。
+    # ★ 加：`--rows` 小批回归（改完工具必须先拿已知样本验，再跑全量）。
     ap.add_argument("--rows", default="",
                     help='限定具体条目，逗号分隔，格式 `project:文件名:行号`'
                          '（例：samplecomps:ipex_inference.py:312）。用于小批回归。')
     ap.add_argument("--verdicts", default="needs_human",
                     help='收哪些判定结论（逗号分隔；默认 needs_human；'
                          '`all` = 不过滤。验证"vuln 是否被纠正"时用）。')
-    # ★ 2026-10-13 加：跑全量时**跳过已跑过的族**（否则等于重复花钱）。
+    # ★ 加：跑全量时**跳过已跑过的族**（否则等于重复花钱）。
     ap.add_argument("--skip-sinks", default="",
                     help='按 sink 关键词**排除**（小写子串，逗号分隔）。'
                          '例：--skip-sinks "requests,httpx,urllib,client"')

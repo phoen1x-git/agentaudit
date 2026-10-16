@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 EN = ROOT / "README.md"
 ZH = ROOT / "README.zh-CN.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 
 H2 = re.compile(r"^## (.+)$", re.M)
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)#:]+?)(?:#[^)]*)?\)")
@@ -125,25 +126,25 @@ def _test_count() -> int:
     return int(m.group(1))
 
 
-def test_the_headline_numbers_are_true():
-    """The table at the top of both READMEs is a claim, so it is checked like one.
-
-    A count in a README is marketing until something verifies it. These three can be
-    verified, so they are.
-    """
-    n_rules, n_suites, n_tests = _rule_count(), _suite_count(), _test_count()
+def test_the_rule_count_is_true():
+    """A count in a README is marketing until something verifies it, so this one is checked."""
+    n_rules = _rule_count()
     en, zh = EN.read_text(encoding="utf-8"), ZH.read_text(encoding="utf-8")
     assert f"{n_rules} dangerous-call rules" in en, f"README.md does not say {n_rules} rules"
     assert f"{n_rules} 条危险调用规则" in zh, f"README.zh-CN.md does not say {n_rules} rules"
-    assert f"{n_suites} rule suites, {n_tests} tests" in en, \
-        f"README.md does not say {n_suites} suites / {n_tests} tests"
-    assert f"{n_suites} 套规则自测、{n_tests} 个测试" in zh, \
-        f"README.zh-CN.md does not say {n_suites} suites / {n_tests} tests"
+    assert n_rules > 10, "the check would pass on zero rules"
 
 
-def test_the_numbers_are_not_accidentally_tiny():
-    """Guards against a check that passes because it read zero of something."""
-    assert _rule_count() > 10
-    assert _suite_count() >= 5
-    assert _test_count() > 20
+def test_the_contributing_guide_states_the_real_test_count():
+    """The suite and test counts live where a contributor needs them, not in the README.
+
+    They are checked here rather than in the README on purpose: a number a *user* cannot act
+    on is decoration, and it drifts every time a test is added.
+    """
+    n_suites, n_tests = _suite_count(), _test_count()
+    text = CONTRIBUTING.read_text(encoding="utf-8")
+    assert f"{n_suites} rule self-test suites" in text, \
+        f"CONTRIBUTING.md does not say {n_suites} suites"
+    assert f"{n_tests} tests" in text, f"CONTRIBUTING.md does not say {n_tests} tests"
+    assert n_suites >= 5 and n_tests > 20, "the check would pass on zero"
 

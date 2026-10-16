@@ -77,9 +77,9 @@ def is_test_path(path):
     # 1) 测试目录
     for seg in low:
         if seg in TEST_DIRS:
-            #★★★★★ 这里有一个**原理上无法从路径命名消除的歧义**（10-05 07:4x 实测撞上）：
+            #★★★★★ 这里有一个**原理上无法从路径命名消除的歧义**：
             #
-            #     registry/tests/unit/middleware/test_rbac.py   ← 真 pytest（sampleagent2-registry）
+            #     registry/tests/unit/middleware/test_rbac.py   ← 真 pytest（sample-toolkit）
             #     backend/api/content_planning/tests/test_data.py ← ★ **业务模块**（ALwrity 真实文件）
             #
             #   `content_planning` 是「内容策划」的业务包，

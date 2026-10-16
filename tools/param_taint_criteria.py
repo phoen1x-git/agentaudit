@@ -7,11 +7,11 @@
 
   > ★ **入口能到 ≠ 参数能被外面控制、且能带着 payload 走到 sink。**
 
-  2026-10-14 逐字复核两条候选，**两条都是误报、但根因不同**：
+  逐字复核两条候选，**两条都是误报、但根因不同**：
 
   | 目标 | sink | 误报根因 | 本工具应给什么判决 |
   |---|---|---|---|
-  | sampletoolkit `open_api_toolkit.py` | `os.path.join` | `api_name` 是**从本地目录枚举出来的**（不是入参） | **本地生成** |
+  | sample-toolkit `open_api_toolkit.py` | `os.path.join` | `api_name` 是**从本地目录枚举出来的**（不是入参） | **本地生成** |
   | sampleassistant_ai `commodity_information.py` | `eval` | 参数**确实是工具入参**，但 `get_optional_fields()` 声明了 `Validator`，分发器 `execute_tool` 在 `execute()` **之前强制校验**（实测 payload 被降级成 `None`） | **有校验** |
 
   ⇒ ★ 本工具对每个候选给三档判决：
@@ -266,7 +266,7 @@ def _declared_validators(tree, klass, klass_src_lines: list[str]) -> dict[str, s
         if fn.name not in FIELD_DECL_NAMES:
             continue
         seg = "\n".join(klass_src_lines[fn.lineno - 1: getattr(fn, "end_lineno", fn.lineno)])
-        for key in re.findall(r"[\"']([A-Za-z_][A-Za-z0-9_]*)[\"']\s*:", seg):
+        for key in re.findall(r"[\"']([A-Za-z_][A-Za-z_]*)[\"']\s*:", seg):
             out.setdefault(key, f"{klass.name}.{fn.name} 声明了 `{key}`")
         # Validator( 出现的数量作为"该文件确实有校验框架"的旁证
         if "Validator(" in seg:
@@ -317,7 +317,7 @@ def _param_index(func, name: str):
 def _caller_pass_kind(tree, func, param: str) -> list[tuple[str, str]]:
     """★ 第二层：在本模块内找 `func` 的调用方，看它给 `param` 传的**实参**是什么。
 
-    sampletoolkit 那条正是栽在这里：`api_name` **确实是形参**，但调用方传进来的是
+    sample-toolkit 那条正是栽在这里：`api_name` **确实是形参**，但调用方传进来的是
     `self.generate_apinames_filepaths()`（**本地枚举 OpenAPIName 枚举值**）⇒ 外面控制不了。
     """
     idx = _param_index(func, param)
@@ -444,11 +444,11 @@ def judge(project: str, rel: str, line: int, sink: str) -> dict:
 def _selftest() -> int:
     cases = [
         # (project, file, line, sink, 期望判决)
-        ("sampletoolkit", "sampletoolkit/toolkits/open_api_toolkit.py", 478, "os.path.join", "本地生成"),
+        ("sample-toolkit", "sample-toolkit/toolkits/open_api_toolkit.py", 478, "os.path.join", "本地生成"),
         ("sampleassistant_ai", "skills/uexcorp/uexcorp/tool/commodity_information.py", 104, "eval", "有校验"),
     ]
     print("=" * 78)
-    print("② 参数贯通性规则 · 自测（对着 2026-10-14 的两条已知案例）")
+    print("② 参数贯通性规则 · 自测（对着 的两条已知案例）")
     print("=" * 78)
     ok = 0
     for proj, f, ln, sink, exp in cases:

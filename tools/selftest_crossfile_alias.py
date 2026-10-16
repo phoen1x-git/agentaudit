@@ -9,10 +9,10 @@
 
 实测代价（`measure_crossfile_alias.py` 量29 个项目）：
   · sampleagent 16 处（占它 64 处基数的 25%）
-  · sampleagent2-registry 7 处（`type CurrentUser = ...`，PEP 695 语法）
+  · sample-toolkit 7 处（`type CurrentUser = ...`，PEP 695 语法）
   sample 7 处大驼峰别名，0 处用到 → 那边无需动。
 
-真实形态（sampleagent / sampleagent2）
+真实形态（sampleagent / sample-toolkit）
 ----------------------------
     # src/backend/dependencies.py
     AuthorizedAgentByName = Annotated[str, Depends(get_authorized_agent_by_name)]
@@ -109,7 +109,7 @@ check("1.4 只报1 处", res["unauth_endpoint"]["n_hits"] == 1,
       "报了 %d 处" % res["unauth_endpoint"]["n_hits"])
 
 # ---------------------------------------------------------------- 2
-print("\n=== 2. PEP 695 `type X = ...`（sampleagent2 形态）===")
+print("\n=== 2. PEP 695 `type X = ...`（sample-toolkit 形态）===")
 res2 = run({"auth/dependencies.py": DEP695,
             "api/routes.py": ROUTES.replace("from dependencies import",
                                              "from auth.dependencies import")})

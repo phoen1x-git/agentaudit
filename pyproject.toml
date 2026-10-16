@@ -46,7 +46,7 @@ include-package-data = true
 version = { attr = "core.__version__" }
 
 [tool.setuptools.package-data]
-core = ["config/*.yml", "ql/*", "ql_src/*", "modelpack/**/*"]
+core = ["config/*.yml", "ql/*", "ql_src/*"]
 demo = ["README.md"]
 
 [tool.pytest.ini_options]

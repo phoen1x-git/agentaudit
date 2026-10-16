@@ -13,7 +13,7 @@ r"""★ `_has_req_param` 的标准答案集 —— 15 档，改 `_REQ_PARAM` 后
   而且**看起来一切正常**（有数字、有覆盖率、有证据）。
 
 所以第 1 档 `_authorize_run_mutation(run_id, http_request)` 是**专门防这个坑的**。
-★ 它对应10-05 上午在 `another-sample-agent/api/main.py`
+★ 它对应上午在 `another project/api/main.py`
   真实遇到过的形态（第 1131 行）。
 
 跑法：

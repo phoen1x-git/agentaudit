@@ -14,7 +14,7 @@
    · 结束时打印**边界清单**（post-auth？patch 了什么？是否端到端？）
 
 用法：
-    python tools/make_verify.py --fp "sampletoolkit:file_toolkit.py:123" --sink "Attribute.join"
+    python tools/make_verify.py --fp "sample-toolkit:file_toolkit.py:123" --sink "Attribute.join"
     python tools/make_verify.py --fp "x:y.py:1" --sink "requests.get" --family ssrf --name mylab
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ def family_of(sink: str) -> str:
 
 
 def slugify(fp: str) -> str:
-    s = re.sub(r"[^A-Za-z0-9]+", "_", fp).strip("_").lower()
+    s = re.sub(r"[^A-Za-z]+", "_", fp).strip("_").lower
     return s[-48:] or "lab"
 
 

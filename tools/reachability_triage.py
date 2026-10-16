@@ -101,7 +101,7 @@ def src_root_map() -> dict[str, Path]:
 def build_exposure_snippets(root: Path) -> list[tuple[str, int, str]]:
     """★ 跨文件兜底：扫整棵树，收集"暴露点"附近的文本片段（文本级，便宜）。
 
-    ★ 必须排掉测试/示例 —— 实测踩过：`sampletoolkit` 的 `test_commons.py` 里有 `FunctionTool(`，
+    ★ 必须排掉测试/示例 —— 实测踩过：`sample-toolkit` 的 `test_commons.py` 里有 `FunctionTool(`，
       于是**泛名**（`run` / `query`）全被误判成"可达"。
     """
     out: list[tuple[str, int, str]] = []

@@ -14,11 +14,9 @@ sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
 
 The output is a list of **candidates** to review, not a list of confirmed vulnerabilities.
 
-| At a glance | |
+| | |
 |---|---|
 | Try it | `agentaudit scan --demo` — no CodeQL, no API key, no downloads |
-| Rules | 52 dangerous-call rules in one YAML file — [the list](CONFIGURING.md), and `agentaudit validate` checks your edits |
-| Tests | 10 rule suites, 117 tests — `agentaudit selftest`, then `pytest` |
 | What it misses | [LIMITATIONS.md](LIMITATIONS.md) — worth reading before you trust anything below |
 
 ---
@@ -321,8 +319,8 @@ comparable. What you exclude, you do not scan — so no candidates from `vendor/
 
 ## What it checks
 
-The dangerous-call list lives in **`core/config/sinks.yml`** — one YAML file, not hard-coded
-logic. `core/gen_ql.py` reads it and generates the CodeQL queries, so adding your own dangerous
+The dangerous-call list lives in **`core/config/sinks.yml`** — one YAML file, and it holds
+52 dangerous-call rules, not hard-coded logic. `core/gen_ql.py` reads it and generates the CodeQL queries, so adding your own dangerous
 function is a config change, not a code change.
 
 | Group | Examples | Default |

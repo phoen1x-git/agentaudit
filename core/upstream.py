@@ -78,8 +78,8 @@ def repo_for(project: str, cfg: dict | None = None) -> str:
 
     ① 优先 `core/config/upstream_repos.yml`（手工维护，可额外放 packages 名）；
     ② ★★ **回退到 `targets*.yml` 的 `repo:` 字段** —— 目标池里**每个目标都有**这一条，
-       而 `upstream_repos.yml` 到 2026-10-12 只手工维护了 **3 条**（sampledelegate/sampleframe/samplebi）。
-       不回退的后果（2026-10-12 实测撞到）：对**所有新目标**都变成"没配坐标 → 没查成"，
+       而 `upstream_repos.yml` 到 只手工维护了 **3 条**（three sample projects）。
+       不回退的后果：对**所有新目标**都变成"没配坐标 → 没查成"，
        而 `run()` 又把它打印成"上游文件已不存在" → ★ **一个看起来像"查过了"的假 0**。
 
     ★ 允许 `cfg=None`（工具单独调用时不必先读 yml）。
@@ -98,7 +98,7 @@ def repo_for(project: str, cfg: dict | None = None) -> str:
             continue
         cur = None
         for ln in lines:
-            mo = re.match(r"^  ([A-Za-z0-9_.\-]+):\s*$", ln)
+            mo = re.match(r"^  ([A-Za-z_.\-]+):\s*$", ln)
             if mo:
                 cur = mo.group(1)
                 continue
@@ -210,7 +210,7 @@ def check_one(project: str, rel_file: str, snippet: str, cfg: dict, tok: str) ->
         out["path_candidates"] = cands[:6]
         if cands:
             # ★ 按"与原路径的公共尾段最长"选，别按路径长短选
-            #   （按长短选会把 src/samplebi/core/llm/base.py 当成 base.py 的新位置，错）
+            #   （按长短选会把 src/sample-toolkit/core/llm/base.py 当成 base.py 的新位置，错）
             newp = sorted(cands, key=lambda p: (-_common_suffix_len(rel_file, p), len(p)))[0]
             out["path_now"] = newp
             st2, content2 = fetch_file(repo, newp, br, tok)
@@ -239,7 +239,7 @@ def check_one(project: str, rel_file: str, snippet: str, cfg: dict, tok: str) ->
             out["advisories_err"] = f"http{code}"
 
     # ④ 仓库 issue 查重
-    # ★ 2026-10-11 教训（samplebi）：只拿【文件干名】当关键词会漏——samplebi 那条 RCE 的文件叫
+    # ★ 教训（sample-toolkit）：只拿【文件干名】当关键词会漏——sample-toolkit 那条 RCE 的文件叫
     #   `base.py`（stem="base"，长度<8 直接跳过），而真报告 upstream issue 的标题走的是
     #   "sql injection … unsafe exec() on LLM output"。→ 改成**多关键词**，用
     #   (a) 特征串里辨识度最高的函数名/调用名 (b) 文件干名（够长才用），各搜一次并合并去重。

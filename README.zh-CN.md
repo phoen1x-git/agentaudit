@@ -13,11 +13,9 @@
 
 输出的是**候选清单**，不是「已确认的漏洞清单」。
 
-| 一眼看清 | |
+| | |
 |---|---|
 | 试一下 | `agentaudit scan --demo` —— 不用 CodeQL、不用 API key、不用下载 |
-| 规则 | 一个 YAML 里 52 条危险调用规则 —— [清单在这](CONFIGURING.md)，改完用 `agentaudit validate` 校验 |
-| 测试 | 10 套规则自测、117 个测试 —— `agentaudit selftest`，然后 `pytest` |
 | 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) —— 建议先读它，再决定要不要信下面任何一句话 |
 
 ---
@@ -309,7 +307,7 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 
 ## 它检查哪些东西
 
-危险调用清单放在 **`core/config/sinks.yml`** —— 一个 YAML 文件，不是写死在代码里的。
+危险调用清单放在 **`core/config/sinks.yml`** —— 一个 YAML 文件、52 条危险调用规则，不是写死在代码里的。
 `core/gen_ql.py` 读它并生成 CodeQL 查询，所以**加你自己的危险函数是改配置，不是改代码**。
 
 | 组 | 例子 | 默认 |

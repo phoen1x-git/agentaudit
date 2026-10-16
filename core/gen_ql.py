@@ -59,9 +59,9 @@ def _rename_predicate(src: str, name: str, new_name: str) -> tuple[str, str]:
     return src[:i] + new_head + "{" + body + "}" + src[j + 1:], body
 
 
-# ---------- util.qll 的路径过滤（★ 2026-10-12 接线）----------
+# ---------- util.qll 的路径过滤（★ 接线）----------
 _UTIL_DOC_REL = """// ======== 路径过滤（由 core/gen_ql.py 生成，不要手改）========
-// ★ 修的是什么（2026-10-12）：
+// ★ 修的是什么：
 //   AgentFuzz用 `s.matches("%test%")` 判路径（s = loc.toString()，**绝对路径**）
 //   → **仓库目录名里含 "test" 就整仓被排除**。
 //   实证：目标 `firetix/vibe-coding-penetration-**tester**`
@@ -74,7 +74,7 @@ _UTIL_DOC_REL = """// ======== 路径过滤（由 core/gen_ql.py 生成，不要
 """
 
 _UTIL_DOC = """// ======== 路径过滤（由 core/gen_ql.py 从 core/config/filters.yml 生成，不要手改）========
-// ★ 为什么替换AgentFuzz的 isIncludeLocation2（2026-10-12）：
+// ★ 为什么替换AgentFuzz的 isIncludeLocation2：
 //   AgentFuzz是**子串黑名单** ["test","miniconda","demo","example","qltracer","newrepo","Python39"]，
 //   判法是 `s.matches("%test%")` → **路径里任何位置含 "test" 就整仓被排除**。
 //   ★ 实测踩到：目标 `firetix/vibe-coding-penetration-**tester**`（目录名含 "test"）
@@ -412,7 +412,7 @@ predicate srcKindCfg(ControlFlowNode cn, string k) {{
 """
 
     # ★★ 开关 AF_ARGFLOW_ATTR（默认 **0 = 现状**）：
-    #    补「属性读取」污点步。为什么需要（2026-10-12 实测定位）：
+    #    补「属性读取」污点步。为什么需要：
     #      · `x = llm.invoke(...)` → `sink(x)`          ✅ 能追到
     #      · `r = client.chat.completions.create(...)` → `sink(r)` ✅ 能追到
     #      · 但 `sink(r.choices)` / `sink(r.choices[0].message.content)` ❌ 追不到
@@ -448,26 +448,12 @@ module ArgFlow = TaintTracking::Global<AttrFlowX>;"""
 
 module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
 
-    # ★★ 开关 AF_MAD（默认 **0 = 现状**）：让 srcKind 也读 CodeQL 的 MaD
-    #    （Models as Data，模型写在 core/modelpack/models/*.yml，跑查询时 --model-packs=af/python-model-pack）。
-    #    为什么需要：
-    #      · MaD 本身**能被 CodeQL 读到**（探针查询已验证，sampletoolkit db 上命中 openai 调用）
-    #      · 但我们的 `srcKindCfg`/`isSinkArgCfg` 是**自定义谓词，不读 MaD** ⇒ 写了也"吃不到"
-    #      · 桥接 API 来自 CodeQL 自己的 DataFlowPrivate.qll:1084 ——
-    #        `source = ModelOutput::getASourceNode(_, model).asSource()`，即 `API::Node::asSource()`
-    #          → DataFlow::Node。
-    #    ★ 独立开关的理由：本改动与 source 表 / 属性传播都无关，**不能混进别的 A/B**（单变量原则）。
-    _mad = os.environ.get("AF_MAD", "0") == "1"
-    # ★★ 白名单（AF_MAD_KINDS，逗号分隔，默认只认 llm-output）—— **必须加**：
-    #    `ModelOutput::getASourceNode(k)` 返回的是**所有** MaD source，
-    #    **包括 CodeQL 标准库自带的**（实测：不带白名单时 sampletoolkit 上多出 78 行，
-    #    新增 kind 是 `commandargs` / `environment`，**不是**我们要的 llm-output）。
-    #    ⇒ 不加白名单，A/B 的差异里会混进标准库的 source，**不干净**。
-    #    ★ 反过来说：`environment`（环境变量）是我们 sources.yml 里**没有**的一档，
-    #      想试就把它加进白名单（`AF_MAD_KINDS=llm-output,environment`）——那是一次独立实验。
-    _kinds = [x.strip() for x in os.environ.get("AF_MAD_KINDS", "llm-output").split(",") if x.strip()]
-    _kind_cond = " or ".join('k = "%s"' % x for x in _kinds)
-    _mad_import = ("import semmle.python.frameworks.data.ModelsAsData\n" if _mad else "")
+    # These queries do not read CodeQL's Models-as-Data. Bridging the two would be a real
+    # improvement -- a MaD model carries a type constraint (`openai.OpenAI`) which is more
+    # precise than a bare method name in sources.yml, so it would not catch an unrelated
+    # `Model.objects.create()` -- but it needs srcKind to consult
+    # `ModelOutput::getASourceNode(...)` (`API::Node::asSource()`), and nothing here passes
+    # `--model-packs`.
     _mad_branch = (
         "  or\n"
         "  // ★ MaD（开关 AF_MAD）：只认白名单里的 kind（AF_MAD_KINDS，当前 %s）。\n"
@@ -481,18 +467,18 @@ module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
 import python
 import semmle.python.dataflow.new.DataFlow
 import semmle.python.dataflow.new.TaintTracking
-""" + _mad_import + """import argsource_ast
+""" + """import argsource_ast
 
-/** 源头种类：AST 层能认的（见 argsource_ast.qll）+ 函数参数这一档 + 可选的 MaD 一档。 */
+/** 源头种类：AST 层能认的（见 argsource_ast.qll）+ 函数参数这一档。 */
 predicate srcKind(DataFlow::Node n, string k) {
   srcKindCfg(n.asCfgNode(), k)
   or
   (n instanceof DataFlow::ParameterNode and k = "param")
   // ★ 跨过程分析里，参数常常表现为**汇总节点**（toString 形如 "[summary param] position 1 in f"），
-  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：samplebi exec 的 arg0 消失了）。
+  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：sample-toolkit exec 的 arg0 消失了）。
   or
   (n.toString().matches("[summary param]%") and k = "param")
-""" + _mad_branch + """}
+""" + """}
 
 """ + _cfg_impl + "\n"
     return ast_qll, cfg_qll, ids
@@ -551,7 +537,7 @@ predicate is_sink(CallNode cn) { is_sink_paper(cn) }
     (OUT_QL / "call").mkdir(parents=True, exist_ok=True)
     (OUT_QL / "util").mkdir(parents=True, exist_ok=True)
     (OUT_QL / "call" / "call.qll").write_text(renamed + gen, encoding="utf-8")
-    # ★★ 2026-10-12 接线：util.qll 不再原样拷AgentFuzz —— 路径过滤改成 filters.yml 的**段/文件名/子串**三层，
+    # ★★ 接线：util.qll 不再原样拷AgentFuzz —— 路径过滤改成 filters.yml 的**段/文件名/子串**三层，
     #    修掉"仓库名含 test 就整仓被排除"的假 0。`AF_PATH_FILTER=0` 可回到AgentFuzz baseline。
     filt_mode = _write_util_qll()
     util_txt = (OUT_QL / "util" / "util.qll").read_text(encoding="utf-8")

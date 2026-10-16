@@ -16,7 +16,7 @@
 CASES = [
     # (路径, 期望, 为什么)
     ("registry/tests/unit/middleware/test_rbac.py", True,
-     "tests 目录 + test_ 前缀 —— 10-05 核实 sampleagent2-registry 时看到的那批"),
+     "tests 目录 + test_ 前缀 —— 核实 sample-toolkit 时看到的那批"),
     ("auth-server/tests/test_auth.py", True, "tests 目录"),
     ("src/app/routers/users.py", False, "生产代码"),
     ("examples/demo_app.py", False,
@@ -37,7 +37,7 @@ CASES = [
      "CTF 项目里真实的 tests/test_*.py"),
     ("tests/e2e/test_login.py", True, "e2e 目录"),
     ("src/fixtures/data.py", True, "fixtures 目录"),
-    # ---- 10-05 07:4x：包名 tests目录 vs 业务模块 tests 目录，**原理上不可分** ----
+    # ---- ：包名 tests目录 vs 业务模块 tests 目录，**原理上不可分** ----
     #   这两档的期望值 = 「我选择的约定」，不是「事实真相」。
     #   我试过用「tests 段的上一层是不是源码根」区分，第一档就误伤了最初要修的那批
     #   （registry/tests 的上一层是 monorepo 包名，不在源码根表里）。

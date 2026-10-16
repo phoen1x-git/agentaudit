@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""自测：`_wrapper_names` 把自己和异常构造误当鉴权调用（10-05 08:4x）。
+"""自测：`_wrapper_names` 把自己和异常构造误当鉴权调用。
 
 ★★ 完整案例（a sample FastAPI app）：
 

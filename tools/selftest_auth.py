@@ -15,7 +15,7 @@ inconsistent_auth 规则的 7 档标准答案 —— 改规则后必须跑这个
   而反向档同时也不过了（该报的没报），
   是双向验证同时暴露了「过松」和「过紧」两个方向。
 
-★★ 补第 6 种写法时（10-05 上午）又栽了一次，这次栽在**标准答案本身**：
+★★ 补第 6 种写法时又栽了一次，这次栽在**标准答案本身**：
   我写的第 9 档是「a 和 b 都调 _fmt(request)」，期望报 1。
   但 a、b 都被判成无鉴权 → 「全都不一致」不成立 → 规则不报，
   **规则是对的，档位是错的**。
@@ -60,7 +60,7 @@ async def a(request: Request):
     return 1
 @r.get("/b")
 async def b(): return 1
-''', 1, "★ 实测 hunter-community 的实际写法"),
+''', 1, "★ 实测 one project 的实际写法"),
 
     ("4 全部端点都有鉴权", '''
 from fastapi import APIRouter, Depends
@@ -105,7 +105,7 @@ async def a(u=Depends(get_current_user)): return 1
 async def b(): return 1
 ''', 1, "防改动把真阳性一起修掉"),
 
-    #★ 下面 3 档是 10-05 上午补的，起因见下面「★ 第 6 种盲区」那段注释
+    #★ 下面 3 档是 上午补的，起因见下面「★ 第 6 种盲区」那段注释
     ("8 ★自定义鉴权包装 _uid", '''
 from fastapi import APIRouter, Request, HTTPException
 r = APIRouter()
@@ -148,9 +148,9 @@ def _uid(request: Request) -> str:
 async def a(request: Request): return {"u": _uid(request)}
 @r.get("/b")
 async def b(request: Request): return {"u": _uid(request)}
-''', 0, "★ hunter-community 的真实形态：全都有 → 不该报"),
+''', 0, "★ one project 的真实形态：全都有 → 不该报"),
 
-    # ★★★ 11~13 是 10-05 上午那次误判的产物。
+    # ★★★ 11~13 是 上午那次误判的产物。
     #  起因：新加了第 6 种写法后某项目从2 涨到 14，我第一反应是"修对了"。
     #   追下去发现方向反了 —— 新写法让「同文件内有鉴权的端点数」从 1 变 4，
     #   于是**没鉴权的那些全成了"不一致"**。根因是看不见中间件层。
@@ -200,7 +200,7 @@ async def b(request: Request):
     return {"o": _maybe_owner(request)}
 ''', 1, "★ 读了 request.state 但没有拒绝分支 → 不是鉴权 → b 该报"),
 
-    # ★★★★★ 第 14 档（10-05 06:55 补）：第 7 种写法「类型别名注入」
+    # ★★★★★ 第 14 档：第 7 种写法「类型别名注入」
     #  这一档**需要第二个文件**—— 别名定义在 dependencies 里，路由文件只 import。
     #  实测 sample-org/sample-agent：整个 client_portal/router.py 因此全被判成"无鉴权"，
     #  而"同文件内 1/5 有鉴权"那个 1 引爆点带出 4 处误报。

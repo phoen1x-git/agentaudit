@@ -1,10 +1,10 @@
 """批量**只下载**目标源码（不建库）—— 给"大量扩充目标子"用。
 
-★ 为什么不直接用 `tools/prepare_tp2x_targets.py`：
+★ 为什么不直接用 `tools/prepare_targets.py`：
   那个脚本的最后一步是 `codeql database create`，**每个目标要好几分钟**，
   会把"下载"这一步拖成十几倍。★ 用户要的是"**先下载**" ⇒ 下载与建库要分开。
 
-★ 踩过的坑（来自 prepare_tp2x_targets 的 docstring，这里沿用）：
+★ 踩过的坑（来自 prepare_targets 的 docstring，这里沿用）：
   · `git clone` 会**静默失败**（返回 0 但目录是空的 / 被 export-ignore 掏空）
   ⇒ **规则必须是数字**：数 `.py` 文件个数，不能看返回码。
   · ★ **串行，绝不并发** —— 并发会静默失败。
@@ -39,7 +39,7 @@ def _sh(cmd, timeout=None, cwd=None):
                           errors="replace", timeout=timeout)
 
 
-# ★★★ 2026-10-14 关键发现：**`git clone` 在本机走不通**，但 codeload 通。
+# ★★★ 关键发现：**`git clone` 在本机走不通**，但 codeload 通。
 #   实测报错：`fatal: unable to access 'https://github.com/…': CONNECT tunnel failed, response 502`
 #   以及 `schannel: server closed abruptly`。
 #   根因：**系统代理**（git 会读 http_proxy/https_proxy）—— 而 `core/gh.py` 全程
@@ -78,7 +78,7 @@ def fetch_tarball(repo: str, dest: str, timeout: int = 600) -> tuple[bool, str]:
                 if not members:
                     last = f"{br}: 空包"
                     continue
-                # ★★★ 2026-10-14 提速关键：**只解压需要的文件**。
+                # ★★★ 提速关键：**只解压需要的文件**。
                 #   实测慢在哪：`extractall` 在 Windows 上解**大量小文件**极慢
                 #   （500 秒只处理了 1 个仓库）。而我们要的只是**能扫的源码**。
                 #   ⇒ 只挑 `.py` + 少量配置文件/README（规则要看依赖与说明），其它全丢。

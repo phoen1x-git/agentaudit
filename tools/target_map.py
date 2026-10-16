@@ -1,7 +1,7 @@
 """『目标短名 → 目标源码根目录』的映射 + 把 findings 里的相对路径解析成真实路径。
 
 ★★ 为什么单独抽出来（而不是散在各工具里）：
-   原来这段逻辑住在 `sample_false_negatives.py`，而那个文件**写死了我们自己的目标**，
+   原来这段逻辑住在 `an early script`，而那个文件**写死了我们自己的目标**，
    所以**不能随包发布**。但 `judge_round` / `rejudge_rows` / `resolve_needs_human_callers`
    都要用它 ⇒ 抽成一个**通用、可配置**的小模块。
 
@@ -35,7 +35,7 @@ def _from_yml() -> dict[str, str]:
             continue
         cur = None
         for ln in txt:
-            mo = re.match(r"^  ([A-Za-z0-9_.\-]+):\s*$", ln)
+            mo = re.match(r"^  ([A-Za-z_.\-]+):\s*$", ln)
             if mo:
                 cur = mo.group(1)
                 continue

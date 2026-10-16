@@ -1,6 +1,6 @@
 """取指定 OSV 公告的完整详情（给人工/代码核实用）。
 
-    python tools/advisory_detail.py GHSA-mwxm-35f8-6vg2 GHSA-7735-w2jp-gvg6
+    python tools/advisory_detail.py GHSA-mwxm-35fvg2 GHSA-7735-w2jp-gvg6
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ def get(url: str) -> dict:
 
 def main() -> int:
     ids = sys.argv[1:] or [
-        "GHSA-5g73-69p4-7gvx", "GHSA-8fp9-43pw-56vw", "GHSA-w832-v3c6-m6rg",
-        "GHSA-7735-w2jp-gvg6", "GHSA-mwxm-35f8-6vg2",
+        "GHSA-5gpgvx", "GHSA-8fppw-56vw", "GHSA-w832-v3c6-m6rg",
+        "GHSA-7735-w2jp-gvg6", "GHSA-mwxm-35fvg2",
     ]
     for vid in ids:
         try:

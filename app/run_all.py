@@ -18,10 +18,10 @@ Sentinels (deliberately chosen as files that only appear once a stage has finish
 
 Usage
   # print the plan, execute nothing (recommended first step)
-  python app/run_all.py --tag demo --targets-file core/config/targets.yml --only sampleagent,sampletoolkit --plan
+  python app/run_all.py --tag demo --targets-file core/config/targets.yml --only sampleagent,sample-toolkit --plan
 
   # a real run against an existing target table (skips prepare)
-  AF_SINKS_FS=1 python app/run_all.py --tag demo --targets-file core/config/targets.yml --only sampleagent,sampletoolkit
+  AF_SINKS_FS=1 python app/run_all.py --tag demo --targets-file core/config/targets.yml --only sampleagent,sample-toolkit
 
   # start from a batch of repos (runs prepare automatically)
   python app/run_all.py --tag demo --batch data/target_pool/batch1.json --targets-file core/config/targets.yml
