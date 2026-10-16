@@ -10,12 +10,16 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Added
 
-- **A banner** for the interactive mode and the usage text, in four variants (`python
-  app/banner.py` previews them; `app/banner.py`'s `DEFAULT` picks one). It is drawn from a
-  small bitmap rather than typed by hand, so the columns line up. Block elements and box
-  drawing are East-Asian-Width "ambiguous" — a CJK console font draws them two cells wide and
-  the frame comes out crooked — so the console font is queried at startup and a pure-ASCII
-  rendering is used when that is the case. `AGENTAUDIT_ASCII=1` forces the fallback.
+- **A banner** for the interactive mode and the usage text, drawn with block characters and
+  generated from a small bitmap rather than typed by hand, so the columns line up. Four
+  variants ship (`python app/banner.py` previews them) and `boxed` is the default; switching is
+  one word in `app/banner.py`.
+
+  The part that needed care is the fallback. Block elements and box drawing are
+  East-Asian-Width "ambiguous" — a CJK console font draws them two cells wide, so a frame that
+  is square in Consolas is a staircase in SimSun. The console font is queried by name at
+  startup (and `LANG` on other platforms) and a pure-ASCII rendering is used when it is CJK.
+  `AGENTAUDIT_ASCII=1` forces it either way.
 - **Interactive mode** (`agentaudit`, or `agentaudit interactive`). A menu for when you do not
   want to remember flags: scan a target, open a previous round, run the self-tests, validate
   the configuration, or look at the scan statistics. It echoes the command line it runs, so the
@@ -44,11 +48,20 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Changed
 
+- **Both READMEs were restructured around what a reader actually does.** The old order put
+  "Reading the results" before "Quick start", with the internals ("Pipeline", "What the output
+  looks like") sitting between them — so a first-time reader hit output files for a scan they
+  had not run yet, before being told how to run one. The order is now
+  why → install → quick start → read the results → … → how it works (internals, last but two).
+  The internals sections were merged and moved to the end, and the duplicated artefact tables
+  were folded into one.
+- The "help me" section is now its own section, right after the reader has seen their first
+  round, instead of a sub-heading buried inside the scan-log text. It states what is and is not
+  recorded as a table, and repeats that the log is theirs to send or not.
+- The author's note is now titled "Author's note" / "作者的话".
 - The READMEs explain how to contribute scan statistics, and why they are worth more than a
   star: a check that fires on someone else's code and never on mine is the interesting one.
   `agentaudit log --export` prints a shareable aggregate, and nothing is ever sent for you.
-- The READMEs gained a "Why this exists" section: the design rule (`nothing is allowed to sound
-  more certain than it is`), and why that is enforced in tests rather than stated in prose.
 - The Dockerfile runs the CodeQL CLI during the build, so a wrong release layout fails the build
   loudly instead of producing an image whose scanner cannot run. Its entry point is
   `agentaudit scan`, and the image also has the `agentaudit` command available.

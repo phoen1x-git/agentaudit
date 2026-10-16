@@ -6,33 +6,33 @@
      line. The badge goes green as soon as CI has run once. -->
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
 
-**Code audit for AI agents.** A static-analysis + LLM-triage scanner that finds
-dangerous call sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
+**Code audit for AI agents.** A static-analysis + LLM-triage scanner that finds dangerous call
+sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
 
 The output is a list of **candidates** to review, not a list of confirmed vulnerabilities.
 
 | | |
 |---|---|
+| Try it | `agentaudit scan --demo` — no CodeQL, no API key, no downloads |
 | Rules | 52 dangerous-call rules in one YAML file, plus the non-call checks ([CONFIGURING.md](CONFIGURING.md)) |
-| Self-tests | 10 rule suites, 56 tests ([CHANGELOG.md](CHANGELOG.md)) |
-| Try it | `python app/scan.py --demo` — no CodeQL, no API key, no downloads |
+| Tests | 10 rule suites + 116 tests |
 | What it misses | [LIMITATIONS.md](LIMITATIONS.md) |
 
 ---
 
 ## The problem it solves
 
-Dangerous calls (`eval`, `subprocess`, `open`, `requests`, …) are everywhere in agent code,
-and classic taint analysis flags all of them. Ask a different question and the picture
-changes completely:
+Dangerous calls (`eval`, `subprocess`, `open`, `requests`, …) are everywhere in agent code, and
+classic taint analysis flags all of them. Ask a different question and the picture changes
+completely:
 
 ```python
 # Candidate. Dangerous call? yes. Is it a vulnerability? probably not.
 handler = eval(spec_name)          # spec_name comes from a built-in table in this file
 ```
 
-Three questions decide whether a flagged call site is real, and taint analysis only
-answers the first:
+Three questions decide whether a flagged call site is real, and taint analysis only answers the
+first:
 
 | # | Question | Answered by |
 |---|---|---|
@@ -40,26 +40,26 @@ answers the first:
 | ② | Is its argument **externally controlled**? | this project |
 | ③ | Does that argument **survive to the sink**? | this project |
 
-`agentaudit` turns ② and ③ into runnable checks (`tools/param_taint_criteria.py`) and treats
-*"the triage layer can't tell"* as a reportable outcome (`needs_human`) rather than something
-to hide behind a confident-looking guess.
+`agentaudit` turns ② and ③ into runnable checks and treats *"the triage layer can't tell"* as a
+reportable outcome (`needs_human`) rather than something to hide behind a confident-looking
+guess.
 
 ---
 
 ## Install
 
-Requires **Python 3.10+** and the
-[CodeQL CLI](https://github.com/github/codeql-cli-binaries) (a few hundred MB, optional —
-without it the scanner runs in the offline mode).
+Requires **Python 3.10+**. The [CodeQL CLI](https://github.com/github/codeql-cli-binaries) (a few
+hundred MB) is optional — without it the scanner runs in the offline mode, which finds fewer
+things but needs nothing.
 
 ```bash
 git clone <this repo> && cd agentaudit
-./scripts/setup.sh                 # dependency + CodeQL CLI, or:
-pip install -e .                   # dependency only; gives you the `agentaudit` command
+./scripts/setup.sh                 # the dependency + the CodeQL CLI, or:
+pip install -e .                   # the dependency only; gives you the `agentaudit` command
 ```
 
-Either way the scripts can be run directly (`python app/scan.py ...`). With the editable
-install there is also a single command:
+Either way the scripts run directly (`python app/scan.py ...`). The editable install also gives
+you one command:
 
 ```bash
 agentaudit scan --demo
@@ -68,10 +68,43 @@ agentaudit serve out/round-demo
 agentaudit --help
 ```
 
-Where does output go? To `./out` under the current directory, or to `$AGENTAUDIT_HOME` if you
-set it. Nothing is written into the installation.
+Output goes to `./out` under the current directory, or to `$AGENTAUDIT_HOME` if you set it.
+Nothing is written into the installation.
 
-#### All the commands
+### Smoke test
+
+```bash
+agentaudit selftest                # or: python tools/run_selftests.py
+agentaudit scan --demo             # 13 candidates from the bundled sample project
+```
+
+Both run in seconds and need nothing else installed. If these pass, the setup is sane.
+
+### Docker
+
+Prefer not to install CodeQL at all? The image has it baked in:
+
+```bash
+docker build -t agentaudit .
+docker run --rm agentaudit                                             # bundled sample
+docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
+    agentaudit --path /scan/myproj --tag myproj --out /scan/out
+```
+
+The image entry point is `agentaudit scan`, so the arguments are the same ones you would type
+locally. Other subcommands need their own entry point:
+
+```bash
+docker run --rm --entrypoint agentaudit agentaudit log
+docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
+```
+
+The `Dockerfile` was written on a machine without Docker, so the first build is the test. It is
+built to fail loudly rather than quietly — the CodeQL CLI is executed *during* the build, so a
+wrong release layout stops the build instead of producing an image whose scanner cannot run.
+CI builds and smoke-tests the image on every push.
+
+### All the commands
 
 | Command | What it does |
 |---|---|
@@ -88,120 +121,21 @@ set it. Nothing is written into the installation.
 | `agentaudit validate` | check `core/config/*.yml` |
 | `agentaudit log` | show or export the local scan statistics |
 
-### Smoke test (offline, no API key, no CodeQL)
-
-```bash
-agentaudit selftest                # or: python tools/run_selftests.py
-agentaudit scan --demo             # 13 candidates from the bundled sample project
-```
-
-These run in seconds and confirm the checks behave as their labelled cases expect — the
-fastest way to know the setup is sane before scanning anything.
-
----
-
-## Reading the results
-
-```bash
-agentaudit explain out/round-x --index 3     # why was this one reported?
-agentaudit serve out/round-x                 # read the whole round in a browser (localhost only)
-```
-
-`serve` binds to `127.0.0.1`, serves exactly that one directory, and refuses directory
-listings and path traversal.
-
-### The scan log
-
-Every scan appends one line to `./data/scan_log.jsonl`, containing **counts only**: how many
-files, how many candidates, how they split across checks and verdicts, the elapsed time, the
-version, and hashes of the rule configuration. No source, no paths, no project names — the
-record is checked against that promise before it is written.
-
-```bash
-agentaudit log                    # summarise what you have scanned
-agentaudit log --export           # a small aggregate you can paste somewhere
-agentaudit log --clear            # delete it
-```
-
-Nothing is ever uploaded. `--export` runs a redaction check and refuses to write anything that
-fails it, so the export is safe to read before you decide what to do with it. Use `--no-log`
-(or `AGENTAUDIT_NO_LOG=1`) to turn the log off.
-
-#### If you would like to help
-
-One scan of one project says almost nothing. How this scanner behaves on code that is not mine
-is the thing I have least evidence about, and a pile of exported statistics is exactly that
-evidence — the check that fires on your code and never fires on mine is the interesting part.
-
-So: **if you are willing to share your numbers, please do.** Open an issue and paste the output
-of `agentaudit log --export`. It is check names and counts, nothing else.
-
-Read it before you send it. Deciding what leaves your machine is yours, not the tool's — which
-is also why nothing here ever sends anything by itself.
-
----
-
-## What it checks
-
-The dangerous-call list lives in **`core/config/sinks.yml`** — one YAML file, not hard-coded
-logic. `core/gen_ql.py` reads it and generates the CodeQL queries, so adding your own
-dangerous functions is a config change, not a code change.
-
-| Group | Examples | Default |
-|---|---|---|
-| Baseline | `subprocess.run` / `Popen`, `os.system`, `requests.get/post/request`, `eval`, `exec`, `jinja2.from_string`, `*.execute(...)` | **on** |
-| Database clients | `.query(...)` on receivers whose name ends in `conn` | **on** |
-| File I/O (`AF_SINKS_FS`) | `os.remove/unlink/rename/mkdir/chmod/...`, `shutil.move/rmtree/...` | off |
-| Path construction (`AF_SINKS_PATH`) | `os.path.join`, `os.path.abspath` | off |
-| HTTP clients (`AF_SINKS_HTTP`) | `httpx.get/post/...`, `httpx.Request`, `httpx.Client` | off |
-| Dynamic dispatch (`AF_SINKS_DYNIMP`) | `importlib.import_module`, `__import__`, `import_module` | off |
-
-Groups that are off by default are off because they are noisy; turning one on trades
-candidates for noise. The switch values are recorded in each round's `meta.json`, so two runs
-are only compared when they used the same settings.
-
-Beyond sinks, the kernel also checks authentication consistency across a file's endpoints,
-strong/weak form coexistence within one function, and reachability from an entry point.
-[`LIMITATIONS.md`](LIMITATIONS.md) lists what none of this covers.
-
-Adding your own dangerous function is a few lines of YAML — see
-[CONFIGURING.md](CONFIGURING.md) for the field reference and
-`python tools/validate_config.py` to check your edit.
-
----
-
-## Pipeline
-
-```
-select targets -> fetch & build CodeQL DBs -> static frontend (CodeQL)
-  -> reachability triage -> entry-point tracing -> parameter-taint check
-  -> LLM triage -> report material
-```
-
-| Stage | Entry point | What it does |
-|---|---|---|
-| Select targets | `tools/target_screener.py` | filter repos by stars / activity / "is this an agent at all?" |
-| Fetch & build | `tools/prepare_new_targets.py` | download sources and build CodeQL databases; resumable |
-| Static frontend | `core/static_frontend.py` | run the CodeQL queries, parse SARIF |
-| Reachability | `tools/reachability_triage.py` | can this sink be reached from outside at all? |
-| Entry tracing | `tools/find_entries_for_suspects.py` | walk up to callers, look for exposure markers |
-| **Parameter taint** | `tools/param_taint_criteria.py` | is the argument controllable, and is it constrained on the way? |
-| LLM triage | `core/llm_judge.py` | five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
-| One-shot run | `app/run_all.py` | prepare -> scan -> report |
-
 ---
 
 ## Quick start
 
-Scan something with one command — no target list and no database to build by hand:
+Scan something with one command — no target list, no database to build by hand:
 
 ```bash
-python app/scan.py --demo                  # the bundled sample project
-python app/scan.py --path ./myproject      # a project already on disk
-python app/scan.py --repo owner/name       # fetch a GitHub repo and scan it
+agentaudit scan --demo                  # the bundled sample project
+agentaudit scan --path ./myproject      # a project already on disk
+agentaudit scan --repo owner/name       # fetch a GitHub repo and scan it
 ```
 
-If you would rather not remember flags, a bare `agentaudit` opens a menu in the terminal:
+### Or use the menu
+
+A bare `agentaudit` opens this in your terminal:
 
 ```
   1  Scan a target
@@ -210,102 +144,140 @@ If you would rather not remember flags, a bare `agentaudit` opens a menu in the 
   4  Validate the rule configuration
   5  Scan statistics (local, statistics only)
   6  List the commands
+  0  Quit
 ```
 
-It echoes the command line it runs, so the menu teaches the flags instead of hiding them, and
-it refuses to start when there is no terminal (a pipe or CI) rather than blocking on input.
+It echoes the command line it runs, so the menu teaches you the flags instead of hiding them,
+and it refuses to start when there is no terminal (a pipe, or CI) rather than blocking on input.
 
-The name is drawn with block characters. Those are East-Asian-Width "ambiguous", so a CJK
-console font draws them double-width and the frame comes out crooked — the tool checks the
-console font and falls back to pure ASCII when that is the case. `AGENTAUDIT_ASCII=1` forces
-the fallback, and `python app/banner.py` previews every variant.
-
-Output lands in `out/round-<tag>/`:
+### What lands in `out/round-<tag>/`
 
 | File | What it is |
 |---|---|
+| `findings.tsv` | the candidate table, one row per candidate — the primary artefact |
 | `report_draft.md` | the write-up, one section per candidate |
 | `index.html` | sortable / searchable table of every candidate |
-| `findings.tsv` | the raw candidate table |
 | `agentaudit.sarif` | the candidates as SARIF 2.1.0, for a code-scanning UI or an editor |
 | `results.sarif` | the CodeQL frontend's own raw output (full mode only) |
+| `meta.json` | which mode ran, which rule switches were on, how long it took |
 
-The SARIF export uses **relative paths only** — no absolute path and no `originalUriBaseIds`
-— so a file uploaded from your machine does not carry your filesystem layout. Every result is
-`level: warning` and the triage verdict travels in `properties`, because SARIF levels are read
-by tools that never see the caveats. Rows already triaged `not_vuln` are left out; add
-`--all` to `agentaudit sarif` to include them.
+Every one of those rows is a **candidate**. Nothing in this pipeline executes your code, so
+nothing here is confirmed.
+
+---
+
+## Reading the results
+
+`findings.tsv` is the raw table. These three make it usable.
+
+### Why was this one reported?
+
+```bash
+agentaudit explain out/round-x --index 3
+```
+
+Prints the source around the flagged line, the call chain that reaches it, the guards on that
+path, and where the dangerous argument comes from — or states that the scan could not determine
+it. **This is the command to run before believing or dismissing a candidate.**
+
+### Watch the whole round in a browser
+
+```bash
+agentaudit serve out/round-x
+```
+
+Binds to `127.0.0.1`, serves exactly that one directory, and refuses directory listings and path
+traversal.
+
+### The report
+
+`report_draft.md` is generated for you, and its header states plainly that the verdicts inside
+are AI-assisted and were **not verified by execution**. [`examples/`](examples/) has a complete
+synthetic sample — the rows there cover the four outcomes the scanner distinguishes: `vuln`,
+`not_vuln` (not externally controllable), `not_vuln` (blocked by a validator) and
+**`needs_human`** (origin undeterminable). That last one is the point: a scanner that only ever
+outputs `vuln` / `not_vuln` is lying about its own certainty.
+
+### In an editor or a code-scanning UI
+
+Every run writes `agentaudit.sarif`. It uses **relative paths only** — no absolute path, no
+`originalUriBaseIds` — so a file taken off your machine does not carry your filesystem layout.
+Every result is `level: warning` and the triage verdict travels in `properties`, because SARIF
+levels are read by tools that never see the caveats. Rows already triaged `not_vuln` are left
+out; add `--all` to `agentaudit sarif` to include them.
+
+---
+
+## Help me improve this
+
+**If you are willing to send me your scan statistics, I would be genuinely grateful.** They cost
+you nothing, they contain no code, and they are the one thing I cannot produce on my own: how
+this scanner behaves on code I have never seen. A check that fires on your code and never on
+mine is the single most useful thing you can hand me.
+
+Every scan appends one line to `./data/scan_log.jsonl`, locally:
+
+| Recorded | Never recorded |
+|---|---|
+| how many files, how many candidates | source code, or any fragment of it |
+| the split across checks and across verdicts | file paths or file names |
+| elapsed time, tool version, hashes of the rule config | the project name, or anything identifying it |
+| your Python minor version, and OS family | anything about you |
+
+```bash
+agentaudit log                    # summarise what you have scanned
+agentaudit log --export           # a small aggregate, written to scan_stats.json
+agentaudit log --clear            # delete it
+```
+
+**Nothing is ever uploaded.** There is no network code in any of this, so the only way any of it
+leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate against
+the table above and refuses to write anything that fails, so read it before you decide.
+
+If you are happy with it, open an [issue](https://github.com/OWNER/REPO/issues) and paste it in. If you would rather not,
+that is a perfectly good answer too — the log is yours, and `--no-log` (or `AGENTAUDIT_NO_LOG=1`)
+turns the whole thing off.
+
+---
+
+## How it behaves
+
+Things worth knowing before you trust a number.
 
 ### Two modes
 
 | Mode | Needs | Finds |
 |---|---|---|
-| **full** | the CodeQL CLI | the CodeQL queries *and* the AST checks; writes SARIF |
+| **full** | the CodeQL CLI | the CodeQL queries *and* the AST checks; writes the raw SARIF |
 | **offline** | nothing at all | the AST checks only |
 
-If the CodeQL CLI is not installed the run says so and uses the offline mode instead. Which
-mode produced a round is recorded in `meta.json` and printed at the top of the report, because
-the two do not find the same things. `--no-codeql` forces the offline mode.
-
-### Docker
-
-If you would rather not install CodeQL yourself, the image has it baked in:
-
-```bash
-docker build -t agentaudit .
-docker run --rm agentaudit                                             # bundled sample
-docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
-    agentaudit --path /scan/myproj --tag myproj --out /scan/out
-```
-
-The image entry point is `agentaudit scan`, so the arguments above are the same ones you would
-type locally. Other subcommands need their own entry point:
-
-```bash
-docker run --rm --entrypoint agentaudit agentaudit log
-docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
-```
-
-**On verifying the image.** The `Dockerfile` was written on a machine without Docker, so the
-first build is the test. It is built to fail loudly rather than quietly: the CodeQL CLI is
-executed *during* the build, so a wrong release layout stops the build instead of producing an
-image whose scanner cannot run. CI builds and smoke-tests the image on every push (the `docker`
-job), which is the practical way to keep it honest.
+If the CodeQL CLI is missing the run says so and uses the offline mode. The mode used is
+recorded in `meta.json` and printed at the top of the report, because the two do not find the
+same things. `--no-codeql` forces the offline mode.
 
 ### LLM triage is off by default
 
-It spends API credits, so it only runs when you ask for it:
+It spends API credits, so it only runs when you ask:
 
 ```bash
-python app/scan.py --path ./myproject --llm
+agentaudit scan --path ./myproject --llm
 ```
 
-The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 30 CNY)
-before it starts, and reports what it actually spent afterwards. Without `--llm` you get the
-candidate list with no verdicts — the report says so rather than implying anything was judged.
+The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 30 CNY) before it
+starts, and reports what it actually spent afterwards. Without `--llm` you get the candidate list
+with no verdicts — and the report says so, rather than implying anything was judged.
 
-**A `vuln` verdict with an unknown argument source is downgraded to `needs_human`.** Repeated
-runs of the same candidates show those are the unstable ones — they flip roughly one time in
-three — so they are kept out of the reportable set. The original verdict stays in `ai_reason`
-and in `verdicts.json`, so nothing is lost; pass `--no-unknown-downgrade` to turn the behaviour
-off, and the round records whether it was on.
-
-### Seeing why something was reported
-
-```bash
-python app/explain.py out/round-my-round --index 3
-```
-
-Prints the source around the flagged line, the call chain that reaches it, the guards on that
-path, and where the dangerous argument comes from — or that the scan could not determine it.
-This is the command to run before believing or dismissing a candidate.
+A `vuln` verdict whose argument source is unknown is downgraded to `needs_human`. Those are the
+unstable ones: run the same candidate repeatedly and they flip noticeably more often than the
+rest. The original verdict stays in `ai_reason` and in `verdicts.json`, so nothing is lost;
+`--no-unknown-downgrade` turns the behaviour off, and the round records whether it was on.
 
 ### Using it as a gate
 
 ```bash
-python app/scan.py --path ./myproject --fail-on any        # exit 1 if anything is reported
-python app/scan.py --path ./myproject --llm --fail-on vuln # exit 1 only on a `vuln` verdict
-python app/scan.py --path ./myproject --diff origin/main   # only files changed since a ref
+agentaudit scan --path ./myproject --fail-on any        # exit 1 if anything is reported
+agentaudit scan --path ./myproject --llm --fail-on vuln # exit 1 only on a `vuln` verdict
+agentaudit scan --path ./myproject --diff origin/main   # only files changed since a ref
 ```
 
 `--diff` needs the source tree to be a git checkout, and is meant for "did this pull request
@@ -317,8 +289,9 @@ introduce anything", not for a full audit.
 agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.py'
 ```
 
-Patterns are globs relative to the source root, and are recorded in the round so two rounds
-stay comparable.
+Patterns are globs relative to the source root, and are recorded in the round so two rounds stay
+comparable. What you exclude, you do not scan — so no candidates from `vendor/` says nothing if
+`vendor/` was skipped.
 
 ### Every option of `scan`
 
@@ -341,76 +314,54 @@ stay comparable.
 | `--no-sarif` | do not write `agentaudit.sarif` |
 | `--no-log` | do not append to the local scan log |
 
-### The manual pipeline
-
-`app/scan.py` wraps the same engine that can be driven stage by stage, which is what you want
-when scanning a whole batch of targets:
-
-```bash
-# 1) offline self-check (free)
-python tools/run_selftests.py
-
-# 2) select targets (needs a GitHub token)
-python tools/target_screener.py fetch
-python tools/target_screener.py screen
-
-# 3) fetch sources and build CodeQL databases (restartable; finished work is skipped)
-python tools/prepare_new_targets.py --status
-python tools/prepare_new_targets.py
-
-# 4) run one round
-python app/run_round.py --tag my-round --targets-file core/config/targets.yml
-
-# 5) render the report draft and the HTML index
-python app/make_report.py out/round-my-round --lang en
-python app/make_index.py  out/round-my-round --lang en
-```
-
-> **Mind the cost.** The triage stage spends LLM credits. Scripts print an estimated cost up
-> front, and `AF_LLM_MAX_CNY` hard-stops a run when the cap is reached.
-
 ---
 
-## What the output looks like
+## What it checks
 
-Three artefacts, in increasing order of cost:
+The dangerous-call list lives in **`core/config/sinks.yml`** — one YAML file, not hard-coded
+logic. `core/gen_ql.py` reads it and generates the CodeQL queries, so adding your own dangerous
+function is a config change, not a code change.
 
-| Artefact | Produced by | What it is |
+| Group | Examples | Default |
 |---|---|---|
-| `param_taint_probe.md` | `tools/param_taint_criteria.py` | per-candidate verdict on controllability — **free**, runs before any LLM call |
-| `findings.tsv` | `app/run_round.py` | the raw candidate table, one row per candidate |
-| `report_draft.md` | `app/make_report.py` | the human-facing draft, only for `vuln` rows |
+| Baseline | `subprocess.run` / `Popen`, `os.system`, `requests.get/post/request`, `eval`, `exec`, `jinja2.from_string`, `*.execute(...)` | **on** |
+| Database clients | `.query(...)` on receivers whose name ends in `conn` | **on** |
+| File I/O (`AF_SINKS_FS`) | `os.remove/unlink/rename/mkdir/chmod/...`, `shutil.move/rmtree/...` | off |
+| Path construction (`AF_SINKS_PATH`) | `os.path.join`, `os.path.abspath` | off |
+| HTTP clients (`AF_SINKS_HTTP`) | `httpx.get/post/...`, `httpx.Request`, `httpx.Client` | off |
+| Dynamic dispatch (`AF_SINKS_DYNIMP`) | `importlib.import_module`, `__import__`, `import_module` | off |
 
-See **[`examples/`](examples/)** for a complete synthetic sample. The sample rows cover the
-four outcomes the scanner distinguishes: `vuln`, `not_vuln` (not externally controllable),
-`not_vuln` (blocked by a validator) and **`needs_human`** (origin undeterminable). That last
-one matters: a scanner that only ever outputs `vuln` / `not_vuln` is lying about its certainty.
+Groups that are off are off because they are noisy; turning one on trades precision for
+candidate volume. The switch values are recorded in each round's `meta.json`.
+
+Beyond sinks, the kernel also checks authentication consistency across a file's endpoints,
+strong/weak form coexistence within one function, and reachability from an entry point.
+
+Adding your own dangerous function is a few lines of YAML — see
+[CONFIGURING.md](CONFIGURING.md) for the field reference, and run
+`agentaudit validate` to check your edit.
 
 ---
 
-## Known limitations
+## What it does not find
 
-These are deliberate trade-offs, not bugs.
+These are deliberate trade-offs, not bugs. The long version — what the analysis cannot see at
+all, and which of its silences are meaningful — is in **[LIMITATIONS.md](LIMITATIONS.md)**.
 
-- **Python only.** The static frontend is bound to CodeQL's Python pack. The checks
-  themselves are language-agnostic, but a new language means rebuilding the frontend.
-- **The LLM triage layer is noisy.** Re-run the same candidate three times and roughly a
-  quarter of the verdicts change. "Perfectly stable" results are usually a **caching
-  artifact** — always change `--tag` when re-judging.
-- **`arg_source=unknown` verdicts are not trustworthy.** That value means the model itself
-  does not know where the argument comes from; those rows are downgraded by default.
+- **Python only.** The static frontend is bound to CodeQL's Python pack.
+- **The triage layer is noisy.** Re-run a candidate and a noticeable share of the verdicts
+  change. Suspiciously stable results are usually a *caching* artefact — change `--tag` when
+  re-judging.
+- **`arg_source=unknown` is not trustworthy.** That verdict means the model itself does not know
+  where the argument comes from; those rows are downgraded by default.
 - **"No caller found" is not "unreachable."** Only name-based matching is done, so cross-file
-  dispatch, dynamic dispatch and reflection are missed.
-- **Framework mediation.** When an imported implementation lives in `site-packages` rather
-  than in the scanned tree, static analysis cannot see it.
-- **Regenerating the CodeQL queries needs the AgentFuzz reference pack.** It is only needed
-  for regeneration; the committed `core/ql/*.ql` work without it (`AF_PAPER_QL` to point at it).
-- **Every finding needs human confirmation.** The tool produces **candidates**, not conclusions.
-- **The offline mode finds less.** Without CodeQL there is no inter-procedural reachability
-  and no framework modelling, so the candidate list is shorter. Each round records its mode.
-
-The long version of this list, including the patterns the analysis cannot see at all and the
-kinds of false positive to expect, is in **[LIMITATIONS.md](LIMITATIONS.md)**.
+  and dynamic dispatch are missed.
+- **Framework mediation.** When the implementation lives in `site-packages` rather than in the
+  scanned tree, static analysis stops at the import.
+- **The offline mode finds less.** No inter-procedural reachability, no framework modelling.
+- **Regenerating the CodeQL queries needs the AgentFuzz reference pack.** Only for regeneration;
+  the committed `core/ql/*.ql` work without it (`AF_PAPER_QL` to point at it).
+- **Every finding needs human confirmation.** The tool produces candidates, not conclusions.
 
 ---
 
@@ -439,6 +390,54 @@ Secrets are always read from files or environment variables, never committed.
 
 ---
 
+## How it works
+
+For anyone reading the code, or running a batch rather than a single target.
+
+```
+select targets -> fetch & build CodeQL DBs -> static frontend (CodeQL)
+  -> reachability triage -> entry-point tracing -> parameter-taint check
+  -> LLM triage -> report material
+```
+
+| Stage | Entry point | What it does |
+|---|---|---|
+| Select targets | `tools/target_screener.py` | filter repos by stars / activity / "is this an agent at all?" |
+| Fetch & build | `tools/prepare_new_targets.py` | download sources and build CodeQL databases; resumable |
+| Static frontend | `core/static_frontend.py` | run the CodeQL queries, parse SARIF |
+| Reachability | `tools/reachability_triage.py` | can this sink be reached from outside at all? |
+| Entry tracing | `tools/find_entries_for_suspects.py` | walk up to callers, look for exposure markers |
+| **Parameter taint** | `tools/param_taint_criteria.py` | is the argument controllable, and is it constrained on the way? |
+| LLM triage | `core/llm_judge.py` | five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
+| One-shot run | `app/run_all.py` | prepare → scan → report |
+
+`app/scan.py` wraps the same engine. Drive it stage by stage when you are scanning a whole batch:
+
+```bash
+# 1) offline self-check (free)
+agentaudit selftest
+
+# 2) select targets (needs a GitHub token)
+python tools/target_screener.py fetch
+python tools/target_screener.py screen
+
+# 3) fetch sources and build CodeQL databases (restartable; finished work is skipped)
+python tools/prepare_new_targets.py --status
+python tools/prepare_new_targets.py
+
+# 4) run one round
+agentaudit round --tag my-round --targets-file core/config/targets.yml
+
+# 5) render the report draft and the HTML index
+agentaudit report out/round-my-round --lang en
+agentaudit index  out/round-my-round --lang en
+```
+
+> **Mind the cost.** The triage stage spends LLM credits. Scripts print an estimated cost up
+> front, and `AF_LLM_MAX_CNY` hard-stops a run when the cap is reached.
+
+---
+
 ## Repository layout
 
 ```
@@ -463,28 +462,21 @@ scripts/         setup.sh
 
 ---
 
-## Why this exists
+## Author's note
 
 I wrote this while working on AI agent security, and the part that kept stopping me was not
 finding a dangerous call — it was deciding what to do with one. Run the same candidate past a
 model twice and you do not always get the same answer. A tool that hides that is worse than one
 that misses things, because you cannot tell **which** of its outputs to trust.
 
-So the design rule here is narrow, and it is enforced in the tests rather than in the prose:
-**nothing is allowed to sound more certain than it is.**
+So the rule I built it around is narrow: **nothing here is allowed to sound more certain than it
+is.** `needs_human` is a real verdict. Evidence that could not be determined is printed as "not
+determined" instead of guessed. Every report says it was not verified by execution.
+[`LIMITATIONS.md`](LIMITATIONS.md) is kept current on purpose, because a tool that only lists
+its strengths is not telling you anything.
 
-- `needs_human` is a real verdict, not a failure to decide.
-- Evidence that could not be determined is printed as "not determined" instead of guessed.
-- Every report states that it was not verified by execution.
-- A round that was filtered, run offline, or run with different rule switches records that
-  about itself, because a result is only comparable to another result from the same settings.
-- [`LIMITATIONS.md`](LIMITATIONS.md) is the list of what this cannot find. It is kept current
-  on purpose: a tool that only lists its strengths is not telling you anything.
-
-This produces candidates for a human to read, not a number to put in a report.
-
-If you run it and it is wrong — in either direction — that is the most useful thing you can
-send me.
+If you run it and it is wrong — in either direction — that is the most useful thing you can send
+me. Thank you for reading this far.
 
 ---
 
@@ -497,10 +489,9 @@ The CodeQL frontend and the baseline sink list are derived from **AgentFuzz**:
 > *Make Agent Defeat Agent: Automatic Detection of Taint-Style Vulnerabilities in
 > LLM-based Agents.* 34th USENIX Security Symposium (USENIX Security '25), 2025, pp. 3767–3786.
 
-`core/gen_ql.py` regenerates the queries from that reference pack, which is why
-`AF_PAPER_QL` points at it. Everything under `source: extra` in `core/config/sinks.yml`,
-the reachability check, the parameter-taint check and the triage layer are additions on
-top of the baseline.
+`core/gen_ql.py` regenerates the queries from that reference pack, which is why `AF_PAPER_QL`
+points at it. Everything under `source: extra` in `core/config/sinks.yml`, the reachability
+check, the parameter-taint check and the triage layer are additions on top of the baseline.
 
 ---
 
