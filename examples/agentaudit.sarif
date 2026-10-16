@@ -7,7 +7,7 @@
     "driver": {
      "name": "agentaudit",
      "version": "0.3.0",
-     "informationUri": "https://github.com/OWNER/REPO",
+     "informationUri": "https://github.com/phoen1x-git/agentaudit",
      "rules": [
       {
        "id": "py-qs/caller",

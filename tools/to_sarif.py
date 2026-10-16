@@ -138,7 +138,7 @@ def build(rd: Path, rows: list[dict], project: str = "") -> dict:
                 "driver": {
                     "name": "agentaudit",
                     "version": __version__,
-                    "informationUri": "https://github.com/OWNER/REPO",
+                    "informationUri": "https://github.com/phoen1x-git/agentaudit",
                     "rules": rules,
                 },
             },

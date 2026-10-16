@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {".git", ".workbuddy", "__pycache__", "out", "data", "_targets", "logs",
              ".pytest_cache", ".mypy_cache", ".venv", "venv", "node_modules"}
 TEXT_EXT = {".py", ".yml", ".yaml", ".md", ".tsv", ".ql", ".qll", ".txt", ".json", ".toml",
+            ".sarif",
             ".cfg", ".html", ".sh"}
 TEXT_NAMES = {".gitignore", ".dockerignore", "Dockerfile", "LICENSE", "Makefile"}
 
@@ -141,3 +142,19 @@ def test_test_files_do_not_hardcode_other_people_identities():
                 offenders.append(f"{p.relative_to(ROOT)}:{i}  {line.strip()[:110]}")
     assert not offenders, ("looks like a real repository plus issue number:\n"
                            + "\n".join(offenders[:20]))
+
+
+def test_no_placeholder_urls_left():
+    """`OWNER/REPO` means someone filled in the real name by grepping, and missed a file.
+
+    That is what happened: the READMEs were fixed and four other files were not, including
+    the issue template's links and `pyproject.toml`'s project URLs, which are both public.
+    A placeholder that ships is worse than a missing link, because it looks like a link.
+    """
+    offenders = []
+    for p in _text_files(include_dated=True):
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if "OWNER/REPO" in line:
+                offenders.append(f"{p.relative_to(ROOT)}:{i}  {line.strip()[:100]}")
+    assert not offenders, (
+        "these files still carry the placeholder:\n" + "\n".join(offenders))
