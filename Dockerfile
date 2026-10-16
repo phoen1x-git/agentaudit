@@ -33,7 +33,12 @@ FROM python:3.11-slim
 # Pin the CLI. Bump with --build-arg CODEQL_VERSION=vX.Y.Z; the Python query pack shipped with
 # the CLI has to match the CLI version.
 ARG CODEQL_VERSION=v2.27.2
-ARG CODEQL_ZIP=codeql-linux64.zip
+# The asset name is per architecture, and the two do not follow one pattern: x64 ships as
+# `codeql-linux64.zip` and arm64 only as `codeql-linux-arm64.zip`. Hard-coding the x64 name made
+# the build fail on Apple Silicon and on arm64 runners -- loudly, at the assertion below, rather
+# than producing an image whose CodeQL cannot execute, but it failed all the same.
+# `TARGETARCH` is supplied by BuildKit; the default keeps a non-BuildKit build behaving as before.
+ARG TARGETARCH=amd64
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git unzip \
@@ -42,9 +47,14 @@ RUN apt-get update \
 WORKDIR /opt/agentaudit
 
 # 1) Unpack the CLI to ./_tools, which is where the frontend looks by default.
-RUN mkdir -p _tools \
+RUN case "${TARGETARCH}" in \
+      amd64) ZIP=codeql-linux64.zip ;; \
+      arm64) ZIP=codeql-linux-arm64.zip ;; \
+      *) echo "ERROR: no CodeQL CLI release for architecture '${TARGETARCH}'"; exit 1 ;; \
+    esac \
+ && mkdir -p _tools \
  && curl -fsSL --retry 3 --retry-delay 5 -o /tmp/codeql.zip \
-      "https://github.com/github/codeql-cli-binaries/releases/download/${CODEQL_VERSION}/${CODEQL_ZIP}" \
+      "https://github.com/github/codeql-cli-binaries/releases/download/${CODEQL_VERSION}/${ZIP}" \
  && unzip -q /tmp/codeql.zip -d _tools \
  && rm -f /tmp/codeql.zip
 
