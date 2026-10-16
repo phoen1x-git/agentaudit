@@ -10,6 +10,12 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Added
 
+- **A banner** for the interactive mode and the usage text, in four variants (`python
+  app/banner.py` previews them; `app/banner.py`'s `DEFAULT` picks one). It is drawn from a
+  small bitmap rather than typed by hand, so the columns line up. Block elements and box
+  drawing are East-Asian-Width "ambiguous" — a CJK console font draws them two cells wide and
+  the frame comes out crooked — so the console font is queried at startup and a pure-ASCII
+  rendering is used when that is the case. `AGENTAUDIT_ASCII=1` forces the fallback.
 - **Interactive mode** (`agentaudit`, or `agentaudit interactive`). A menu for when you do not
   want to remember flags: scan a target, open a previous round, run the self-tests, validate
   the configuration, or look at the scan statistics. It echoes the command line it runs, so the
@@ -38,6 +44,11 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Changed
 
+- The READMEs explain how to contribute scan statistics, and why they are worth more than a
+  star: a check that fires on someone else's code and never on mine is the interesting one.
+  `agentaudit log --export` prints a shareable aggregate, and nothing is ever sent for you.
+- The READMEs gained a "Why this exists" section: the design rule (`nothing is allowed to sound
+  more certain than it is`), and why that is enforced in tests rather than stated in prose.
 - The Dockerfile runs the CodeQL CLI during the build, so a wrong release layout fails the build
   loudly instead of producing an image whose scanner cannot run. Its entry point is
   `agentaudit scan`, and the image also has the `agentaudit` command available.

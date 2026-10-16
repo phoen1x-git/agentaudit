@@ -45,7 +45,9 @@ COMMANDS: dict[str, tuple[str, str]] = {
 
 
 def usage(stream=sys.stdout) -> None:
+    from app import banner
     from core import __version__
+    print(banner.render(banner.COMPACT), file=stream)
     print(f"agentaudit {__version__}", file=stream)
     print("", file=stream)
     print("usage: agentaudit <command> [options]", file=stream)

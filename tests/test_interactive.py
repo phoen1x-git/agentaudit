@@ -72,7 +72,12 @@ def test_end_of_input_does_not_crash_the_menu():
 
 
 def test_scanning_from_the_menu_produces_a_round(tmp_path):
-    """Drive option 1 -> 1 (the bundled sample), give a tag, skip the LLM, then quit."""
+    """Drive option 1 -> 1 (the bundled sample), give a tag, skip the LLM, then quit.
+
+    Also checks the echoed command, because seeing the command line is the point of the menu:
+    whatever it runs, you are meant to be able to type it yourself. Both checks share one
+    session — each one costs a full scan.
+    """
     from core import workspace
     out = tmp_path / "out"
     env = dict(os.environ, PYTHONIOENCODING="utf-8", AGENTAUDIT_INTERACTIVE="1",
@@ -84,14 +89,4 @@ def test_scanning_from_the_menu_produces_a_round(tmp_path):
         cwd=str(ROOT), env=env, timeout=180)
     assert p.returncode == 0, p.stdout + p.stderr
     assert (out / "round-menu-test" / "findings.tsv").exists(), p.stdout[-2000:]
-
-
-def test_the_echoed_command_is_reproducible(tmp_path):
-    """The menu shows the command it runs, and it shows it relative to the checkout."""
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", AGENTAUDIT_INTERACTIVE="1",
-               AGENTAUDIT_HOME=str(tmp_path))
-    p = subprocess.run([sys.executable, str(INTERACTIVE)], input="1\n1\nx\nn\n\n0\n",
-                       capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       cwd=str(ROOT), env=env, timeout=180)
-    assert "app/scan.py" in p.stdout
-    assert "--demo" in p.stdout
+    assert "app/scan.py" in p.stdout and "--demo" in p.stdout, "the command was not echoed"

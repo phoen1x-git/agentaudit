@@ -22,7 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core import __version__, workspace  # noqa: E402
+from app import banner  # noqa: E402
+from core import workspace  # noqa: E402
 
 WIDTH = 72
 
@@ -336,8 +337,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print()
-    ui.title(f"agentaudit {__version__}   (type a number, or ctrl-c to quit)")
+    print(banner.render())
+    print()
     print(f"  workspace: {workspace()}")
+    print(f"  {ui.dim('type a number, or ctrl-c to quit')}")
     print()
 
     while True:

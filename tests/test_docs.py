@@ -6,6 +6,7 @@ reading; a test notices immediately.
 """
 from __future__ import annotations
 
+import functools
 import re
 import subprocess
 import sys
@@ -59,12 +60,17 @@ def test_relative_links_resolve(readme):
     assert not broken, f"{readme.name} links to missing paths: {sorted(set(broken))}"
 
 
-def _scan_options() -> list[str]:
-    """Every long option the main entry point accepts, read from argparse itself."""
+@functools.lru_cache(maxsize=1)
+def _scan_options() -> tuple[str, ...]:
+    """Every long option the main entry point accepts, read from argparse itself.
+
+    Cached: this shells out, and starting a Python process on Windows is not cheap. The
+    options cannot change during a test run.
+    """
     p = subprocess.run([sys.executable, str(ROOT / "app" / "scan.py"), "--help"],
                        capture_output=True, text=True, cwd=str(ROOT))
     options = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", p.stdout))
-    return sorted(options)
+    return tuple(sorted(options))
 
 
 @pytest.mark.parametrize("readme", [EN, ZH], ids=["en", "zh"])

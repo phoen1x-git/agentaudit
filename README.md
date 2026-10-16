@@ -127,6 +127,18 @@ Nothing is ever uploaded. `--export` runs a redaction check and refuses to write
 fails it, so the export is safe to read before you decide what to do with it. Use `--no-log`
 (or `AGENTAUDIT_NO_LOG=1`) to turn the log off.
 
+#### If you would like to help
+
+One scan of one project says almost nothing. How this scanner behaves on code that is not mine
+is the thing I have least evidence about, and a pile of exported statistics is exactly that
+evidence — the check that fires on your code and never fires on mine is the interesting part.
+
+So: **if you are willing to share your numbers, please do.** Open an issue and paste the output
+of `agentaudit log --export`. It is check names and counts, nothing else.
+
+Read it before you send it. Deciding what leaves your machine is yours, not the tool's — which
+is also why nothing here ever sends anything by itself.
+
 ---
 
 ## What it checks
@@ -202,6 +214,11 @@ If you would rather not remember flags, a bare `agentaudit` opens a menu in the 
 
 It echoes the command line it runs, so the menu teaches the flags instead of hiding them, and
 it refuses to start when there is no terminal (a pipe or CI) rather than blocking on input.
+
+The name is drawn with block characters. Those are East-Asian-Width "ambiguous", so a CJK
+console font draws them double-width and the frame comes out crooked — the tool checks the
+console font and falls back to pure ASCII when that is the case. `AGENTAUDIT_ASCII=1` forces
+the fallback, and `python app/banner.py` previews every variant.
 
 Output lands in `out/round-<tag>/`:
 
@@ -418,6 +435,7 @@ Secrets are always read from files or environment variables, never committed.
 | `AF_NO_DATAFLOW` | disable inter-procedural argument-source analysis | `0` |
 | `AGENTAUDIT_HOME` | where output (`out/`, `data/`) goes | the current directory |
 | `AGENTAUDIT_NO_LOG` | set to `1` to stop recording scan statistics | unset |
+| `AGENTAUDIT_ASCII` | set to `1` to draw the banner with ASCII only | auto-detected |
 
 ---
 
@@ -442,6 +460,31 @@ scripts/         setup.sh
 | [LIMITATIONS.md](LIMITATIONS.md) | what the tool does not find |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to run and extend the tests |
 | [CHANGELOG.md](CHANGELOG.md) | what changed |
+
+---
+
+## Why this exists
+
+I wrote this while working on AI agent security, and the part that kept stopping me was not
+finding a dangerous call — it was deciding what to do with one. Run the same candidate past a
+model twice and you do not always get the same answer. A tool that hides that is worse than one
+that misses things, because you cannot tell **which** of its outputs to trust.
+
+So the design rule here is narrow, and it is enforced in the tests rather than in the prose:
+**nothing is allowed to sound more certain than it is.**
+
+- `needs_human` is a real verdict, not a failure to decide.
+- Evidence that could not be determined is printed as "not determined" instead of guessed.
+- Every report states that it was not verified by execution.
+- A round that was filtered, run offline, or run with different rule switches records that
+  about itself, because a result is only comparable to another result from the same settings.
+- [`LIMITATIONS.md`](LIMITATIONS.md) is the list of what this cannot find. It is kept current
+  on purpose: a tool that only lists its strengths is not telling you anything.
+
+This produces candidates for a human to read, not a number to put in a report.
+
+If you run it and it is wrong — in either direction — that is the most useful thing you can
+send me.
 
 ---
 

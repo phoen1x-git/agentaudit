@@ -58,47 +58,56 @@ def test_groups_are_known(sinks):
     assert seen <= allowed, f"unknown sink group(s): {sorted(seen - allowed)}"
 
 
-def test_validator_rejects_an_unknown_field(tmp_path):
+def test_validator_rejects_an_unknown_field(tmp_path, monkeypatch):
     """The quiet failure mode: a misspelled field name means the entry matches nothing."""
-    broken = (CFG / "sinks.yml").read_text(encoding="utf-8")
-    broken += "\n  - {id: typo, source: extra, cls: direct, objectname: os, func: system}\n"
-    assert _run_validator_on(broken).returncode == 1
+    _, errs = _problems_for(_sinks() + _entry("objectname: os, func: system", "typo"),
+                            tmp_path, monkeypatch)
+    assert any("unknown field" in e for e in errs), errs
 
 
-def test_validator_rejects_a_duplicate_id():
-    broken = (CFG / "sinks.yml").read_text(encoding="utf-8")
-    broken += ("\n  - {id: dupe, source: extra, cls: direct, name: eval}\n"
-               "  - {id: dupe, source: extra, cls: direct, name: exec}\n")
-    assert _run_validator_on(broken).returncode == 1
+def test_validator_rejects_a_duplicate_id(tmp_path, monkeypatch):
+    _, errs = _problems_for(
+        _sinks() + _entry("name: eval") + _entry("name: exec"), tmp_path, monkeypatch)
+    assert any("duplicate id" in e for e in errs), errs
 
 
-def test_validator_rejects_an_entry_without_a_matcher():
-    broken = (CFG / "sinks.yml").read_text(encoding="utf-8")
-    broken += "\n  - {id: nomatcher, source: extra, cls: direct}\n"
-    p = _run_validator_on(broken)
-    assert p.returncode == 1
-    assert "no matcher" in p.stdout
+def test_validator_rejects_an_entry_without_a_matcher(tmp_path, monkeypatch):
+    _, errs = _problems_for(_sinks() + _entry(""), tmp_path, monkeypatch)
+    assert any("no matcher" in e for e in errs), errs
 
 
-def _run_validator_on(config_text: str) -> subprocess.CompletedProcess:
-    """Run the validator inside a scratch tree whose sinks.yml is `config_text`.
+def test_validator_rejects_a_bad_source_and_class(tmp_path, monkeypatch):
+    _, errs = _problems_for(_sinks() + _entry("name: eval, source: elsewhere, cls: whatever"),
+                            tmp_path, monkeypatch)
+    assert any("`source` must be" in e for e in errs), errs
+    assert any("`cls` must be" in e for e in errs), errs
 
-    The scratch tree keeps the real layout (`tools/validate_config.py`, `core/config/*.yml`)
-    because the validator resolves its paths relative to itself.
+
+def _sinks() -> str:
+    return (CFG / "sinks.yml").read_text(encoding="utf-8")
+
+
+def _entry(fields: str, sid: str = "broken") -> str:
+    return f"\n  - {{id: {sid}, {fields}}}\n" if fields else f"\n  - {{id: {sid}}}\n"
+
+
+def _problems_for(config_text: str, tmp_path, monkeypatch):
+    """Run the validator's checks against a scratch config, in the same process.
+
+    Each defect has to be *detected*; that does not need a second interpreter, and starting one
+    costs seconds on Windows. The CLI end of it is covered by the pass test above.
     """
-    import os
-    import tempfile
+    import tools.validate_config as V
 
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        (root / "core" / "config").mkdir(parents=True)
-        (root / "tools").mkdir()
-        for f in CFG.glob("*.yml"):
-            (root / "core" / "config" / f.name).write_text(f.read_text(encoding="utf-8"),
-                                                           encoding="utf-8")
-        (root / "core" / "config" / "sinks.yml").write_text(config_text, encoding="utf-8")
-        (root / "tools" / "validate_config.py").write_text(VALIDATOR.read_text(encoding="utf-8"),
-                                                           encoding="utf-8")
-        return subprocess.run([sys.executable, str(root / "tools" / "validate_config.py")],
-                              capture_output=True, text=True, cwd=str(root),
-                              env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    root = tmp_path / "cfgroot" / "core" / "config"
+    root.mkdir(parents=True)
+    for f in CFG.glob("*.yml"):
+        (root / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+    (root / "sinks.yml").write_text(config_text, encoding="utf-8")
+
+    monkeypatch.setattr(V, "CFG", root)
+    monkeypatch.setattr(V, "ERR", [])
+    monkeypatch.setattr(V, "WARN", [])
+    sinks = V.check_sinks()
+    V.check_sources()
+    return sinks, list(V.ERR)
