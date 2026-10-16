@@ -2,21 +2,24 @@
 
 **English** | [中文](README.zh-CN.md)
 
-<!-- Replace OWNER/REPO below with the real location once this repo is pushed, or delete the
-     line. The badge goes green as soon as CI has run once. -->
+<!-- CI badge. Uncomment these two lines once the repo has a URL, replacing OWNER/REPO in both
+     places; it goes green after the first workflow run. Left commented out on purpose: a badge
+     pointing at a repository that does not exist yet renders as a broken image.
+
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+-->
 
 **Code audit for AI agents.** A static-analysis + LLM-triage scanner that finds dangerous call
 sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
 
 The output is a list of **candidates** to review, not a list of confirmed vulnerabilities.
 
-| | |
+| At a glance | |
 |---|---|
 | Try it | `agentaudit scan --demo` — no CodeQL, no API key, no downloads |
-| Rules | 52 dangerous-call rules in one YAML file, plus the non-call checks ([CONFIGURING.md](CONFIGURING.md)) |
-| Tests | 10 rule suites + 116 tests |
-| What it misses | [LIMITATIONS.md](LIMITATIONS.md) |
+| Rules | 52 dangerous-call rules in one YAML file — [the list](CONFIGURING.md), and `agentaudit validate` checks your edits |
+| Tests | 10 rule suites, 117 tests — `agentaudit selftest`, then `pytest` |
+| What it misses | [LIMITATIONS.md](LIMITATIONS.md) — worth reading before you trust anything below |
 
 ---
 

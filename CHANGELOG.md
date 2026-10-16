@@ -48,6 +48,14 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Changed
 
+- The "at a glance" table at the top of both READMEs had an **empty header row**, and its
+  numbers were assertions a reader had no way to check. Each row now says how to check it
+  (`agentaudit validate`, `agentaudit selftest`, `pytest`), and all three numbers — 52 rules,
+  10 rule suites, 117 tests — are re-derived by `tests/test_docs.py` from the configuration and
+  from pytest's own collection. A count in a README is marketing until something verifies it.
+- The CI badge is commented out rather than pointing at a repository that does not exist yet,
+  which rendered as a broken image at the top of the page. Uncommenting is a one-line edit
+  after the repo has a URL.
 - **Both READMEs were restructured around what a reader actually does.** The old order put
   "Reading the results" before "Quick start", with the internals ("Pipeline", "What the output
   looks like") sitting between them — so a first-time reader hit output files for a scan they

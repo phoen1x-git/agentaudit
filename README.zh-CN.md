@@ -2,21 +2,23 @@
 
 [English](README.md) | **中文**
 
-<!-- 推到 GitHub 之后把下面的 OWNER/REPO 换成真实地址，或者直接删掉这两行。
-     CI 跑过一次之后徽章就会变绿。 -->
+<!-- CI 徽章。等仓库有地址之后，把下面两行的 OWNER/REPO 换成真实地址并去掉注释；
+     第一次 workflow 跑完就会变绿。现在故意注释掉：指向一个还不存在的仓库，只会显示成裂图。
+
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+-->
 
 **给 AI Agent 做代码审计。** 静态分析 + LLM 复核的扫描器：在 LLM / Agent 代码里找出危险调用点，
 并且在**拿不准的时候直接说「我不知道」**。
 
 输出的是**候选清单**，不是「已确认的漏洞清单」。
 
-| | |
+| 一眼看清 | |
 |---|---|
 | 试一下 | `agentaudit scan --demo` —— 不用 CodeQL、不用 API key、不用下载 |
-| 规则 | 一个 YAML 里 52 条危险调用规则，外加几类非调用检查（[CONFIGURING.md](CONFIGURING.md)） |
-| 测试 | 10 套规则自测 + 116 个测试 |
-| 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) |
+| 规则 | 一个 YAML 里 52 条危险调用规则 —— [清单在这](CONFIGURING.md)，改完用 `agentaudit validate` 校验 |
+| 测试 | 10 套规则自测、117 个测试 —— `agentaudit selftest`，然后 `pytest` |
+| 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) —— 建议先读它，再决定要不要信下面任何一句话 |
 
 ---
 

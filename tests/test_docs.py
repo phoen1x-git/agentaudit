@@ -104,12 +104,46 @@ def test_the_changelog_documents_the_current_version():
     assert f"## {__version__}" in text, f"CHANGELOG.md has no entry for {__version__}"
 
 
-def test_the_readme_states_the_same_version_independent_facts():
-    """Numbers that appear in both READMEs should agree."""
+@functools.lru_cache(maxsize=1)
+def _rule_count() -> int:
     p = subprocess.run([sys.executable, str(ROOT / "tools" / "validate_config.py"), "--table"],
                        capture_output=True, text=True, cwd=str(ROOT))
-    n_rules = p.stdout.count("\n| `")
-    en = EN.read_text(encoding="utf-8")
-    zh = ZH.read_text(encoding="utf-8")
+    return p.stdout.count("\n| `")
+
+
+def _suite_count() -> int:
+    return len(list((ROOT / "tools").glob("selftest_*.py")))
+
+
+@functools.lru_cache(maxsize=1)
+def _test_count() -> int:
+    """How many tests pytest collects. `--collect-only` never runs them, so no recursion."""
+    p = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "tests"],
+                       capture_output=True, text=True, cwd=str(ROOT))
+    m = re.search(r"(\d+) tests? collected", p.stdout)
+    assert m, f"could not read the test count:\n{p.stdout[-800:]}"
+    return int(m.group(1))
+
+
+def test_the_headline_numbers_are_true():
+    """The table at the top of both READMEs is a claim, so it is checked like one.
+
+    A count in a README is marketing until something verifies it. These three can be
+    verified, so they are.
+    """
+    n_rules, n_suites, n_tests = _rule_count(), _suite_count(), _test_count()
+    en, zh = EN.read_text(encoding="utf-8"), ZH.read_text(encoding="utf-8")
     assert f"{n_rules} dangerous-call rules" in en, f"README.md does not say {n_rules} rules"
     assert f"{n_rules} 条危险调用规则" in zh, f"README.zh-CN.md does not say {n_rules} rules"
+    assert f"{n_suites} rule suites, {n_tests} tests" in en, \
+        f"README.md does not say {n_suites} suites / {n_tests} tests"
+    assert f"{n_suites} 套规则自测、{n_tests} 个测试" in zh, \
+        f"README.zh-CN.md does not say {n_suites} suites / {n_tests} tests"
+
+
+def test_the_numbers_are_not_accidentally_tiny():
+    """Guards against a check that passes because it read zero of something."""
+    assert _rule_count() > 10
+    assert _suite_count() >= 5
+    assert _test_count() > 20
+
