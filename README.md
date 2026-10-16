@@ -2,12 +2,7 @@
 
 **English** | [中文](README.zh-CN.md)
 
-<!-- CI badge. Uncomment these two lines once the repo has a URL, replacing OWNER/REPO in both
-     places; it goes green after the first workflow run. Left commented out on purpose: a badge
-     pointing at a repository that does not exist yet renders as a broken image.
-
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
--->
+[![CI](https://github.com/phoen1x-git/agentaudit/actions/workflows/ci.yml/badge.svg)](https://github.com/phoen1x-git/agentaudit/actions/workflows/ci.yml)
 
 A code audit tool for AI agent projects. It reads LLM / Agent code, finds dangerous call sites,
 and then works out whether each one's argument can actually be controlled from outside.
@@ -246,8 +241,9 @@ agentaudit log --clear            # delete it
 it leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate
 against the table above and refuses to write anything that fails, so read it before you decide.
 
-If you are happy with it, open an [issue](https://github.com/OWNER/REPO/issues) and paste it
-in. If you would rather not, that is a perfectly good answer too. The log is yours, and
+If you are happy with it, open an
+[issue](https://github.com/phoen1x-git/agentaudit/issues) and paste it in. If you would rather
+not, that is a perfectly good answer too. The log is yours, and
 `--no-log` (or `AGENTAUDIT_NO_LOG=1`) turns the whole thing off.
 
 ---

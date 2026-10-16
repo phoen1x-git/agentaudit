@@ -2,11 +2,7 @@
 
 [English](README.md) | **中文**
 
-<!-- CI 徽章。等仓库有地址之后，把下面两行的 OWNER/REPO 换成真实地址并去掉注释；
-     第一次 workflow 跑完就会变绿。现在故意注释掉：指向一个还不存在的仓库，只会显示成裂图。
-
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
--->
+[![CI](https://github.com/phoen1x-git/agentaudit/actions/workflows/ci.yml/badge.svg)](https://github.com/phoen1x-git/agentaudit/actions/workflows/ci.yml)
 
 这是一个给 AI Agent 项目做代码审计的工具。它读 LLM / Agent 的代码，找出危险调用点，
 再判断每一个调用点的参数是不是真能从外面控制、能不能一路传到这个调用点。
@@ -238,7 +234,7 @@ agentaudit log --clear            # 删掉
 `--export` 会拿上面的表格再校验一次聚合结果，不通过就拒绝写出，
 所以先自己读一遍再决定。
 
-觉得没问题的话，开一个 [issue](https://github.com/OWNER/REPO/issues) 贴进去就行。
+觉得没问题的话，开一个 [issue](https://github.com/phoen1x-git/agentaudit/issues) 贴进去就行。
 不想发也完全可以，日志是你的，`--no-log`（或 `AGENTAUDIT_NO_LOG=1`）可以整个关掉。
 
 ---
