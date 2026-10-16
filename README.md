@@ -267,6 +267,12 @@ The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 3
 before it starts, and reports what it actually spent afterwards. Without `--llm` you get the
 candidate list with no verdicts — the report says so rather than implying anything was judged.
 
+**A `vuln` verdict with an unknown argument source is downgraded to `needs_human`.** Repeated
+runs of the same candidates show those are the unstable ones — they flip roughly one time in
+three — so they are kept out of the reportable set. The original verdict stays in `ai_reason`
+and in `verdicts.json`, so nothing is lost; pass `--no-unknown-downgrade` to turn the behaviour
+off, and the round records whether it was on.
+
 ### Seeing why something was reported
 
 ```bash
@@ -296,6 +302,27 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 
 Patterns are globs relative to the source root, and are recorded in the round so two rounds
 stay comparable.
+
+### Every option of `scan`
+
+| Option | What it does |
+|---|---|
+| `--demo` | scan the bundled sample project |
+| `--path DIR` | scan a directory on disk |
+| `--repo OWNER/NAME` | fetch a GitHub repo and scan it |
+| `--project NAME` | name used in reports (default: derived from the path) |
+| `--tag NAME` | round directory name (default: derived) |
+| `--out DIR` | where to write the round (default: `./out`) |
+| `--llm` | triage with an LLM — spends credits, so it is off by default |
+| `--no-unknown-downgrade` | keep a `vuln` verdict even when the argument source is unknown |
+| `--no-codeql` | force the offline mode |
+| `--lang en\|zh` | report language (default `en`) |
+| `--diff [REF]` | only report files changed since `REF` |
+| `--fail-on none\|any\|vuln` | exit non-zero, as a build gate |
+| `--ignore GLOB` | skip paths matching this glob (repeatable) |
+| `--serve` | serve the round on localhost when the scan finishes |
+| `--no-sarif` | do not write `agentaudit.sarif` |
+| `--no-log` | do not append to the local scan log |
 
 ### The manual pipeline
 

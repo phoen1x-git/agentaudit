@@ -7,6 +7,7 @@ reading; a test notices immediately.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -58,6 +59,30 @@ def test_relative_links_resolve(readme):
     assert not broken, f"{readme.name} links to missing paths: {sorted(set(broken))}"
 
 
+def _scan_options() -> list[str]:
+    """Every long option the main entry point accepts, read from argparse itself."""
+    p = subprocess.run([sys.executable, str(ROOT / "app" / "scan.py"), "--help"],
+                       capture_output=True, text=True, cwd=str(ROOT))
+    options = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", p.stdout))
+    return sorted(options)
+
+
+@pytest.mark.parametrize("readme", [EN, ZH], ids=["en", "zh"])
+def test_every_option_of_the_main_entry_point_is_documented(readme):
+    """A flag added to `scan` but not to the READMEs is a flag nobody will find.
+
+    This is the same failure as the section drift above, one level down: it happened with
+    `--no-unknown-downgrade`, which shipped undocumented.
+    """
+    text = readme.read_text(encoding="utf-8")
+    missing = [o for o in _scan_options() if o not in text]
+    assert not missing, f"{readme.name} never documents: {missing}"
+
+
+def test_the_option_list_is_not_trivially_empty():
+    assert len(_scan_options()) >= 10, "the help output could not be parsed"
+
+
 @pytest.mark.parametrize("readme", [EN, ZH], ids=["en", "zh"])
 def test_the_documented_files_exist(readme):
     """Every script named in the docs is a real script."""
@@ -75,7 +100,6 @@ def test_the_changelog_documents_the_current_version():
 
 def test_the_readme_states_the_same_version_independent_facts():
     """Numbers that appear in both READMEs should agree."""
-    import subprocess
     p = subprocess.run([sys.executable, str(ROOT / "tools" / "validate_config.py"), "--table"],
                        capture_output=True, text=True, cwd=str(ROOT))
     n_rules = p.stdout.count("\n| `")

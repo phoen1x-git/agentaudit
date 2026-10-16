@@ -248,6 +248,11 @@ python app/scan.py --path ./myproject --llm
 开跑之前会先印出候选条数和硬上限（`AF_LLM_MAX_CNY`，默认 30 元），跑完报实际花费。
 不加 `--llm` 就只有候选清单、没有判定 —— 报告会**如实这么说**，不会暗示已经判过。
 
+**实参来源不明（`arg_source=unknown`）的 `vuln` 会被降级成 `needs_human`。**
+把同一条候选反复跑，表现不稳定的正是这一类 —— **大约每三条会翻一次** ——
+所以不让它们进"可报"那一档。原始判定留在 `ai_reason` 和 `verdicts.json` 里，**没有丢东西**；
+加 `--no-unknown-downgrade` 可以关掉这个行为，而轮次里会记录它是开还是关。
+
 ### 看「为什么这条会被标出来」
 
 ```bash
@@ -275,6 +280,27 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 ```
 
 模式是相对源码根的 glob，并会写进轮次记录，这样两轮之间仍然可比。
+
+### `scan` 的全部参数
+
+| 参数 | 做什么 |
+|---|---|
+| `--demo` | 扫仓库自带的示例项目 |
+| `--path 目录` | 扫本地一个目录 |
+| `--repo 用户名/仓库名` | 拉一个 GitHub 仓库来扫 |
+| `--project 名字` | 报告里显示的项目名（默认从路径推） |
+| `--tag 名字` | 轮次目录名（默认自动生成） |
+| `--out 目录` | 轮次写到哪（默认 `./out`） |
+| `--llm` | 用 LLM 复核 —— **要花钱，所以默认关** |
+| `--no-unknown-downgrade` | 实参来源不明时也保留 `vuln` 判定 |
+| `--no-codeql` | 强制走离线模式 |
+| `--lang en\|zh` | 报告语言（默认 `en`） |
+| `--diff [REF]` | 只报自 `REF` 以来改动过的文件 |
+| `--fail-on none\|any\|vuln` | 当门禁用，命中就退非零 |
+| `--ignore GLOB` | 跳过匹配的路径（可重复） |
+| `--serve` | 扫完直接起本地网页 |
+| `--no-sarif` | 不写 `agentaudit.sarif` |
+| `--no-log` | 不写本地扫描统计日志 |
 
 ### 手动跑流水线
 
