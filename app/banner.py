@@ -153,7 +153,9 @@ def variant_boxed(unicode: bool = True) -> str:
 
 def variant_bar(unicode: bool = True) -> str:
     """One line. For the top of every scan, where a banner would be noise."""
-    mark = "\u25c8" if unicode else "[]"
+    # The ASCII mark is the prompt from the lens above. An earlier version used "[]", which
+    # readers took for a missing glyph rather than a mark.
+    mark = "\u25c8" if unicode else ">_"
     rule = "\u2500" * 66 if unicode else "-" * 66
     return f"{mark} agentaudit  {_SEP[unicode]}  code audit for AI agents\n{rule}"
 
