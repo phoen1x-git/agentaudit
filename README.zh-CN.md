@@ -15,6 +15,8 @@
 | 试一下 | `agentaudit scan --demo`，不需要 CodeQL、不需要 API key、不需要下载 |
 | 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md)，它查不到的东西都列在那里 |
 
+![跑一遍 `agentaudit scan --demo`，再用 `agentaudit explain` 看第 3 条候选](assets/demo.gif)
+
 ---
 
 ## 它解决什么问题

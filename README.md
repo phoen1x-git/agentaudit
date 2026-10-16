@@ -16,6 +16,8 @@ Every one of them still needs a person to look at it.
 | Try it | `agentaudit scan --demo`, with no CodeQL, no API key and nothing to download |
 | What it misses | [LIMITATIONS.md](LIMITATIONS.md), which lists everything it cannot find |
 
+![Running `agentaudit scan --demo`, then `agentaudit explain` on the third candidate](assets/demo.gif)
+
 ---
 
 ## The problem it solves
