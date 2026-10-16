@@ -30,9 +30,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-# 主观层字段：这三个里任何一个在同一形态组内出现多值，就算"飘"
-SUBJECTIVE = ("ai_verdict", "by_design", "scope_exceeds")
-
 
 def shape_key(f) -> tuple:
     return (getattr(f, "project", "") or "",

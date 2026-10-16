@@ -170,12 +170,6 @@ def _qualname(node: ast.AST) -> str:
 #     把命中的**文件行原文**贴进 user prompt，让判定层自己判。
 #   ★ 只贴证据、绝不替它下结论 —— 判定尺度仍在 rubric 里。
 
-# 「随仓库交付的配置文件」的名字 —— 这些文件**攻击者可控**（你 clone 它就有了）
-_REPO_CFG_NAMES = (
-    ".sampleproj.json", ".mcp.json", "mcp.json", ".cursor", ".aider",
-    "settings.json", "config.yaml", "config.yml", ".env", "pyproject.toml",
-)
-
 # 「配置分层 / 合并 / 覆盖」的代码痕迹
 _RE_CFG_MERGE = re.compile(
     r"deep_?merge|_merge_?config|merge_?config|precedence|layered_config|"

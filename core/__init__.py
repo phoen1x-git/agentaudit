@@ -8,10 +8,6 @@ from pathlib import Path
 __version__ = "0.4.0"
 
 
-def package_root() -> Path:
-    """Where this code lives. Used to find bundled data: rules, queries, sample project."""
-    return Path(__file__).resolve().parent.parent
-
 
 def workspace() -> Path:
     """Where a scan writes its output: `AGENTAUDIT_HOME`, or the current directory.

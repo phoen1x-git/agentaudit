@@ -47,11 +47,10 @@ DEFAULT_CODEQL = _default_codeql()
 _KERNEL_QL = _PROJ / "core" / "ql"
 _PAPER_QL = Path(os.environ.get("AF_PAPER_QL", str(_PROJ / "agentfuzz-official" / "ql")))
 DEFAULT_QL_DIR = _KERNEL_QL if _KERNEL_QL.exists() else _PAPER_QL
-QUERIES = [
-    "get_callchain_and_location.ql",   # py-qs/caller
-    "get_if.ql",                        # py-qs/bb-l7
-    "get_dataflow_str_constraint.ql",   # py-qs/str-constraint
-]
+# The query list has one owner: `gen_ql.py` writes these files, so it also names them. This
+# list used to be written out here as well, which meant adding a query to one copy and not the
+# other produced a file that was generated but never run.
+from .gen_ql import QUERIES  # noqa: E402
 # ★ 我们自带的跨过程实参来源查询（开关 dataflow-argsource）。
 #   单独跑、单独解析 —— 它的输出格式与上面三条完全不同（见 core/ql_src/）。
 ARG_QUERY = "get_arg_source.ql"

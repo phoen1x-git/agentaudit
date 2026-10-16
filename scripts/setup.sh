@@ -11,9 +11,18 @@
 
 set -euo pipefail
 
-CODEQL_VERSION="${CODEQL_VERSION:-v2.27.2}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/_tools/codeql"
+
+# The version has one home: the Dockerfile's ARG. A second copy here meant the image and a
+# local checkout could end up on different CLIs, which makes their results incomparable.
+_DOCKERFILE="$ROOT/Dockerfile"
+_DEFAULT_VERSION="$(sed -n 's/^ARG CODEQL_VERSION=//p' "$_DOCKERFILE" 2>/dev/null | head -1)"
+if [ -z "$_DEFAULT_VERSION" ]; then
+  printf 'error: no ARG CODEQL_VERSION in %s\n' "$_DOCKERFILE" >&2
+  exit 1
+fi
+CODEQL_VERSION="${CODEQL_VERSION:-$_DEFAULT_VERSION}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }

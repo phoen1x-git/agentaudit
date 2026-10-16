@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field, asdict
-from typing import Optional
 
 
 def _norm(s: str) -> str:

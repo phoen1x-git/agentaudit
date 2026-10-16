@@ -228,9 +228,6 @@ CurrentUser       = Annotated[str, Depends(get_current_user)]
 '''),
 ]
 
-# ★ 声明「同一个源串被拆成多文件」的档位下标 → 需要走 analyze_files 的两趟逻辑
-MULTI_FILE_CASES = {len(CASES) - 1}
-
 
 def main():
     print("=" * 66)

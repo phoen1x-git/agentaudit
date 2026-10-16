@@ -120,40 +120,6 @@ _EXEC_CALL = re.compile(r"(?<![\w.])exec[ \t]*\(|(?<![\w.])eval[ \t]*\(")
 _EXECISH = ("code_exec", "executor", "sandbox", "interpreter", "repl")
 
 
-def probe_exec_content(repo: str, branch: str, tok: str | None = None,
-                       max_files: int = 6) -> dict:
-    """读「像执行器」的那些文件**内容**，数真实的 `exec(` / `eval(` 出现。
-
-    返回 `{ok, files, n_exec, samples}`。
-    ★ 这是 `probe()` 的补充：`probe()` 只看文件名（便宜，1 次 API），
-      本函数读内容（贵一些，N 次 API），用来**验证名字信号是真是假**。
-    """
-    out: dict = {"repo": repo, "ok": False, "files": [], "n_exec": 0, "samples": []}
-    tok = tok or gh.token()
-    t = gh.get_json(f"{gh.API}/repos/{repo}/git/trees/{branch}?recursive=1", tok=tok)
-    if not t or "tree" not in t:
-        return out
-    cands = [x["path"] for x in t["tree"]
-             if x.get("type") == "blob" and x["path"].endswith(".py")
-             and any(k in x["path"].lower() for k in _EXECISH)]
-    # 名字越像"真正的执行器"越靠前
-    cands.sort(key=lambda p: (0 if any(k in p.lower() for k in
-                                       ("code_exec", "executor", "sandbox", "interpreter"))
-                              else 1, len(p)))
-    out["ok"] = True
-    for p in cands[:max_files]:
-        code, body = gh.get(f"{gh.API}/repos/{repo}/contents/{p}?ref={branch}",
-                            raw=True, tok=tok)
-        if code != 200:
-            continue
-        out["files"].append(p)
-        for i, line in enumerate(body.splitlines(), 1):
-            if _EXEC_CALL.search(line):
-                out["n_exec"] += 1
-                if len(out["samples"]) < 5:
-                    out["samples"].append(f"{p}:{i}  {line.strip()[:100]}")
-    return out
-
 
 def remote_source_bytes(repo: str, branch: str, tok: str | None = None) -> int | None:
     """下载体积的准确代理：`git/trees` 里所有 blob 的 size 之和。

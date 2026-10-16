@@ -115,10 +115,3 @@ def is_test_path(path):
         return True
     return False
 
-
-def split_paths(files):
-    """把 {path: text} 拆成 (生产, 测试)。★ 规则入口用这个，只对生产跑。"""
-    prod, test = {}, {}
-    for p, t in files.items():
-        (test if is_test_path(p) else prod)[p] = t
-    return prod, test

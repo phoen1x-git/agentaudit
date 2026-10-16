@@ -29,7 +29,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))          # ★ 让 core 可导入（脚本方式运行时 sys.path[0] 是 app/）
-WS = ROOT.parent
 SRC_ROOT = Path(os.environ.get("AF_SRC_DIR") or (ROOT / "_targets" / "src"))
 DB_ROOT = Path(os.environ.get("AF_DB_DIR") or (ROOT / "_targets" / "db"))
 POOL = ROOT / "data" / "target_pool"
@@ -45,11 +44,8 @@ _MARK = ".af_fetch_ok"
 # ★ 30 MB：不是因为装不下，是因为**本机到 codeload 的吞吐只有 ~60 KB/s**
 #   （实测：37 MB 的仓库拉了 10 分钟还没完）→ 大仓库会拖垮整批
 MAX_REPO_KB = 100000     # ★ 只作 tree 取不到时的兜底；★ size 能高估 2~7 倍，所以给足
-# ★★ 真正的闸门是工作树字节数（`git/trees` 里所有 blob 的 size 之和）。
-#    为什么不用 size 字段：它含 .git 历史，实测能差 7 倍（sampleproj 16.7MB vs 真实 2.3MB），
-#    只按它判会把大批能拉的目标误杀（第一批就误杀了 8 个）。
-#    本机到 codeload 实测 ~40–60 KB/s → 120MB 工作树大约要 35–50 分钟，太久了。
-MAX_SRC_BYTES = 40 * 1024 * 1024
+# ★★ 真正的闸门应该是**工作树字节数**（`git/trees` 里所有 blob 的 size 之和），不是这个
+#    字段：它含 .git 历史，实测能差 7 倍。只按它判会把大批能拉的目标误杀。
 MAX_FETCH_MB = 200       # ★ 下载字节上限
 # ★ 单目标下载秒数上限。为什么是 1800 秒：
 #   实测本机到 codeload 只有 **~26 KB/s**（deepanalyze 900s 只收到 23MB/38MB）。

@@ -32,7 +32,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import recheck as R                      # noqa: E402
-from is_test_path import is_test_path    # noqa: E402
 
 # ★ 单片文件数上限。超过就自己成一片。
 BIG = 900

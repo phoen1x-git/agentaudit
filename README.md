@@ -383,11 +383,14 @@ Secrets are always read from files or environment variables, never committed.
 | `AF_SINKS_FS` / `_PATH` / `_HTTP` / `_DYNIMP` | enable extra sink groups | off |
 | `AF_SINKS_EXTRA` | include the `source: extra` entries at all | `1` |
 | `AF_PATH_FILTER` | path filter mode (`rel` = project-relative) | `rel` |
-| `AF_SOURCES_FILE` | alternative untrusted-source list | `core/config/sources.yml` |
+| `AF_SOURCES_FILE` | an **additional** untrusted-source list, added on top of the default | `core/config/sources.yml` |
 | `AF_NO_DATAFLOW` | disable inter-procedural argument-source analysis | `0` |
 | `AGENTAUDIT_HOME` | where output (`out/`, `data/`) goes | the current directory |
 | `AGENTAUDIT_NO_LOG` | set to `1` to stop recording scan statistics | unset |
 | `AGENTAUDIT_ASCII` | set to `1` to draw the banner with ASCII only | auto-detected |
+
+The complete list, including the triage-layer patches and the switches for A/B runs, is in
+[CONFIGURING.md](CONFIGURING.md). A test fails if one is added without being documented.
 
 ---
 

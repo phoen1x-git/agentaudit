@@ -366,11 +366,14 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 | `AF_SINKS_FS` / `_PATH` / `_HTTP` / `_DYNIMP` | 打开额外的 sink 组 | 关 |
 | `AF_SINKS_EXTRA` | 是否启用 `source: extra` 的条目 | `1` |
 | `AF_PATH_FILTER` | 路径过滤模式（`rel` = 相对项目） | `rel` |
-| `AF_SOURCES_FILE` | 另一份不可信源头清单 | `core/config/sources.yml` |
+| `AF_SOURCES_FILE` | 在默认清单之外**额外叠加**的不可信源头 | `core/config/sources.yml` |
 | `AF_NO_DATAFLOW` | 关掉跨过程实参来源分析 | `0` |
 | `AGENTAUDIT_HOME` | 产物（`out/`、`data/`）写到哪 | 当前目录 |
 | `AGENTAUDIT_NO_LOG` | 设成 `1` 就不记扫描统计 | 未设置 |
 | `AGENTAUDIT_ASCII` | 设成 `1` 时 banner 只用 ASCII 画 | 自动检测 |
+
+完整清单（包括复核层那些补丁开关、以及做 A/B 用的开关）在 [CONFIGURING.md](CONFIGURING.md)。
+有测试守着：加了新开关却没写进文档，会直接失败。
 
 ---
 

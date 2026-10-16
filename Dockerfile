@@ -55,11 +55,12 @@ RUN test -x _tools/codeql/codeql \
  && _tools/codeql/codeql version
 
 # 3) Python dependency, then the package itself so the `agentaudit` command exists in here.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
-RUN pip install --no-cache-dir --no-deps -e . && agentaudit --version
+
+# One install step: the dependencies are declared in pyproject.toml, so installing the package
+# installs them. There used to be a separate requirements.txt layer here, which meant the same
+# list lived in two files.
+RUN pip install --no-cache-dir -e . && agentaudit --version
 
 ENV AF_CODEQL=/opt/agentaudit/_tools/codeql/codeql \
     PYTHONUNBUFFERED=1

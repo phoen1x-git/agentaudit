@@ -99,7 +99,6 @@ SAFE_EXACT = {
     "make_secure", "urlencode", "urlparse", "parse_qs", "parse_qsl",
 }
 
-SQL_FUNCS = {"execute", "executemany", "executescript", "raw", "cursor.execute"}
 SQL_KEYWORDS = ("select", "insert", "update", "delete", "drop", "union",
                 "alter", "create table", "where")
 
@@ -149,9 +148,6 @@ CLIENT_FUNCS = {
     "urlopen", "urllib.request.urlopen", "httpx.get", "httpx.post",
     "aiohttp.request",
 }
-
-# 危险点总集：执行类 + 客户端类
-DANGEROUS_ALL = EXEC_FUNCS | CLIENT_FUNCS
 
 # ★★★ 「外部输入」的判定：必须区分**谁的数据**
 #
@@ -798,11 +794,6 @@ def analyze(text, path="<file>"):
 #     看它自己的参数里有没有 Depends(...) / 鉴权装饰器
 #     看它调用的下游函数链里有没有鉴权
 #   都没有→ 报「未鉴权端点」（这只是**线索**，不是漏洞结论）
-
-ROUTE_RE = re.compile(
-    r"^(@?[\w\.]*)\.(get|post|put|delete|patch|route|websocket)\s*\(")
-ROUTE_DECO = re.compile(r"^@(app|router|api|blueprint|bp|application|server)\."
-                        r"(get|post|put|delete|patch|route|websocket)\b")
 
 # ★★★ 鉴权的**三种写法**（第三种最容易漏，报了 6 处假阳性才补上）
 #

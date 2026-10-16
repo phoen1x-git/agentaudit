@@ -12,7 +12,7 @@ python tools/run_selftests.py        # the rule self-tests
 python -m pytest -q                  # the suite CI runs
 ```
 
-The suite is 10 rule self-test suites and 117 tests, and it runs in well under a minute on
+The suite is 10 rule self-test suites and more than 120 tests, and it runs in well under a minute on
 a laptop. A full scan also needs the CodeQL CLI; `./scripts/setup.sh` installs it. The offline mode
 (`python app/scan.py --demo`, or `agentaudit scan --demo`) works without it, and most
 development does not need it either.

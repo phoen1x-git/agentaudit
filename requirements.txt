@@ -1,8 +1,4 @@
-# ── 核心依赖 ────────────────────────────────────────────────
-# 内核（core/）只用到这一个第三方包。
-PyYAML>=6.0
-
-# ── 可选依赖（只有少数工具用到，不装也能跑主流程）────────────
-# fastapi>=0.110        # 个别「起服务做端到端」的脚本用
-# pydantic>=2.0
-# requests>=2.31        # 若用 requests 版取源码
+# The runtime dependency is declared once, in pyproject.toml ([project.dependencies]).
+# This file stays so that `pip install -r requirements.txt` keeps working; it deliberately
+# restates nothing, because two declarations of the same version drift apart.
+-e .

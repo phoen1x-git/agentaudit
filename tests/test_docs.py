@@ -20,6 +20,8 @@ sys.path.insert(0, str(ROOT))
 EN = ROOT / "README.md"
 ZH = ROOT / "README.zh-CN.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
+# The floor CONTRIBUTING.md claims. Raise it when the suite grows past it.
+FLOOR_TESTS = 120
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 
 H2 = re.compile(r"^## (.+)$", re.M)
@@ -145,6 +147,28 @@ def test_the_contributing_guide_states_the_real_test_count():
     text = CONTRIBUTING.read_text(encoding="utf-8")
     assert f"{n_suites} rule self-test suites" in text, \
         f"CONTRIBUTING.md does not say {n_suites} suites"
-    assert f"{n_tests} tests" in text, f"CONTRIBUTING.md does not say {n_tests} tests"
-    assert n_suites >= 5 and n_tests > 20, "the check would pass on zero"
+    # A lower bound, not the exact count: pinning the exact number means every new test makes
+    # CI red until somebody edits a document nobody reads for that. `more than N` still fails
+    # if tests are deleted, and never needs touching when they are added.
+    assert f"more than {FLOOR_TESTS} tests" in text, \
+        f"CONTRIBUTING.md should say 'more than {FLOOR_TESTS} tests'"
+    assert n_tests > FLOOR_TESTS, f"only {n_tests} tests collected; the claim is now false"
+    assert n_suites >= 5, "the check would pass on zero suites"
 
+
+
+def test_every_switch_the_code_reads_is_documented():
+    """Eleven variables used to exist with no mention in any document.
+
+    The README deliberately lists only the ones a user normally sets, so the check is against
+    CONFIGURING.md, which is the complete reference.
+    """
+    conf = (ROOT / "CONFIGURING.md").read_text(encoding="utf-8")
+    seen: set[str] = set()
+    for pkg in ("app", "core", "tools"):
+        for path in (ROOT / pkg).rglob("*.py"):
+            body = path.read_text(encoding="utf-8", errors="replace")
+            seen |= set(re.findall(r"""environ(?:\.get)?\(?[\[\(]?["\']((?:AF|AGENTAUDIT)_[A-Z0-9_]+)["\']""", body))
+    assert len(seen) > 15, f"the scan found only {len(seen)} switches; the pattern is probably wrong"
+    missing = sorted(k for k in seen if k not in conf)
+    assert not missing, f"read by the code but not listed in CONFIGURING.md: {missing}"

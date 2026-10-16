@@ -29,10 +29,6 @@ def load_sinks() -> dict:
     return load_yaml("sinks.yml")
 
 
-def enabled_sinks() -> list[dict]:
-    cfg = load_sinks()
-    return [s for s in cfg.get("sinks", []) if s.get("enabled", True) and s.get("cls") == "direct"]
-
 
 def path_is_filtered(rel_path: str, filters: dict) -> bool:
     """rel_path 用 / 分隔。命中任一规则 → True（这条结果不交给人看）。"""

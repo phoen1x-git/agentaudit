@@ -64,7 +64,7 @@ EXPOSE_PAT = re.compile(
 
 def find_src_root(project: str):
     """在 SRC_ROOTS 里按项目短名模糊找源码根。"""
-    key = re.sub(r"[^a-z]", "", project.lower)
+    key = re.sub(r"[^a-z]", "", project.lower())
     for base in SRC_ROOTS:
         if not os.path.isdir(base):
             continue

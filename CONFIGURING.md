@@ -1,15 +1,24 @@
 # Configuring the rules
 
-The checks are not hard-coded. There are three YAML files under `core/config/`, and
-`core/gen_ql.py` turns them into the CodeQL queries that actually run. Adding a dangerous
-function of your own is a **config change**, not a code change.
+The checks are not hard-coded. The rule files live under `core/config/`, and
+`core/gen_ql.py` turns the first three into the CodeQL queries that actually run. Adding a
+dangerous function of your own is a **config change**, not a code change.
 
 ```
 core/config/
-  sinks.yml     the dangerous-call list (the main one)
-  sources.yml   what counts as untrusted input
-  filters.yml   which paths to ignore
+  sinks.yml              the dangerous-call list (the main one)
+  sources.yml            what counts as untrusted input
+  filters.yml            which paths to ignore
+  gate.yml               the health gate: which targets are not worth scanning at all
+  targets.example.yml    a template target table -- copy it to targets.yml to scan a batch
 ```
+
+`sinks.yml`, `sources.yml` and `filters.yml` generate queries, so editing them changes what the
+scanner looks for. `gate.yml` does not generate anything: it is read at the start of a round and
+skips targets that are archived, unmaintained, or not an agent in the first place. It is worth
+knowing it exists, because a target silently skipped is a target whose absence from a report is
+not evidence of anything. `targets.example.yml` is only a template; `app/scan.py` does not need
+it at all.
 
 After editing any of them, run:
 
@@ -181,3 +190,61 @@ Generated from the current configuration with `python tools/validate_config.py -
 The checks that do not come from this file — unauthenticated routes, inconsistent
 authentication within a file, untrusted input written next to a dangerous call, and the
 strong/weak-form check — live in `tools/ast_criteria.py` and `core/duality.py`.
+
+---
+
+## Every switch
+
+The README lists the ones a user normally sets. This is the whole set; every `AF_*` and
+`AGENTAUDIT_*` variable read anywhere in the code appears here, and a test fails if one is
+added without being documented.
+
+### Paths and credentials
+
+| Variable | Default | What it does |
+|---|---|---|
+| `DEEPSEEK_KEY_FILE` | `~/.deepseek_key` | where the LLM API key is read from |
+| `GITHUB_KEY_FILE` | `~/.github_token` | GitHub token file, which raises the API rate limit |
+| `AF_CODEQL` | `./_tools/codeql/codeql[.exe]` | the CodeQL CLI |
+| `AF_QL_DIR` | `core/ql`, or the reference pack if that is absent | which QL pack the frontend runs |
+| `AF_PAPER_QL` | `./agentfuzz-official/ql` | the AgentFuzz reference pack; needed only to regenerate queries |
+| `AF_SRC_DIR` | `./_targets/src` | where fetched sources are kept |
+| `AF_DB_DIR` | `./_targets/db` | where CodeQL databases are kept |
+| `AF_TARGET_MAP` | read from `core/config/targets*.yml` | JSON map of `{"short-name": "source root"}` |
+| `AGENTAUDIT_HOME` | the current directory | where `out/` and `data/` are written |
+
+### What gets scanned
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AF_SINKS_FS` / `_PATH` / `_HTTP` / `_DYNIMP` | off | turn on those sink groups |
+| `AF_SINKS_EXTRA` | `1` | include the `source: extra` entries in `sinks.yml` at all |
+| `AF_SOURCES_EXTRA` | `1` | the same, for `sources.yml` |
+| `AF_SOURCES_FILE` | `core/config/sources.yml` | an **additional** source list. It is added on top of the default one, not a replacement for it |
+| `AF_PATH_FILTER` | `rel` | match filter paths against the absolute path instead of the project-relative one |
+| `AF_NO_FILTER` | off | disable the path filter entirely |
+| `AF_NO_DATAFLOW` | `0` | disable the inter-procedural argument-source query |
+| `AF_ARGFLOW_ATTR` | `0` | also treat attribute reads as taint steps in that query |
+| `AF_DUALITY_SDK` | `0` | turn on the SDK-aware part of the strong/weak-form check |
+
+### The triage layer
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AF_LLM_MAX_CNY` | `30` | hard per-run spend cap; the run stops and reports when it is reached |
+| `AF_JUDGE_MT` | `8000` | maximum output tokens for one judgement |
+| `AF_JUDGE_ARGSRC` | `1` | send the argument-source evidence to the judge |
+| `AF_JUDGE_ARGCTX` | `1` | also send the source of the function the argument came from. Without it the judge sees a data-flow statement about a function it cannot read, and can only answer "outside the given code" |
+| `AF_JUDGE_OPARG` | `0` | send the operator's own command-line arguments as context |
+| `AF_JUDGE_REPOCFG` | `0` | treat a config file that was cloned with the repository as untrusted, rather than lumping it in with the operator's own config |
+| `AF_JUDGE_CFGSRC` | `0` | send evidence about where a config value comes from |
+| `AF_JUDGE_SCOPE2` | `0` | pin down what "exceeds its intended scope" means on the `scope_exceeds` axis |
+
+### Everything else
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AF_GH_DOH` | `https://223.5.5.5/resolve` | DNS-over-HTTPS resolver used by the GitHub client; set to `0` to use the system resolver |
+| `AGENTAUDIT_NO_LOG` | off | stop recording scan statistics |
+| `AGENTAUDIT_ASCII` | auto-detected | draw the banner with ASCII only |
+| `AGENTAUDIT_INTERACTIVE` | auto-detected | force interactive mode on or off |
