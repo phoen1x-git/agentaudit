@@ -9,31 +9,33 @@
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
 -->
 
-**Code audit for AI agents.** A static-analysis + LLM-triage scanner that finds dangerous call
-sites in LLM / Agent code — and says *"I don't know"* when it doesn't know.
+A code audit tool for AI agent projects. It reads LLM / Agent code, finds dangerous call sites,
+and then works out whether each one's argument can actually be controlled from outside.
+When it cannot tell, it writes "unknown" rather than giving a guess.
 
-The output is a list of **candidates** to review, not a list of confirmed vulnerabilities.
+Its output is a list of **candidates**, not a list of confirmed vulnerabilities.
+Every one of them still needs a person to look at it.
 
 | | |
 |---|---|
-| Try it | `agentaudit scan --demo` — no CodeQL, no API key, no downloads |
-| What it misses | [LIMITATIONS.md](LIMITATIONS.md) — worth reading before you trust anything below |
+| Try it | `agentaudit scan --demo`, with no CodeQL, no API key and nothing to download |
+| What it misses | [LIMITATIONS.md](LIMITATIONS.md), which lists everything it cannot find |
 
 ---
 
 ## The problem it solves
 
-Dangerous calls (`eval`, `subprocess`, `open`, `requests`, …) are everywhere in agent code, and
-classic taint analysis flags all of them. Ask a different question and the picture changes
-completely:
+Agent projects are full of dangerous calls: `eval`, `subprocess`, `open`, `requests` and so on.
+Most of them are necessary. To run a command you have to call `subprocess`. So classic taint
+analysis flags all of them, and what comes back is a long list of "there is a dangerous call
+here", which is not much use.
 
 ```python
 # Candidate. Dangerous call? yes. Is it a vulnerability? probably not.
 handler = eval(spec_name)          # spec_name comes from a built-in table in this file
 ```
 
-Three questions decide whether a flagged call site is real, and taint analysis only answers the
-first:
+The real question is not whether a dangerous call exists. It is these three:
 
 | # | Question | Answered by |
 |---|---|---|
@@ -41,17 +43,17 @@ first:
 | ② | Is its argument **externally controlled**? | this project |
 | ③ | Does that argument **survive to the sink**? | this project |
 
-`agentaudit` turns ② and ③ into runnable checks and treats *"the triage layer can't tell"* as a
-reportable outcome (`needs_human`) rather than something to hide behind a confident-looking
-guess.
+`agentaudit` does the second and the third. It turns both into checks that run. And when it
+cannot tell, it outputs `needs_human`, meaning a person has to decide. That is a real result,
+not a failure.
 
 ---
 
 ## Install
 
-Requires **Python 3.10+**. The [CodeQL CLI](https://github.com/github/codeql-cli-binaries) (a few
-hundred MB) is optional — without it the scanner runs in the offline mode, which finds fewer
-things but needs nothing.
+Requires Python 3.10 or newer. The [CodeQL CLI](https://github.com/github/codeql-cli-binaries)
+is optional, and it is a few hundred MB. Without it the scanner runs in the offline mode, which
+finds less but needs nothing beyond PyYAML.
 
 ```bash
 git clone <this repo> && cd agentaudit
@@ -59,8 +61,8 @@ git clone <this repo> && cd agentaudit
 pip install -e .                   # the dependency only; gives you the `agentaudit` command
 ```
 
-Either way the scripts run directly (`python app/scan.py ...`). The editable install also gives
-you one command:
+Either install lets you run the scripts directly (`python app/scan.py ...`). The editable
+install also gives you a single command:
 
 ```bash
 agentaudit scan --demo
@@ -79,11 +81,11 @@ agentaudit selftest                # or: python tools/run_selftests.py
 agentaudit scan --demo             # 13 candidates from the bundled sample project
 ```
 
-Both run in seconds and need nothing else installed. If these pass, the setup is sane.
+Both run in seconds and need nothing else installed. If these two pass, the install works.
 
 ### Docker
 
-Prefer not to install CodeQL at all? The image has it baked in:
+If you would rather not install CodeQL, the image has it built in:
 
 ```bash
 docker build -t agentaudit .
@@ -100,17 +102,17 @@ docker run --rm --entrypoint agentaudit agentaudit log
 docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
 ```
 
-The `Dockerfile` was written on a machine without Docker, so the first build is the test. It is
-built to fail loudly rather than quietly — the CodeQL CLI is executed *during* the build, so a
-wrong release layout stops the build instead of producing an image whose scanner cannot run.
-CI builds and smoke-tests the image on every push.
+This Dockerfile was written on a machine without Docker, so the first build is the first test
+of it. It is written to fail early: the CodeQL CLI is executed once during the build, so if the
+layout is wrong the build stops, instead of producing an image whose scanner cannot run.
+CI builds it and runs a smoke test on every push.
 
 ### All the commands
 
 | Command | What it does |
 |---|---|
 | `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
-| `agentaudit scan` | scan a target — `--demo`, `--path DIR`, `--repo OWNER/NAME` |
+| `agentaudit scan` | scan a target: `--demo`, `--path DIR`, `--repo OWNER/NAME` |
 | `agentaudit explain <round>` | show why a candidate was reported |
 | `agentaudit serve <round>` | read a round in a browser (localhost only) |
 | `agentaudit report <round>` | render the report draft |
@@ -127,7 +129,7 @@ CI builds and smoke-tests the image on every push.
 
 ## Quick start
 
-Scan something with one command — no target list, no database to build by hand:
+One command scans something, with no target list and no database to build by hand:
 
 ```bash
 agentaudit scan --demo                  # the bundled sample project
@@ -135,7 +137,7 @@ agentaudit scan --path ./myproject      # a project already on disk
 agentaudit scan --repo owner/name       # fetch a GitHub repo and scan it
 ```
 
-**Scanning many repositories rather than one?** That is a different path — find and screen
+To scan many repositories instead of one, there is a different route: find and screen
 candidates, fetch sources and build databases, then scan the batch. See
 [Scanning a batch](#scanning-a-batch) under "How it works".
 
@@ -153,28 +155,29 @@ A bare `agentaudit` opens this in your terminal:
   0  Quit
 ```
 
-It echoes the command line it runs, so the menu teaches you the flags instead of hiding them,
-and it refuses to start when there is no terminal (a pipe, or CI) rather than blocking on input.
+It prints the command line that each choice runs, so the menu teaches you the flags rather
+than hiding them. And where there is no terminal, in a pipe or in CI for example, it refuses to
+start rather than blocking on input.
 
 ### What lands in `out/round-<tag>/`
 
 | File | What it is |
 |---|---|
-| `findings.tsv` | the candidate table, one row per candidate — the primary artefact |
+| `findings.tsv` | the candidate table, one row per candidate, and the main artefact |
 | `report_draft.md` | the write-up, one section per candidate |
 | `index.html` | sortable / searchable table of every candidate |
 | `agentaudit.sarif` | the candidates as SARIF 2.1.0, for a code-scanning UI or an editor |
 | `results.sarif` | the CodeQL frontend's own raw output (full mode only) |
 | `meta.json` | which mode ran, which rule switches were on, how long it took |
 
-Every one of those rows is a **candidate**. Nothing in this pipeline executes your code, so
-nothing here is confirmed.
+Every one of those rows is a candidate. Nothing in this pipeline executes the code it looks
+at; it only reads it. So none of it is confirmed.
 
 ---
 
 ## Reading the results
 
-`findings.tsv` is the raw table. These three make it usable.
+`findings.tsv` is the raw table. These three commands are how you read it.
 
 ### Why was this one reported?
 
@@ -182,9 +185,9 @@ nothing here is confirmed.
 agentaudit explain out/round-x --index 3
 ```
 
-Prints the source around the flagged line, the call chain that reaches it, the guards on that
-path, and where the dangerous argument comes from — or states that the scan could not determine
-it. **This is the command to run before believing or dismissing a candidate.**
+It prints the source around the flagged line, the call chain that reaches it, the guards on
+that path, and where the dangerous argument comes from. If the scan could not determine that, it
+says so. Run this before believing or dismissing a candidate.
 
 ### Watch the whole round in a browser
 
@@ -198,16 +201,16 @@ traversal.
 ### The report
 
 `report_draft.md` is generated for you, and its header states plainly that the verdicts inside
-are AI-assisted and were **not verified by execution**. [`examples/`](examples/) has a complete
-synthetic sample — the rows there cover the four outcomes the scanner distinguishes: `vuln`,
-`not_vuln` (not externally controllable), `not_vuln` (blocked by a validator) and
-**`needs_human`** (origin undeterminable). That last one is the point: a scanner that only ever
-outputs `vuln` / `not_vuln` is lying about its own certainty.
+are AI-assisted and were not verified by execution. [`examples/`](examples/) has a complete
+synthetic sample, and its rows cover the four outcomes the scanner distinguishes: `vuln`,
+`not_vuln` (not externally controllable), `not_vuln` (blocked by a validator) and `needs_human`
+(origin undeterminable). The last one is the important one. A scanner that only ever answers yes
+or no is pretending to be more certain than it is.
 
 ### In an editor or a code-scanning UI
 
-Every run writes `agentaudit.sarif`. It uses **relative paths only** — no absolute path, no
-`originalUriBaseIds` — so a file taken off your machine does not carry your filesystem layout.
+Every run writes `agentaudit.sarif`. It uses relative paths only, with no absolute path and no
+`originalUriBaseIds`, so a copy taken off your machine does not reveal your directory layout.
 Every result is `level: warning` and the triage verdict travels in `properties`, because SARIF
 levels are read by tools that never see the caveats. Rows already triaged `not_vuln` are left
 out; add `--all` to `agentaudit sarif` to include them.
@@ -216,10 +219,10 @@ out; add `--all` to `agentaudit sarif` to include them.
 
 ## Help me improve this
 
-**If you are willing to send me your scan statistics, I would be genuinely grateful.** They cost
-you nothing, they contain no code, and they are the one thing I cannot produce on my own: how
-this scanner behaves on code I have never seen. A check that fires on your code and never on
-mine is the single most useful thing you can hand me.
+If you are willing to send me your scan statistics, I would be genuinely grateful. They cost
+you nothing, and they contain no code. They are also the one thing I cannot produce on my own:
+how this scanner behaves on code I have never seen. A check that fires on your code and never on
+mine is the most useful thing you can send me.
 
 Every scan appends one line to `./data/scan_log.jsonl`, locally:
 
@@ -236,19 +239,19 @@ agentaudit log --export           # a small aggregate, written to scan_stats.jso
 agentaudit log --clear            # delete it
 ```
 
-**Nothing is ever uploaded.** There is no network code in any of this, so the only way any of it
-leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate against
-the table above and refuses to write anything that fails, so read it before you decide.
+**Nothing is ever uploaded.** There is no network code in any of this, so the only way any of
+it leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate
+against the table above and refuses to write anything that fails, so read it before you decide.
 
-If you are happy with it, open an [issue](https://github.com/OWNER/REPO/issues) and paste it in. If you would rather not,
-that is a perfectly good answer too — the log is yours, and `--no-log` (or `AGENTAUDIT_NO_LOG=1`)
-turns the whole thing off.
+If you are happy with it, open an [issue](https://github.com/OWNER/REPO/issues) and paste it
+in. If you would rather not, that is a perfectly good answer too. The log is yours, and
+`--no-log` (or `AGENTAUDIT_NO_LOG=1`) turns the whole thing off.
 
 ---
 
 ## How it behaves
 
-Things worth knowing before you trust a number.
+Worth knowing before you trust any number it gives you.
 
 ### Two modes
 
@@ -270,8 +273,8 @@ agentaudit scan --path ./myproject --llm
 ```
 
 The run prints the candidate count and the hard cap (`AF_LLM_MAX_CNY`, default 30 CNY) before it
-starts, and reports what it actually spent afterwards. Without `--llm` you get the candidate list
-with no verdicts — and the report says so, rather than implying anything was judged.
+starts, and reports what it actually spent afterwards. Without `--llm` you get the candidate
+list with no verdicts, and the report says so rather than implying anything was judged.
 
 A `vuln` verdict whose argument source is unknown is downgraded to `needs_human`. Those are the
 unstable ones: run the same candidate repeatedly and they flip noticeably more often than the
@@ -295,9 +298,9 @@ introduce anything", not for a full audit.
 agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.py'
 ```
 
-Patterns are globs relative to the source root, and are recorded in the round so two rounds stay
-comparable. What you exclude, you do not scan — so no candidates from `vendor/` says nothing if
-`vendor/` was skipped.
+Patterns are globs relative to the source root, and they are recorded in the round so that two
+rounds stay comparable. What you exclude is what you did not scan, so "no candidates in
+vendor/" means nothing if `vendor/` was skipped.
 
 ### Every option of `scan`
 
@@ -309,7 +312,7 @@ comparable. What you exclude, you do not scan — so no candidates from `vendor/
 | `--project NAME` | name used in reports (default: derived from the path) |
 | `--tag NAME` | round directory name (default: derived) |
 | `--out DIR` | where to write the round (default: `./out`) |
-| `--llm` | triage with an LLM — spends credits, so it is off by default |
+| `--llm` | triage with an LLM; it spends credits, so it is off by default |
 | `--no-unknown-downgrade` | keep a `vuln` verdict even when the argument source is unknown |
 | `--no-codeql` | force the offline mode |
 | `--lang en\|zh` | report language (default `en`) |
@@ -324,9 +327,10 @@ comparable. What you exclude, you do not scan — so no candidates from `vendor/
 
 ## What it checks
 
-The dangerous-call list lives in **`core/config/sinks.yml`** — one YAML file, and it holds
-52 dangerous-call rules, not hard-coded logic. `core/gen_ql.py` reads it and generates the CodeQL queries, so adding your own dangerous
-function is a config change, not a code change.
+The dangerous-call list lives in `core/config/sinks.yml`, a single YAML file holding
+52 dangerous-call rules rather than hard-coded logic. `core/gen_ql.py` reads it and generates
+the CodeQL queries, so adding your own dangerous function is a config change, not a code
+change.
 
 | Group | Examples | Default |
 |---|---|---|
@@ -337,26 +341,29 @@ function is a config change, not a code change.
 | HTTP clients (`AF_SINKS_HTTP`) | `httpx.get/post/...`, `httpx.Request`, `httpx.Client` | off |
 | Dynamic dispatch (`AF_SINKS_DYNIMP`) | `importlib.import_module`, `__import__`, `import_module` | off |
 
-Groups that are off are off because they are noisy; turning one on trades precision for
+The groups that are off are off because they are noisy. Turning one on trades precision for
 candidate volume. The switch values are recorded in each round's `meta.json`.
 
-Beyond sinks, the kernel also checks authentication consistency across a file's endpoints,
-strong/weak form coexistence within one function, and reachability from an entry point.
+Beyond these calls, the kernel checks three more things: whether the endpoints in one file agree
+about authentication, whether one function contains both the safe and the unsafe way of doing
+the same job, and whether a dangerous point can be reached from an entry point at all.
+(Code calls a dangerous point a `sink`, which is where switch names like `AF_SINKS_FS` come
+from.)
 
-Adding your own dangerous function is a few lines of YAML — see
-[CONFIGURING.md](CONFIGURING.md) for the field reference, and run
-`agentaudit validate` to check your edit.
+Adding your own dangerous function is a few lines of YAML. [CONFIGURING.md](CONFIGURING.md) has
+the field reference, and `agentaudit validate` checks your edit.
 
 ---
 
 ## What it does not find
 
-These are deliberate trade-offs, not bugs. The long version — what the analysis cannot see at
-all, and which of its silences are meaningful — is in **[LIMITATIONS.md](LIMITATIONS.md)**.
+These are deliberate trade-offs, not bugs. The long version is in
+[LIMITATIONS.md](LIMITATIONS.md): what the analysis cannot see at all, and which of its silences
+are meaningful.
 
 - **Python only.** The static frontend is bound to CodeQL's Python pack.
 - **The triage layer is noisy.** Re-run a candidate and a noticeable share of the verdicts
-  change. Suspiciously stable results are usually a *caching* artefact — change `--tag` when
+  change. Suspiciously stable results are usually a caching artefact, so change `--tag` when
   re-judging.
 - **`arg_source=unknown` is not trustworthy.** That verdict means the model itself does not know
   where the argument comes from; those rows are downgraded by default.
@@ -401,7 +408,8 @@ The complete list, including the triage-layer patches and the switches for A/B r
 
 ## How it works
 
-For anyone reading the code, or running a batch rather than a single repository.
+This section is for two kinds of reader: someone reading the code, and someone scanning a
+batch rather than a single repository.
 
 One target goes through four stages, and `agentaudit scan` drives all of them:
 
@@ -412,17 +420,17 @@ One target goes through four stages, and `agentaudit scan` drives all of them:
 | Triage | `core/llm_judge.py` | the five axes: `verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
 | Report material | `app/make_report.py`, `app/make_index.py`, `tools/to_sarif.py` | the draft, the sortable table, the SARIF |
 
-Two more sit across those: `core/consistency.py` decides what the evidence does not support and
-refuses to report it, and `core/cfg.py` owns the rule configuration. `core/gate.py` (is this
-target worth scanning at all) and `core/upstream.py` (has this already been reported upstream)
-are used by the batch path only.
+Two more run across all of those: `core/consistency.py` decides what the evidence does not
+support and refuses to report it, and `core/cfg.py` owns the rule configuration.
+`core/gate.py` (is this target worth scanning at all) and `core/upstream.py` (has this already
+been reported upstream) are used by the batch path only.
 
 <a id="scanning-a-batch"></a>
 
 ### Scanning a batch
 
-A batch has two slow, restartable stages. Both can be stopped and re-run; finished work is
-skipped.
+A batch has two slow stages, and both can be restarted. You can stop and re-run either of
+them, and finished work is skipped.
 
 ```bash
 # 1) build a candidate list (needs a GitHub token, and a few minutes)
@@ -442,8 +450,8 @@ agentaudit index    out/round-my-round
 core/config/targets.yml` chains those steps, skipping whatever is already done.
 
 The screener excludes repositories you have already looked at, which is what makes "not yet
-examined" mean something. That list lives in `core/config/known_targets.yml`, which does not
-ship -- copy the example and add your own. It is a file rather than a constant in the code
+examined" mean something. That list lives in `core/config/known_targets.yml`, and it does not
+ship; copy the example and add your own. It is a file rather than a constant in the code,
 because a list of real repositories says more about whoever wrote the tool than about the tool.
 
 > **Mind the cost.** The triage stage spends LLM credits. Scripts print an estimated cost up
@@ -477,18 +485,18 @@ scripts/         setup.sh
 
 ## Author's note
 
-I wrote this while working on AI agent security, and the part that kept stopping me was not
-finding a dangerous call — it was deciding what to do with one. Run the same candidate past a
-model twice and you do not always get the same answer. A tool that hides that is worse than one
-that misses things, because you cannot tell **which** of its outputs to trust.
+I wrote this while working on AI agent security. What kept stopping me was not finding a
+dangerous call; it was deciding what to do with one. Run the same candidate past a model twice
+and you do not always get the same answer. A tool that hides that is worse than one that misses
+things, because you cannot tell which of its outputs to trust.
 
-So the rule I built it around is narrow: **nothing here is allowed to sound more certain than it
-is.** `needs_human` is a real verdict. Evidence that could not be determined is printed as "not
+So the rule I built it around is narrow: nothing here is allowed to sound more certain than it
+is. `needs_human` is a real verdict. Evidence that could not be determined is printed as "not
 determined" instead of guessed. Every report says it was not verified by execution.
 [`LIMITATIONS.md`](LIMITATIONS.md) is kept current on purpose, because a tool that only lists
 its strengths is not telling you anything.
 
-If you run it and it is wrong — in either direction — that is the most useful thing you can send
+If you run it and it is wrong, in either direction, that is the most useful thing you can send
 me. Thank you for reading this far.
 
 ---
@@ -510,6 +518,6 @@ check, the parameter-taint check and the triage layer are additions on top of th
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 > Please use it only against targets **you are authorised to test**.
