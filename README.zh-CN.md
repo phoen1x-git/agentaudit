@@ -8,45 +8,48 @@
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
 -->
 
-**给 AI Agent 做代码审计。** 静态分析 + LLM 复核的扫描器：在 LLM / Agent 代码里找出危险调用点，
-并且在**拿不准的时候直接说「我不知道」**。
+这是一个给 AI Agent 项目做代码审计的工具。它读 LLM / Agent 的代码，找出危险调用点，
+再判断每一个调用点的参数是不是真能从外面控制、能不能一路传到这个调用点。
+判断不出来的时候，它写「不知道」，而不是给一个猜出来的结论。
 
-输出的是**候选清单**，不是「已确认的漏洞清单」。
+它输出的是一份**候选清单**，不是「已确认的漏洞清单」。每一条都还需要人再看一遍。
 
 | | |
 |---|---|
-| 试一下 | `agentaudit scan --demo` —— 不用 CodeQL、不用 API key、不用下载 |
-| 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md) —— 建议先读它，再决定要不要信下面任何一句话 |
+| 试一下 | `agentaudit scan --demo`，不需要 CodeQL、不需要 API key、不需要下载 |
+| 抓不到什么 | [LIMITATIONS.md](LIMITATIONS.md)，它查不到的东西都列在那里 |
 
 ---
 
 ## 它解决什么问题
 
-危险调用（`eval`、`subprocess`、`open`、`requests` …）在 Agent 代码里到处都是，
-传统污点分析会把它们**全部**标出来。但换个问题问，结论就完全不一样：
+Agent 项目里到处都是危险调用：`eval`、`subprocess`、`open`、`requests` 等等。
+这些调用大多是必要的，要执行命令就得调 `subprocess`。所以传统的污点分析一跑，
+会把它们全部标出来，结果就是一大堆「这里有个危险调用」，很难用。
+
+真正的问题不是「有没有危险调用」，而是下面三个：
 
 ```python
-# 是候选。危险调用？是。是漏洞吗？大概率不是。
-handler = eval(spec_name)          # spec_name 来自本文件里的内置表
+# 这是危险调用，但它不是漏洞：spec_name 来自本文件里的一个内置表，外面控制不了
+handler = eval(spec_name)
 ```
-
-一个被标出来的调用点到底是不是真的，取决于三个问题，而污点分析只回答了第一个：
 
 | # | 问题 | 谁来回答 |
 |---|---|---|
-| ① | 有没有危险调用？ | 静态分析 |
-| ② | 它的实参**外部可控**吗？ | 本项目 |
-| ③ | 这个实参**能一路活到 sink** 吗？ | 本项目 |
+| ① | 有没有危险调用？ | 静态分析，现有工具都能答 |
+| ② | 它的参数能不能从外面控制？ | 这个工具 |
+| ③ | 这个参数能不能一路传到调用点？ | 这个工具 |
 
-`agentaudit` 把 ② 和 ③ 做成可运行的检查，并且把「**复核层判不出来**」
-当成一个**正经的可报结果**（`needs_human`），而不是用一个看起来很自信的猜测把它盖过去。
+`agentaudit` 做的就是第 ② 和第 ③ 件事，把这两件事变成可运行的检查。
+判断不出来的时候，它输出 `needs_human`（需要人来判断），这是它的一个正常结论，不是失败。
 
 ---
 
 ## 安装
 
-需要 **Python 3.10+**。[CodeQL CLI](https://github.com/github/codeql-cli-binaries)（几百 MB）
-是**可选的** —— 没有它就退回离线模式，查得少一些，但什么都不用装。
+需要 Python 3.10 或更高版本。[CodeQL CLI](https://github.com/github/codeql-cli-binaries)
+是可选的，它有几百 MB。不装的话工具会退回离线模式，查得少一些，
+但除了 PyYAML 之外不需要装任何东西。
 
 ```bash
 git clone <本仓库> && cd agentaudit
@@ -54,7 +57,8 @@ git clone <本仓库> && cd agentaudit
 pip install -e .                   # 只装依赖，但会给你一条 `agentaudit` 命令
 ```
 
-两种方式都能直接跑脚本（`python app/scan.py ...`）。做了可编辑安装之后还多一条统一入口：
+两种装法都能直接跑脚本（`python app/scan.py ...`）。用 `pip install -e .` 装过之后，
+还会多出一个统一的命令：
 
 ```bash
 agentaudit scan --demo
@@ -63,8 +67,8 @@ agentaudit serve out/round-demo
 agentaudit --help
 ```
 
-产物写进当前目录下的 `./out`；设了 `$AGENTAUDIT_HOME` 就写到那儿。
-**不会往安装目录里写任何东西。**
+产物写在当前目录的 `./out` 下；如果设了 `$AGENTAUDIT_HOME`，就写到那里。
+安装目录里不会写进任何东西。
 
 ### 冒烟测试
 
@@ -73,11 +77,11 @@ agentaudit selftest                # 等价于 python tools/run_selftests.py
 agentaudit scan --demo             # 拿自带的示例项目跑一遍，出 13 条候选
 ```
 
-两条都只要几秒钟，而且不需要装任何别的东西。**这两条过了，环境就是好的。**
+两条都只要几秒钟，而且不需要装任何别的东西。这两条过了，环境就没问题。
 
 ### Docker
 
-不想自己装 CodeQL 就用镜像（已经打进去了）：
+不想自己装 CodeQL 的话可以用镜像，镜像里已经带了：
 
 ```bash
 docker build -t agentaudit .
@@ -86,25 +90,25 @@ docker run --rm -v "$PWD/myproject:/scan/myproj:ro" \
     agentaudit --path /scan/myproj --tag myproj --out /scan/out
 ```
 
-镜像的 entry point 是 `agentaudit scan`，所以上面那些参数和你本机敲的完全一样。
-其它子命令要单独指定 entry point：
+镜像的入口（entry point）是 `agentaudit scan`，所以上面那些参数和你本机敲的完全一样。
+其它子命令要单独指定入口：
 
 ```bash
 docker run --rm --entrypoint agentaudit agentaudit log
 docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
 ```
 
-`Dockerfile` 是在一台**没有 Docker** 的机器上写的，所以**第一次构建就是验证**。
-它是照着「要炸就炸在明处」写的 —— CodeQL CLI 会在**构建过程中被执行**，
-布局不对就**直接让构建失败**，而不是产出一个「扫描器根本跑不起来」的镜像。
-CI 每次 push 都会构建 + 冒烟测试这个镜像。
+这个 Dockerfile 是在一台没有 Docker 的机器上写的，所以第一次构建就是第一次验证。
+它被写成「出错就尽早出错」：CodeQL CLI 会在构建过程中被执行一次，如果目录结构不对，
+构建直接失败，而不是产出一个扫描器根本跑不起来的镜像。
+CI 每次 push 都会构建它并做一遍冒烟测试。
 
 ### 全部命令
 
 | 命令 | 做什么 |
 |---|---|
 | `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
-| `agentaudit scan` | 扫一个目标 —— `--demo`、`--path 目录`、`--repo 用户名/仓库名` |
+| `agentaudit scan` | 扫一个目标：`--demo`、`--path 目录`、`--repo 用户名/仓库名` |
 | `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
 | `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
 | `agentaudit report <轮次>` | 生成报告草稿 |
@@ -121,7 +125,7 @@ CI 每次 push 都会构建 + 冒烟测试这个镜像。
 
 ## 快速开始
 
-一条命令就能扫 —— 不用先准备目标清单，也不用自己建库：
+一条命令就能扫，不用先准备目标清单，也不用自己建库：
 
 ```bash
 agentaudit scan --demo                  # 仓库里自带的示例项目
@@ -129,7 +133,7 @@ agentaudit scan --path ./myproject      # 扫本地已有的一个项目
 agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 ```
 
-**要一次扫很多个仓库？** 那是另一条路 —— 先筛候选、再下源码建库、然后成批扫。
+要一次扫很多个仓库的话，走的是另一条路：先筛候选，再下源码、建库，然后成批扫描。
 完整步骤在下面「它怎么工作」里的 [批量扫描](#scanning-a-batch) 一节。
 
 ### 或者用菜单
@@ -146,21 +150,23 @@ agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
   0  退出
 ```
 
-它会**把真正执行的命令行回显出来** —— 菜单是用来教你参数的，不是把参数藏起来。
-另外**没有终端时（管道、CI）它会拒绝进入交互模式**，不会卡在那儿等输入。
+它会把你选的那一步真正执行的命令行打印出来。菜单的作用是让你记住参数，
+不是把参数藏起来。另外，如果在没有终端的地方运行（管道、CI），
+它会拒绝进入交互模式，而不是卡在那里等输入。
 
 ### `out/round-<tag>/` 里有什么
 
 | 文件 | 是什么 |
 |---|---|
-| `findings.tsv` | 候选表，一行一条 —— **这是主要产物** |
+| `findings.tsv` | 候选表，一行一条，主要产物在这里 |
 | `report_draft.md` | 报告草稿，一条候选一节 |
 | `index.html` | 可排序 / 可搜索的候选清单页 |
 | `agentaudit.sarif` | 候选清单导成 SARIF 2.1.0，可进 code-scanning 界面或编辑器 |
 | `results.sarif` | CodeQL 前端自己的原始输出（仅 full 模式） |
 | `meta.json` | 用的是哪种模式、开了哪些规则开关、花了多久 |
 
-这里面的**每一条都是候选**。整条流水线**从不运行你的代码**，所以**没有任何一条是已确认的**。
+这里面的每一条都是候选。整条流水线**不运行被扫的代码**，只是读它，
+所以没有任何一条是已确认的。
 
 ---
 
