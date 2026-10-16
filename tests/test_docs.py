@@ -172,3 +172,28 @@ def test_every_switch_the_code_reads_is_documented():
     assert len(seen) > 15, f"the scan found only {len(seen)} switches; the pattern is probably wrong"
     missing = sorted(k for k in seen if k not in conf)
     assert not missing, f"read by the code but not listed in CONFIGURING.md: {missing}"
+
+
+def _slug(heading: str) -> str:
+    """The anchor GitHub generates for a heading: lower case, punctuation dropped, spaces
+    become hyphens. CJK characters are kept as they are."""
+    text = re.sub(r"`([^`]*)`", r"\1", heading)      # code spans lose their backticks
+    text = re.sub(r"\[([^]]*)]\([^)]*\)", r"\1", text)   # links keep their label
+    text = text.strip().lower()
+    text = re.sub(r"[^\w\s\-一-鿿]", "", text)
+    return re.sub(r"\s+", "-", text)
+
+
+@pytest.mark.parametrize("readme", [EN, ZH], ids=["en", "zh"])
+def test_in_document_links_point_at_a_real_heading(readme):
+    """`[batch](#scanning-a-batch)` is a link that does nothing if the heading is renamed.
+
+    Relative-path links were already checked; anchors were not, so a rename would break them
+    silently -- in the one place a reader is most likely to click.
+    """
+    text = readme.read_text(encoding="utf-8")
+    headings = {_slug(h) for h in re.findall(r"^#{1,6}\s+(.+)$", text, re.M)}
+    anchors = set(re.findall(r"]\(#([^)]+)\)", text))
+    assert anchors, f"{readme.name} has no in-document links; the pattern may be wrong"
+    broken = sorted(a for a in anchors if a not in headings)
+    assert not broken, f"{readme.name} links to headings that do not exist: {broken}"

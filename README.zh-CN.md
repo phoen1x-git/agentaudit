@@ -129,6 +129,9 @@ agentaudit scan --path ./myproject      # 扫本地已有的一个项目
 agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 ```
 
+**要一次扫很多个仓库？** 那是另一条路 —— 先筛候选、再下源码建库、然后成批扫。
+见 [批量扫描](#批量扫描)。
+
 ### 或者用菜单
 
 直接敲 `agentaudit`，终端里会出现这个：

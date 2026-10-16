@@ -135,6 +135,10 @@ agentaudit scan --path ./myproject      # a project already on disk
 agentaudit scan --repo owner/name       # fetch a GitHub repo and scan it
 ```
 
+**Scanning many repositories rather than one?** That is a different path — find and screen
+candidates, fetch sources and build databases, then scan the batch. See
+[Scanning a batch](#scanning-a-batch).
+
 ### Or use the menu
 
 A bare `agentaudit` opens this in your terminal:
