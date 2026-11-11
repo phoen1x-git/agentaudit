@@ -114,6 +114,7 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 | `agentaudit report <轮次>` | 生成报告草稿 |
 | `agentaudit index <轮次>` | 生成 HTML 清单页 |
 | `agentaudit sarif <轮次>` | 把该轮导出成 SARIF 2.1.0 |
+| `agentaudit candidates <轮次>` | 写一份别的工具能直接读的候选文件（`candidates.jsonl`，见下） |
 | `agentaudit round --tag 名字` | 按目标表跑一轮 |
 | `agentaudit all --tag 名字` | 下载 → 扫描 → 出报告，可断点续跑 |
 | `agentaudit selftest` | 跑规则自测 |

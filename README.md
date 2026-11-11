@@ -118,6 +118,7 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit report <round>` | render the report draft |
 | `agentaudit index <round>` | render the HTML index |
 | `agentaudit sarif <round>` | export the round as SARIF 2.1.0 |
+| `agentaudit candidates <round>` | write the contract file another tool can read (`candidates.jsonl`, see below) |
 | `agentaudit round --tag NAME` | run one round over a target table |
 | `agentaudit all --tag NAME` | prepare → scan → report, resumable |
 | `agentaudit selftest` | run the rule self-tests |
