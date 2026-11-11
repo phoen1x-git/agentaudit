@@ -31,6 +31,12 @@ SUITES = [
     ("selftest_wrapper_self.py", "wrappers must not count themselves as auth"),
     ("selftest_evidence_file.py", "evidence file field must be a path"),
     ("selftest_crossfile_alias.py", "cross-file type aliases"),
+    # The adjudication tools, which answer questions the scan cannot: is this worth a
+    # case at all, is there a guard upstream, and can anyone reach it.
+    ("selftest_triage_gate.py", "the three gates, with 'no' kept apart from 'cannot tell'"),
+    ("selftest_caller_status.py", "the five states of a position with no callers"),
+    ("selftest_guard_filler.py", "guard filling: str() is bogus, and unknown stays unknown"),
+    ("selftest_trace_entry_path.py", "tracing a sink back to an entry point"),
 ]
 
 PY = sys.executable
