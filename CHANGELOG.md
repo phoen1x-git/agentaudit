@@ -51,31 +51,8 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
   worth looking at rather than a finding. Listing four output paths answered "where did it go",
   which is not the question a first-time reader has.
 
-- **`agentaudit doctor`** says what this machine can and cannot do: Python, dependencies,
-  CodeQL, the LLM key and its budget, where output lands, and what each missing piece would
-  unlock. Two of those fail quietly -- without CodeQL a scan degrades to the offline path,
-  without a key triage does not run -- so both used to look like "it worked, and found less".
-- **Screening takes a profile.** `agentaudit targets screen --profile your.yml` replaces the
-  built-in thresholds with yours: what form of project you want, what you intend to do with
-  it, which languages you can read, how stale and how popular it may be. Without a profile
-  every user batches to the same list, which is the one thing a screening tool should not do.
-  Unknown keys are an error rather than a shrug, because a config key that is silently
-  ignored makes the tool look like it answered.
-- **The report says what it dropped, and why.** `agentaudit targets report --excluded` adds a
-  table of the projects the filters rejected with the reason for each. Most of those reasons
-  are about the profile rather than the project, so seeing them is how you learn to write a
-  better one.
-- **A scan ends by saying what to do next**, and says plainly that a candidate is a place
-  worth looking at rather than a finding. Listing four output paths answered "where did it go",
-  which is not the question a first-time reader has.
-
 ### Changed
 
-- **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
-  17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
-  on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
-  not. A test runs six commands and reads their output, because a rule about directories
-  cannot see a Chinese line printed from `core/`.
 - **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
   17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
   on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
@@ -97,11 +74,21 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
   repository, the frontend searched the parent, missed it, and fell back to the offline path.
   A user who had just installed CodeQL got a quieter scan and no message. It now looks inside
   the checkout, and `doctor` prints the path so the two can be compared.
-- **CodeQL was looked for one directory above the checkout.** That was right in the directory
-  this code was extracted from and wrong everywhere else: `scripts/setup.sh` installs into the
-  repository, the frontend searched the parent, missed it, and fell back to the offline path.
-  A user who had just installed CodeQL got a quieter scan and no message. It now looks inside
-  the checkout, and `doctor` prints the path so the two can be compared.
+- **One CSV cell over 128 KiB aborted the whole run.** CodeQL writes an entire call chain into
+  a single message cell, and Python's `csv` module refuses a field past 131072 characters.
+  The failure surfaced as `_csv.Error`, which reads like a finished scan with less to report.
+  The ceiling is raised when the module is imported. The SARIF path never had this problem,
+  because long text sits in JSON there, so only the CSV path could hit it.
+- **The same CSV parsed into different paths on Windows and on Linux.**
+  `os.path.isabs("/web/server.py")` is true on Linux and false on Windows, and CodeQL emits
+  that shape on both platforms. On Windows the source prefix stayed in the key, so argument
+  source evidence was collected and then matched against nothing. A path is absolute here if
+  it starts with `/` or with a drive letter.
+- **Both CSV parsers are now pure functions with tests.** `parse_argsrc_rows` and
+  `parse_result_rows` take rows instead of a file, so the shapes CodeQL actually emits - two
+  arguments in one cell, CRLF, quoted commas, a 200k-character field - are checked without a
+  CodeQL install. The CSV path had no tests at all before, which is where the two bugs above
+  lived.
 - **`tools/llm_client.py` no longer falls back to a path on the author's machine.** On any
   other machine that path does not exist, and a missing key surfaced later as "no response"
   rather than "no key".
@@ -110,9 +97,14 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Known gaps
 
-- **Whether the rewritten queries return the same candidates as before is not verified here.**
-  That comparison needs a CodeQL database and a real source tree; this release was cut on a
-  machine with neither. The offline path is covered by tests, the CodeQL path is not.
+- **The query rewrite has been compared on one target, and no further.** Same source tree
+  (TaskWeaver `33ccc5e`), same CodeQL 2.27.1, old CSV path against new: the new one returned
+  106 of the old 106 sink positions plus 24, all of them inside vendored third-party code
+  under `_targets_pylibs/`. A strict superset on positions; extra rows per position, because
+  one location can carry several call chains. That is one target, one commit, one CodeQL
+  version, so it settles "nothing was dropped here", not "nothing is ever dropped".
+- **Nothing on the CodeQL path runs in CI.** The comparison above needs a database and a real
+  source tree; the machines that run the tests have neither. The offline path is covered.
 - `sink.arg_index` is still `-1` on the AST frontend: that frontend cannot tell which argument
   is the dangerous one.
 - `needs_human` remains the most common verdict, and the reason is almost always the same: the

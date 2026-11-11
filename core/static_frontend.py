@@ -17,12 +17,24 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 
 from . import finding as F
 from . import cfg as CFG
+
+# ----------------------------------------------------------------------------
+# CSV 单元格上限
+# ----------------------------------------------------------------------------
+# ★ CodeQL 把整条调用链拼进一个 message 单元格，长链轻易越过 Python 默认的
+#   128 KiB 上限，然后第一天扫大项目就崩：
+#       _csv.Error: field larger than field limit (131072)
+#   这个形状很坏 —— 崩掉的结果和"扫完没发现问题"在报告里长得一样。SARIF 那条路
+#   不受影响（长文本在 JSON 里），所以只有 CSV 这条路会踩到。
+#   放到模块导入时设置一次：`csv` 的这个上限是进程级全局量。
+csv.field_size_limit(min(sys.maxsize, 2 ** 31 - 1))
 
 # ----------------------------------------------------------------------------
 # CodeQL 可执行文件定位（默认在本项目 _tools 下；可用环境变量覆盖）
@@ -140,43 +152,67 @@ def run_and_parse_argsrc(db_dir: str, project: str,
            "evidence; triage will report unknown as it did before")
         return {}
     prefix = _read_src_prefix(db_dir)
-    idx: dict = {}
     try:
         fh = open(tmp, newline="", encoding="utf-8", errors="replace")
     except OSError:
         return {}
     with fh:
-        for row in csv.reader(fh):
-            if len(row) < 6:
-                continue
-            uri = row[4] or ""
-            line = row[5] or "0"
-            # CSV 的路径列是"相对源根"，且带前导斜杠；SARIF 那边是绝对路径
-            rel = _rel(uri, prefix) if os.path.isabs(uri) else uri.lstrip("/")
-            # ★★★ 修：**一条 CSV 行的 message 里可能有多个实参**。
-            #   CodeQL 把「同一定位点的多条 select 结果」合并进同一个 message，用真换行分隔：
-            #       "local@@0@@1609@@static_dir@@⏎param@@1@@1609@@path@@server.py@@1608@@path"
-            #   而 `csv.reader` 会把整段读成**一个** cell（引号内的换行合法），
-            #   所以按 `@@` 直接切会得到 13 段，`parts[:7]` 只取到第一个实参 —— 后面的**静默丢掉**。
-            #   实测代价：某个样本 `server.py` 里的 `os.path.join(static_dir, path)`，
-            #   `arg1`（`path`，外部可控的那个）一直没有落盘，`arg0`（`static_dir`，本地常量）占了位。
-            #   这就是"实参来源看着全是 local"的一半原因 —— 不是追不到，是**报上来又被自己扔了**。
-            for seg in (row[3] or "").splitlines():
-                parts = seg.split("@@")
-                if len(parts) < 7:
-                    continue
-                idx.setdefault((rel, int(line) if line.isdigit() else 0), []).append({
-                    "i": int(parts[1]) if parts[1].isdigit() else -1,
-                    "kind": parts[0],
-                    "arg_line": int(parts[2]) if parts[2].isdigit() else 0,
-                    "arg_text": parts[3],
-                    "src_file": parts[4],
-                    "src_line": int(parts[5]) if parts[5].isdigit() else 0,
-                    "src_text": parts[6],
-                })
+        idx = parse_argsrc_rows(csv.reader(fh), prefix)
     on_log(f"[argsrc] argument-source evidence: {sum(len(v) for v in idx.values())} "
            f"row(s), "
            f"覆盖 {len(idx)} 个 sink 位置")
+    return idx
+
+
+def _is_abs_uri(uri: str) -> bool:
+    """CodeQL 的路径列算不算"绝对"。
+
+    ★ 不能直接用 `os.path.isabs`：它对 `/web/server.py` 在 Linux 上返回真、
+      **在 Windows 上返回假**，而 CodeQL 的 CSV 两种平台都吐这种写法。
+      照 `isabs` 判会让同一份 CSV 在两个平台解析出不同的 key（实测：一条用例
+      在 Windows 上被判成了另一个路径）。这里只认两种：`/` 开头，或盘符 `X:` 开头。
+    """
+    u = uri or ""
+    if u.startswith("/"):
+        return True
+    return len(u) >= 2 and u[1] == ":" and u[0].isalpha()
+
+
+def parse_argsrc_rows(rows: Iterable[Sequence[str]], prefix: str = "") -> dict:
+    """CSV 行 → {(相对路径, sink 行): [实参证据]}。
+
+    ★ 纯函数：不跑 CodeQL、不碰磁盘。这样"CSV 解析对不对"能在没有 CodeQL 的机器上测。
+      `run_and_parse_argsrc` 只负责跑出 CSV、打开它、把行交进来。
+    """
+    idx: dict = {}
+    for row in rows:
+        if len(row) < 6:
+            continue
+        uri = row[4] or ""
+        line = row[5] or "0"
+        # CSV 的路径列是"相对源根"，且带前导斜杠；SARIF 那边是绝对路径
+        rel = _rel(uri, prefix) if _is_abs_uri(uri) else uri.lstrip("/")
+        # ★★★ 一条 CSV 行的 message 里可能有多个实参。
+        #   CodeQL 把「同一定位点的多条 select 结果」合并进同一个 message，用真换行分隔：
+        #       "local@@0@@1609@@static_dir@@⏎param@@1@@1609@@path@@server.py@@1608@@path"
+        #   而 `csv.reader` 会把整段读成**一个** cell（引号内的换行合法），
+        #   所以按 `@@` 直接切会得到 13 段，`parts[:7]` 只取到第一个实参 —— 后面的**静默丢掉**。
+        #   实测代价：某个样本 `server.py` 里的 `os.path.join(static_dir, path)`，
+        #   `arg1`（`path`，外部可控的那个）一直没有落盘，`arg0`（`static_dir`，本地常量）占了位。
+        #   这就是"实参来源看着全是 local"的一半原因 —— 不是追不到，是**报上来又被自己扔了**。
+        for seg in (row[3] or "").splitlines():
+            parts = seg.split("@@")
+            if len(parts) < 7:
+                continue
+            idx.setdefault((rel, int(line) if line.isdigit() else 0), []).append({
+                "i": int(parts[1]) if parts[1].isdigit() else -1,
+                "kind": parts[0],
+                "arg_line": int(parts[2]) if parts[2].isdigit() else 0,
+                "arg_text": parts[3],
+                "src_file": parts[4],
+                "src_line": int(parts[5]) if parts[5].isdigit() else 0,
+                "src_text": parts[6],
+            })
     return idx
 
 
@@ -246,7 +282,18 @@ def _chain_text(payload: dict) -> str:
 
 
 def parse_results(csv_path: str, project: str) -> list[F.Finding]:
-    """CodeQL 的 CSV 结果 → Finding 列表。
+    """CodeQL 的 CSV 结果（文件）→ Finding 列表。"""
+    with open(csv_path, newline="", encoding="utf-8", errors="replace") as fh:
+        out, bad = parse_result_rows(csv.reader(fh), project)
+    if bad:
+        print("[parse] ★ %d row(s) are not this query version's output "
+              "(JSON parse failed); skipped" % bad)
+    return out
+
+
+def parse_result_rows(rows: Iterable[Sequence[str]],
+                      project: str) -> tuple[list[F.Finding], int]:
+    """CSV 行 → (Finding 列表, 认不出的行数)。
 
     列序（CodeQL 固定）：元素文本 / 描述 / 严重度 / message / 文件 / 起行 / 起列 / 止行 / 止列。
     我们只认第 4 列（message = 查询吐的 JSON）。
@@ -254,38 +301,36 @@ def parse_results(csv_path: str, project: str) -> list[F.Finding]:
     ★ 一格多行：同一个 source 有多条链时，CodeQL 把它们的 message 用换行拼在**同一个单元格**里。
       所以这里要 `splitlines()` 再逐行解析，一行一个 Finding —— 原来按 SARIF 取
       `split("\\n", 1)[0]` 只留第一条，换成 CSV 之后那样会静默丢结果。
-    认不出的行计数上报，不静默跳过。
+    认不出的行计数返回，由调用方上报，不静默跳过。
+
+    ★ 纯函数：不碰磁盘，固定 CSV 文本就能测。
     """
     out: list[F.Finding] = []
     bad = 0
-    with open(csv_path, newline="", encoding="utf-8", errors="replace") as fh:
-        for row in csv.reader(fh):
-            if len(row) < 5:
+    for row in rows:
+        if len(row) < 5:
+            continue
+        for line in (row[3] or "").splitlines():
+            payload = _parse_payload(line)
+            if not payload:
+                if line.strip():
+                    bad += 1
                 continue
-            for line in (row[3] or "").splitlines():
-                payload = _parse_payload(line)
-                if not payload:
-                    if line.strip():
-                        bad += 1
-                    continue
-                sink = payload.get("sink") or {}
-                hops = payload.get("hops") or []
-                out.append(F.Finding(
-                    project=project,
-                    rule=payload.get("rule") or "unknown",
-                    sink_func=sink.get("function") or "",
-                    sink_uri=sink.get("file") or "",
-                    sink_line=int(sink.get("line") or 0),
-                    sink_col=int(sink.get("col") or 0),
-                    entry=(hops[0].get("function") if hops else ""),
-                    depth=int(payload.get("depth") or 0),
-                    guards=[_loc_text(g) for g in (payload.get("guards") or [])],
-                    chain=_chain_text(payload),
-                ))
-    if bad:
-        print("[parse] ★ %d row(s) are not this query version's output "
-              "(JSON parse failed); skipped" % bad)
-    return out
+            sink = payload.get("sink") or {}
+            hops = payload.get("hops") or []
+            out.append(F.Finding(
+                project=project,
+                rule=payload.get("rule") or "unknown",
+                sink_func=sink.get("function") or "",
+                sink_uri=sink.get("file") or "",
+                sink_line=int(sink.get("line") or 0),
+                sink_col=int(sink.get("col") or 0),
+                entry=(hops[0].get("function") if hops else ""),
+                depth=int(payload.get("depth") or 0),
+                guards=[_loc_text(g) for g in (payload.get("guards") or [])],
+                chain=_chain_text(payload),
+            ))
+    return out, bad
 
 
 def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
@@ -339,7 +384,7 @@ def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
         #    实参证据一律匹配不上（实测：形态 unknown=136、argsrc 4→0）。
         #    所以**转相对用旧根，读文件用新根**。
         _uri_root = _db_prefix or prefix
-        rel = _rel(fd.sink_uri, _uri_root) if os.path.isabs(fd.sink_uri) else fd.sink_uri
+        rel = _rel(fd.sink_uri, _uri_root) if _is_abs_uri(fd.sink_uri) else fd.sink_uri
         fd.sink_uri = rel
         if CFG.path_is_filtered(rel, filters):
             dropped += 1
