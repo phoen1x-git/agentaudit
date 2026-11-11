@@ -9,6 +9,7 @@ an occurrence of the thing this test forbids.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -24,17 +25,26 @@ TEXT_EXT = {".py", ".yml", ".yaml", ".md", ".tsv", ".ql", ".qll", ".txt", ".json
 TEXT_NAMES = {".gitignore", ".dockerignore", "Dockerfile", "LICENSE", "Makefile"}
 
 # Internal vocabulary from the project this tool was extracted from. Escaped deliberately.
+#
+# Three words were removed from this list, and the reason is worth keeping: `\u5224\u636e`
+# (criterion), `\u53e3\u5f84` (scope of a measurement) and `\u7ea2\u7ebf` (red line) are
+# ordinary Chinese technical words, not names for anything private. A reader who reads
+# Chinese understands them without context. Banning them did not protect anyone -- the
+# sentence around them is Chinese either way, so a reader who cannot read Chinese learns
+# nothing from their removal -- and it forced awkward prose on the author.
+#
+# What is left are the words that need this project's context to decode: internal names for
+# a procedure, a bottle, a target. Those are the ones that leak. See
+# `tests/test_language_layers.py` for the rule that replaced the word-list approach for
+# app/ and tests/.
 INTERNAL_TERMS = [
-    "\u53e3\u5f84",                  # conventions (internal sense)
     "\u53f0\u8d26",                  # a status ledger
     "\u4e09\u5173",                  # a three-gate review procedure
     "\u4e00\u9875\u7eb8",            # a one-page brief
-    "\u5224\u636e",                  # criterion / judgement rule
     "\u9009\u9776",                  # target selection (internal slang)
     "\u5907\u6599",                  # preparing a target
     "\u63aa\u8f9e\u5ba1\u9605",      # reviewing one's own wording
     "\u53ef\u62a5\u6027",            # report-worthiness
-    "\u7ea2\u7ebf",                  # red line
     "\u65cb\u94ae",                  # knob (experiment switch)
     "\u4e0a\u6e38\u5355\u53f7",      # upstream ticket number
     # the scanned projects were called "\u9776" (a target / the target range) internally
@@ -142,6 +152,62 @@ def test_test_files_do_not_hardcode_other_people_identities():
                 offenders.append(f"{p.relative_to(ROOT)}:{i}  {line.strip()[:110]}")
     assert not offenders, ("looks like a real repository plus issue number:\n"
                            + "\n".join(offenders[:20]))
+
+
+def test_no_private_target_names():
+    """The projects this tool was pointed at may not be named in the shipped tree.
+
+    Naming them publishes what we looked at, and a comment like "measured on <name>: 136
+    candidates" reads as a finding about someone's code. The wording can stay; the name
+    turns into "a measured sample".
+
+    The list of names is deliberately **not** in this repository -- keeping it here would
+    be the leak. So this test reads it from wherever it exists: `AF_TARGET_NAMES` (comma
+    separated) or `core/config/targets.yml` on the author's machine. Without either, it
+    skips.
+
+    That skip is a real limit: a checkout of this repository in CI cannot catch a name
+    pasted into a comment. The gate for that is the merge procedure, which runs where the
+    list exists. A guard that pretends to cover this everywhere would be worse than one
+    that says where it applies.
+    """
+    names = _target_names()
+    if not names:
+        pytest.skip("no target list on this machine (AF_TARGET_NAMES or core/config/targets.yml)")
+
+    patterns = {
+        name: re.compile(r"(?<![\w.-])" + re.escape(name) + r"(?![\w-])")
+        for name in names
+    }
+    offenders = []
+    for p in _text_files():
+        rel = p.relative_to(ROOT)
+        if rel.as_posix() == "core/config/targets.yml":
+            continue
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for name, pattern in patterns.items():
+                if pattern.search(line):
+                    offenders.append(f"{rel}:{i}  [{name}]  {line.strip()[:90]}")
+                    break
+    assert not offenders, (
+        "these lines name a project this tool was pointed at; say 'a measured sample' "
+        "instead:\n" + "\n".join(offenders[:20]))
+
+
+def _target_names() -> list[str]:
+    raw = os.environ.get("AF_TARGET_NAMES", "")
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    if names:
+        return names
+    cfg = ROOT / "core" / "config" / "targets.yml"
+    if not cfg.exists():
+        return []
+    found = []
+    for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.match(r"^([A-Za-z0-9][A-Za-z0-9_.-]*):\s*$", line)
+        if m:
+            found.append(m.group(1))
+    return found
 
 
 def test_no_placeholder_urls_left():

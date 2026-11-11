@@ -473,6 +473,10 @@ tests/           the test suite CI runs
 scripts/         setup.sh
 ```
 
+`app/` and `tests/` are written in English, because that is the layer someone opens first.
+`core/` and `tools/` carry Chinese comments: they record what was tried and why, which was
+written in the author's own language as it happened. The documentation is bilingual.
+
 ## Documentation
 
 | | |
