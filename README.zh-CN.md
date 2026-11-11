@@ -126,10 +126,11 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 | `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库）。`screen --profile 文件` 用你自己的条件代替默认值 |
 ### 别的工具能直接读的那份文件
 
-`agentaudit candidates out/round-x --repo 用户名/仓库名 --out c.jsonl` 把一轮投影成
-`candidates.jsonl`：一行一个位置，带一个由仓库、文件、行号、sink 名算出来的稳定 id，别的不带。
-刻意不带：没有判定、没有把握度、没有"大概"。候选是"值得看一眼的位置"，结论在另一个文件里；
-把两样混在一份文件里，它就只能给作者自己用了。
+`agentaudit candidates out/round-x --repo 用户名/仓库名 --src-root ./myproject --out c.jsonl`
+把一轮投影成 `candidates.jsonl`：一行一个位置，带一个由仓库、文件、行号和 sink 名算出来的稳定
+id，别的不带。刻意不带：没有判定、没有把握度、没有"大概"。候选是"值得看一眼的位置"，结论在另一个
+文件里；把两样混在一份文件里，它就只能给作者自己用了。源码根（`--src-root`）是让它能读那一行源码、
+算文件哈希、判入口形态的东西；不给它，这份文件就得替你猜一个它看不见的形态。
 
 格式冻结在 `schemas/candidates.v1.json`，由 `tools/check_contract_file.py` 校验。这个 id
 不依赖是哪条规则报出来的，也不依赖谁判过什么，所以重写查询不会把回溯历史轮次的线弄断。

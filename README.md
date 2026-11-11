@@ -130,11 +130,13 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo. `screen --profile FILE` takes your own criteria instead of the defaults |
 ### The file another tool can read
 
-`agentaudit candidates out/round-x --repo owner/name --out c.jsonl` projects a round into
-`candidates.jsonl`: one line per position, a stable id computed from the repo, file, line and
-sink name, and nothing else. Deliberately nothing else: no verdict, no confidence, no
-"probably". A candidate is a place that deserves a look; the conclusion lives in a separate
-file, and mixing the two is what makes such a file unusable by anything but its author.
+`agentaudit candidates out/round-x --repo owner/name --src-root ./myproject --out c.jsonl`
+projects a round into `candidates.jsonl`: one line per position, a stable id computed from the
+repo, file, line and sink name, and nothing else. Deliberately nothing else: no verdict, no
+confidence, no "probably". A candidate is a place that deserves a look; the conclusion lives in
+a separate file, and mixing the two is what makes such a file unusable by anything but its
+author. The source root is what lets it read each sink line, hash the file and decide the entry
+kind; without it the file would have to claim a shape it cannot see.
 
 The schema is frozen in `schemas/candidates.v1.json` and validated by
 `tools/check_contract_file.py`. The id does not depend on the rule that found it or on what

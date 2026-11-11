@@ -53,11 +53,30 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Changed
 
+- **Every command answers `--help` as itself.** The usage line used to open with the file
+  behind the command (`usage: scan.py`, `export_candidates.py`): forwarding through `runpy`
+  points `sys.argv[0]` back at the script, and argparse takes its default program name from
+  there. Each command now states its own name, and a test walks all of them, because one
+  forgotten `prog=` is enough to bring the old line back.
+- **`agentaudit candidates out/round-x` works as written.** It required `--round`, so the
+  command in this README exited 2 before it looked at the directory. The round is a positional
+  argument now, as it is for `explain`, `report`, `index` and `sarif`; `--round` still works.
+- **`explain` opens with one candidate instead of all thirteen**, then says how to reach the
+  next one, how to print every one, and that a candidate is a place to look rather than a
+  finding. A misspelled path now says the directory does not exist instead of "no candidates
+  found", which sent the reader looking at the scanner.
+- **Five `candidates` options had no explanation at all**, `--out` among them, and `--out` is
+  required.
+- **`selftest --help` asks instead of running.** That suite is a top-level script, so the flag
+  reached nothing and the whole run started; `doctor --help` printed the report for the same
+  reason. Both answer the question now.
 - **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
   17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
   on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
   not. A test runs six commands and reads their output, because a rule about directories
-  cannot see a Chinese line printed from `core/`.
+  cannot see a Chinese line printed from `core/`. The count above was low: two error messages
+  in `tools/export_candidates.py` were still Chinese, found by typing the documented command
+  and reading what came back.
 - **The queries write CSV, not SARIF.** The message field carries JSON, and SARIF escapes it a
   second time, so parsing it back was lossy. One CSV row can hold several argument positions.
 - **`app/` and `tests/` are English, and now a test says so.** That layer is what a stranger
