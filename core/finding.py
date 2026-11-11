@@ -3,7 +3,7 @@
 ★ 一条 Finding = 静态前端找出来的「一个可疑调用点」。
    它**不是**"一个漏洞"，只是一条线索。判定不在这里做。
 
-★ 指纹：洞的身份不能用行号（行号会漂）。
+★ 指纹（docs/95 §十②）：洞的身份不能用行号（行号会漂）。
    指纹 = 项目 | 相对路径 | sink 函数名 | 调用行归一化后的内容哈希
    → 同一处代码在两轮之间能被认出；上游改动后行号变了、指纹不变。
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field, asdict
+from typing import Optional
 
 
 def _norm(s: str) -> str:
@@ -56,9 +57,27 @@ class Finding:
     # ---- 跨过程数据流给出的「实参来源」（开关 dataflow-argsource）----
     # [{"i":0,"kind":"param","src_file":"bigquery_vector.py","src_line":240,
     #   "src_text":"...","arg_text":"..."}]
-    # ★ 它修的是判定层的不稳：判定层被问"实参从哪来"却没有数据，
+    # ★ 它修的是判定层的不稳（docs/108）：判定层被问"实参从哪来"却没有数据，
     #   于是在「诚实写 unknown」和「猜一个」之间横跳。
     arg_sources: list = field(default_factory=list)
+
+    # ---- 补证那一层（从开发副本并入；全有默认值，老调用一字不用改）----
+    analysis_provenance: dict = field(default_factory=dict)
+    language: str = "python"
+    investigation: dict = field(default_factory=dict)
+    verification: dict = field(default_factory=dict)
+    backend_evidence: dict = field(default_factory=dict)
+
+    # ---- 入口形态（★ 这里是把"项目类型"接进判定层的地方）----
+    # 形如 {"kind":"http","reach":"任何能连到这个端口的人（监听所有网卡）",
+    #       "exposure":"high","who":"网络上的任何人","why":"路由装饰器 + 0.0.0.0",
+    #       "params":{"route_objects":["app"],"routes":3,"listen_host":"0.0.0.0","auth_patterns":0}}
+    # ★★ 为什么必须进 Finding 而不是只写在报告里：
+    #   在此之前 `entry.kind` 只存在于**候选契约**和**案卷的 entry 段**，
+    #   而 `core/llm_judge.py` / `judge_evidence.py` / `triage_contract.py` 里
+    #   这三个词**一个都没有** —— 也就是判定层根本不知道这个项目是库还是 Web 服务。
+    #   那正是第五步的失败信号：四类形态跑出来的结论一样，类型只贴了标签、没进判定。
+    entry_profile: dict = field(default_factory=dict)
 
     def arg_src_summary(self, limit: int = 4) -> str:
         """给 tsv / 判定层用的一行摘要。例：`arg0:param(id@bigquery_vector.py:240); arg1:local`"""
