@@ -180,14 +180,25 @@ def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="show why a candidate was reported")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit explain",
+        description="show why a candidate was reported")
     ap.add_argument("round_dir", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--fp", default="", help="explain only this fingerprint")
     ap.add_argument("--index", type=int, default=0, help="explain only the N-th candidate (1-based)")
+    ap.add_argument("--all", action="store_true",
+                    help="print every candidate instead of only the first")
     ap.add_argument("--src", default="", help="source root (default: recorded in the round)")
     a = ap.parse_args()
 
     rd = Path(a.round_dir)
+    if not rd.exists():
+        # Two different failures, two different sentences. A typo in the path used to read
+        # as "this round has no candidates", which sends the reader looking at the scanner.
+        print(f"no such round directory: {a.round_dir}")
+        print("`agentaudit scan --demo` makes one in a few seconds")
+        return 1
+
     fj = rd / "findings.json"
     ts = rd / "findings.tsv"
     rows = {}
@@ -200,7 +211,7 @@ def main() -> int:
             rows = {(r.get("fingerprint") or f"{r.get('file')}:{r.get('line')}"): r
                     for r in csv.DictReader(fh, delimiter="\t")}
     if not rows:
-        print(f"no candidates found in {rd}; run a scan first")
+        print(f"{a.round_dir} has no findings.json and no findings.tsv; run a scan first")
         return 1
 
     meta = {}
@@ -222,11 +233,23 @@ def main() -> int:
             print(f"--index must be between 1 and {len(order)}")
             return 1
         order = [order[a.index - 1]]
+    elif not a.all and len(order) > 1:
+        # Thirteen candidates is thirteen screens, and the first one is the one a reader
+        # came for. The rest stay one flag away rather than filling the scrollback.
+        order = order[:1]
 
     total = len(rows)
     for i, (fp, row) in enumerate(order, 1):
         idx = a.index or ([k for k, _ in sorted(rows.items(), key=lambda kv: (kv[1].get("file", ""), kv[1].get("line", 0)))].index(fp) + 1)
         print(explain_one(idx, total, fp, row, src_root))
+
+    if not (a.fp or a.index):
+        if len(order) < total:
+            print(f"showing 1 of {total}. "
+                  f"`agentaudit explain {a.round_dir} --index 2` shows the next one, "
+                  f"`--all` shows every candidate, `--fp <id>` reopens one you already have.")
+        print("A candidate is a place worth looking at, not a finding. "
+              f"`agentaudit serve {a.round_dir}` opens the same round in a browser.")
     return 0
 
 

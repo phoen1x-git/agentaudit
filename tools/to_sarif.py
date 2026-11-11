@@ -154,7 +154,9 @@ def build(rd: Path, rows: list[dict], project: str = "") -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="export a round as SARIF 2.1.0")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit sarif",
+        description="export a round as SARIF 2.1.0")
     ap.add_argument("round_dir", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--out", default="", help="where to write (default: <round>/agentaudit.sarif)")
     ap.add_argument("--all", action="store_true",

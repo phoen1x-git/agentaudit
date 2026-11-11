@@ -245,7 +245,9 @@ def summarise(records: list[dict], stream=sys.stdout) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="local scan statistics")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit log",
+        description="show or export the local scan statistics log")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--show", action="store_true", help="print the raw records")
     g.add_argument("--export", action="store_true",

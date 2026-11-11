@@ -139,7 +139,9 @@ def table(sinks: list[dict]) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="validate core/config/*.yml")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit validate",
+        description="validate core/config/*.yml")
     ap.add_argument("--table", action="store_true", help="print the rule table as markdown")
     a = ap.parse_args()
 

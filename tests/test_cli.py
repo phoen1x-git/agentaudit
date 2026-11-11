@@ -37,6 +37,37 @@ def test_unknown_command_fails_loudly():
     assert "unknown command" in p.stderr
 
 
+def test_every_subcommand_names_itself_in_help():
+    """`--help` must open with the command the user typed, not the file behind it.
+
+    `runpy` temporarily points sys.argv[0] at the script, so any ArgumentParser without an
+    explicit `prog` printed `usage: scan.py`: a name the user never typed and cannot run.
+    One forgotten prog is enough to bring it back, so this walks every command.
+    """
+    from app.cli import COMMANDS
+    bad = []
+    for name in sorted(COMMANDS):
+        if name == "interactive":
+            continue                      # a menu; it wants a terminal and has no flags
+        p = _cli(name, "--help")
+        text = (p.stdout or "") + (p.stderr or "")
+        first = next((ln for ln in text.splitlines() if ln.strip()), "")
+        if ".py" in first or f"agentaudit {name}" not in first:
+            bad.append(f"{name}: {first}")
+    assert not bad, "these commands do not name themselves in --help:\n" + "\n".join(bad)
+
+
+def test_candidates_takes_the_round_as_a_positional():
+    """The README writes `candidates out/round-x`; that form has to reach the round.
+
+    It used to require `--round`, so the documented command failed with exit 2 before it
+    ever looked at the directory.
+    """
+    p = _cli("candidates", "no-such-round", "--repo", "owner/name", "--out", "c.jsonl")
+    assert "the following arguments are required" not in p.stderr, p.stderr
+    assert "is not a round directory" in p.stderr, p.stderr
+
+
 def test_subcommand_arguments_are_forwarded():
     """`agentaudit validate` must behave exactly like `python tools/validate_config.py`."""
     p = _cli("validate")

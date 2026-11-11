@@ -319,7 +319,9 @@ def _upstream_block(u: dict, t: dict) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        prog="agentaudit report",
+        description="render the report draft for a round")
     ap.add_argument("round_dir", nargs="?", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language (default: en)")
     ap.add_argument("--select", default="vuln", choices=["vuln", "all", "untriaged"],

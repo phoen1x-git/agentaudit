@@ -61,7 +61,9 @@ def ensure_index(rd: Path) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="serve a round directory on localhost")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit serve",
+        description="serve a round directory on localhost")
     ap.add_argument("round_dir", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--port", type=int, default=0, help="port (default: pick a free one)")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser")

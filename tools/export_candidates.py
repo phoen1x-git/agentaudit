@@ -68,9 +68,13 @@ def kernel_version() -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="project one scan round into candidates/v1 (JSONL)")
-    ap.add_argument("--round", required=True,
-                    help="round directory, which must contain findings.json")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit candidates",
+        description="project one scan round into candidates/v1 (JSONL)")
+    ap.add_argument("round", nargs="?", default="",
+                    help="a round directory, e.g. out/round-my-round")
+    ap.add_argument("--round", dest="round_opt", default="",
+                    help="the same round directory, as an option (the older form)")
     ap.add_argument("--repo", required=True,
                     help="owner/name: the repository identity of the target")
     ap.add_argument("--commit", default="",
@@ -79,26 +83,35 @@ def main() -> int:
     ap.add_argument("--src-root", default="",
                     help="source root of the target: used to read the sink line and "
                          "compute file_sha256")
-    ap.add_argument("--entry-kind", default="", choices=("",) + C.ENTRY_KINDS,
+    ap.add_argument("--entry-kind", default=None, choices=C.ENTRY_KINDS,
                     help="set the entry kind for the whole round, overriding the automatic "
-                         "judgement. Left empty, it is decided per candidate from "
-                         "the file it is in, which needs --src-root")
-    ap.add_argument("--entry-auth", default="unknown", choices=C.ENTRY_AUTH)
+                         "judgement. Omit it and the kind is decided per candidate from the "
+                         "file it sits in, which needs --src-root")
+    ap.add_argument("--entry-auth", default="unknown", choices=C.ENTRY_AUTH,
+                    help="whether that entry point requires authentication; used only "
+                         "when --entry-kind is set")
     ap.add_argument("--entry-value", default="",
                     help="for http, something like 'POST /chat'; for mcp, the tool name")
     ap.add_argument("--only-project", default="",
                     help="when a round mixes several projects, keep only this one and drop the "
                          "rest. Left empty, a mixed round is an error")
-    ap.add_argument("--trace-level", default="full", choices=C.TRACE_LEVELS)
-    ap.add_argument("--backend-name", default="codeql")
-    ap.add_argument("--backend-version", default="")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--trace-level", default="full", choices=C.TRACE_LEVELS,
+                    help="how much of the call chain to record: full, window only, or none")
+    ap.add_argument("--backend-name", default="codeql",
+                    help="which analyzer produced the findings (default: codeql)")
+    ap.add_argument("--backend-version", default="",
+                    help="that analyzer's version, if you know it")
+    ap.add_argument("--out", required=True,
+                    help="where to write candidates.jsonl (the file other tools read)")
     a = ap.parse_args()
 
-    rd = Path(a.round)
+    if not (a.round or a.round_opt):
+        ap.error("a round directory is required, e.g. "
+                 "agentaudit candidates out/round-my-round --repo owner/name --out c.jsonl")
+    rd = Path(a.round or a.round_opt)
     fj = rd / "findings.json"
     if not fj.exists():
-        raise SystemExit(f"{fj} does not exist: --round must point at a round directory")
+        raise SystemExit(f"{rd} is not a round directory: no findings.json inside it")
 
     rows = json.loads(fj.read_text(encoding="utf-8"))
     if not isinstance(rows, dict):
@@ -112,9 +125,9 @@ def main() -> int:
         projects = [a.only_project]
     if len(projects) > 1:
         raise SystemExit(
-            "这一轮里有 %d 个项目：%s\n"
-            "一轮 = 一个仓库，--repo 只能填一个。用 --only-project <名字> 只取其中一个，"
-            "别让我替你猜归属。"
+            "this round holds %d projects: %s\n"
+            "A round is one repository and --repo takes one name. Use --only-project <name> "
+            "to keep one of them; the file cannot carry an identity I would have to guess."
             % (len(projects), projects))
 
     commit = a.commit or git_commit(a.src_root)
@@ -123,9 +136,11 @@ def main() -> int:
 
     if not a.entry_kind and not src_root:
         raise SystemExit(
-            "不给 --entry-kind 就必须给 --src-root：\n"
-            "形态是按**候选所在文件**判的（core/entry_kind.py），没有源码判不了。\n"
-            "要么补 --src-root 让它自动判，要么 --entry-kind 明说整轮都是哪一类。")
+            "without --entry-kind the round needs --src-root:\n"
+            "the entry kind is a property of the file each candidate sits in "
+            "(core/entry_kind.py), so it cannot be decided without the source.\n"
+            "Add --src-root DIR to have it decided per candidate, or --entry-kind to state "
+            "that the whole round is one of http, cli, mcp, library.")
 
     recs, skipped = [], []
     kinds: dict[str, int] = {}

@@ -20,6 +20,18 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# `agentaudit selftest --help` used to start the whole suite: this file is a top-level
+# script, so nothing parsed the flag. Answer the question instead of ignoring it.
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print("agentaudit selftest - run the rule self-tests")
+    print("")
+    print("  agentaudit selftest    run every suite; exits 1 if any of them fails")
+    print("")
+    print("Run it after changing a rule or the modules it depends on. The checks read")
+    print("synthetic cases, not the target: a green run means the rules still do what")
+    print("they were written to do, not that a scan will find anything.")
+    raise SystemExit(0)
+
 SUITES = [
     ("selftest_wrapper_forward.py", "wrapper forwarding chain"),
     ("selftest_auth.py", "authentication detection"),

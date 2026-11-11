@@ -274,7 +274,9 @@ def _write_stats_log(*, mode: str, findings, src: Path, ignore: list[str],
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="scan a target with one command")
+    ap = argparse.ArgumentParser(
+        prog="agentaudit scan",
+        description="scan a target with one command")
     src_grp = ap.add_mutually_exclusive_group(required=True)
     src_grp.add_argument("--demo", action="store_true", help="scan the bundled sample project")
     src_grp.add_argument("--path", help="a project directory already on disk")
@@ -286,16 +288,17 @@ def main() -> int:
     ap.add_argument("--llm", action="store_true",
                     help="triage the candidates with an LLM (spends API credits; off by default)")
     ap.add_argument("--no-unknown-downgrade", action="store_true",
-                    help="skip the unknown-source downgrade (on by default with --llm): a "
-                         "candidate judged vuln whose arg_source is unknown/empty becomes "
-                         "needs_human, because that bucket is only stable about one time in "
-                         "three across repeats")
+                    help="skip the unknown-source downgrade (on by default with --llm). With "
+                         "the downgrade on, a candidate judged vuln whose argument source is "
+                         "unknown becomes needs_human, because repeating that judgement gave "
+                         "a different answer about once in three runs")
     ap.add_argument("--no-codeql", action="store_true",
                     help="force the offline AST-only mode even if CodeQL is available")
     ap.add_argument("--codeql-language", default="python", choices=["python", "javascript"],
                     help="database language for CodeQL. Anything but python stops at contract "
                          "candidates (window level): no findings.json, no triage")
-    ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language")
+    ap.add_argument("--lang", default="en", choices=["en", "zh"],
+                    help="language of the written report (default: en)")
     ap.add_argument("--diff", nargs="?", const="HEAD~1", default="",
                     metavar="REF",
                     help="only report candidates in files changed since REF (default HEAD~1); "

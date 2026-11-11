@@ -17,7 +17,9 @@ from core.sarif_import import import_file  # noqa: E402
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        prog="agentaudit import-sarif",
+        description="import another analyzer's SARIF output as candidates")
     ap.add_argument("sarif", help="SARIF 2.1.0 output from an existing analyzer")
     ap.add_argument("--src", required=True, help="local source root corresponding to analyzer output")
     ap.add_argument("--project", default="", help="project name (default: source directory name)")

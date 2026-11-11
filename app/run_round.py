@@ -96,7 +96,9 @@ def _cost_since(since: str) -> tuple[int, float]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        prog="agentaudit round",
+        description="run one scan round over a target table")
     ap.add_argument("--tag", default=datetime.now().strftime("%Y%m%d"),
                     help="round name; decides out/round-<tag>/ and the log name")
     ap.add_argument("--only", default="", help="comma-separated subset of targets to run")

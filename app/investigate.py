@@ -21,7 +21,9 @@ from core.triage_contract import digest  # noqa: E402
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        prog="agentaudit investigate",
+        description="collect bounded source evidence into a new round, offline")
     ap.add_argument("round_dir", help="existing round containing findings.json")
     ap.add_argument("--src", default="", help="override the source root (one project only)")
     ap.add_argument("--out", default=str(workspace() / "out"), help="output root")

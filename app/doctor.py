@@ -86,6 +86,14 @@ def _out_dir() -> tuple[str, bool]:
 
 
 def main() -> int:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print("agentaudit doctor - say what this machine can and cannot do, in one screen")
+        print("")
+        print("  agentaudit doctor    print the report")
+        print("")
+        print("It checks Python, the dependencies, CodeQL, the LLM key and its budget,")
+        print("and where output lands, and says what each missing piece would unlock.")
+        return 0
     from core import __version__
 
     print(f"agentaudit {__version__} - what this machine can do")
