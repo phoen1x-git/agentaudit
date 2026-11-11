@@ -53,10 +53,14 @@ is optional, and it is a few hundred MB. Without it the scanner runs in the offl
 finds less but needs nothing beyond PyYAML.
 
 ```bash
-git clone <this repo> && cd agentaudit
+git clone https://github.com/phoen1x-git/agentaudit.git && cd agentaudit
 ./scripts/setup.sh                 # the dependency + the CodeQL CLI, or:
 pip install -e .                   # the dependency only; gives you the `agentaudit` command
 ```
+
+`setup.sh` needs a bash shell. On macOS, Linux and Git Bash on Windows it runs as-is. In
+PowerShell or cmd, use `pip install -e .` and skip CodeQL, or download the CLI yourself and
+point `AF_CODEQL` at it.
 
 Either install lets you run the scripts directly (`python app/scan.py ...`). The editable
 install also gives you a single command:
@@ -75,10 +79,12 @@ Nothing is written into the installation.
 
 ```bash
 agentaudit selftest                # or: python tools/run_selftests.py
-agentaudit scan --demo             # 13 candidates from the bundled sample project
+agentaudit scan --demo             # the bundled sample project; 13 candidates without CodeQL
 ```
 
 Both run in seconds and need nothing else installed. If these two pass, the install works.
+With CodeQL installed the same demo finds more than 13, because a full scan follows values
+across functions and the offline mode cannot.
 
 ### Docker
 
@@ -102,55 +108,9 @@ docker run --rm --entrypoint agentaudit agentaudit log
 docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
 ```
 
-This Dockerfile was written on a machine without Docker, so the first build is the first test
-of it. It is written to fail early: the CodeQL CLI is executed once during the build, so if the
-layout is wrong the build stops, instead of producing an image whose scanner cannot run.
-CI builds it and runs a smoke test on every push.
-
-### All the commands
-
-| Command | What it does |
-|---|---|
-| `agentaudit doctor` | say what this machine can and cannot do: dependency, CodeQL, key, where output lands |
-| `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
-| `agentaudit scan` | scan a target: `--demo`, `--path DIR`, `--repo OWNER/NAME` |
-| `agentaudit explain <round>` | show why a candidate was reported |
-| `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
-| `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
-| `agentaudit serve <round>` | read a round in a browser (localhost only) |
-| `agentaudit report <round>` | render the report draft |
-| `agentaudit index <round>` | render the HTML index |
-| `agentaudit sarif <round>` | export the round as SARIF 2.1.0 |
-| `agentaudit candidates <round>` | write the contract file another tool can read (`candidates.jsonl`, see below) |
-| `agentaudit round --tag NAME` | run one round over a target table |
-| `agentaudit all --tag NAME` | prepare → scan → report, resumable |
-| `agentaudit selftest` | run the rule self-tests |
-| `agentaudit validate` | check `core/config/*.yml` |
-| `agentaudit log` | show or export the local scan statistics |
-| `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo. `screen --profile FILE` takes your own criteria instead of the defaults |
-
-Two of those exist for the cases where one scan is not the whole answer.
-`agentaudit investigate out/round-x` reads the source around each candidate offline and writes
-a new round holding what it found: the callers, the arguments bound to each parameter, and the
-conditions around the call, bounded by files, bytes, depth and seconds. It answers "what else
-is around this line" without spending a credit. `agentaudit import-sarif other.sarif --src
-./myproject` turns another analyzer's results into candidates and sends them down the same
-pipeline, so a Semgrep or commercial-backend result can be judged by the same rules instead of
-sitting in a second tool.
-
-### The file another tool can read
-
-`agentaudit candidates out/round-x --repo owner/name --src-root ./myproject --out c.jsonl`
-projects a round into `candidates.jsonl`: one line per position, a stable id computed from the
-repo, file, line and sink name, and nothing else. Deliberately nothing else: no verdict, no
-confidence, no "probably". A candidate is a place that deserves a look; the conclusion lives in
-a separate file, and mixing the two is what makes such a file unusable by anything but its
-author. The source root is what lets it read each sink line, hash the file and decide the entry
-kind; without it the file would have to claim a shape it cannot see.
-
-The schema is frozen in `schemas/candidates.v1.json` and validated by
-`tools/check_contract_file.py`. The id does not depend on the rule that found it or on what
-anyone concluded, so rewriting a query does not break the trail back to earlier rounds.
+The image runs the CodeQL CLI once during the build, so if the layout is wrong the build fails
+instead of producing an image whose scanner cannot run. CI builds it and runs a smoke test on
+every push.
 
 ---
 
@@ -158,21 +118,24 @@ anyone concluded, so rewriting a query does not break the trail back to earlier 
 
 Before the first scan, `agentaudit doctor` prints what this machine can and cannot do, and
 what each missing piece would unlock. It takes a second and it answers the question the
-first scan otherwise raises: "it found thirteen things, is that everything?" (Without
-CodeQL it is not: a scan falls back to the AST checks, which cannot follow a value across
-functions.)
+first scan otherwise raises: "it found thirteen things, is that everything?" Without CodeQL
+it is not: a scan falls back to the AST checks, which cannot follow a value across functions.
 
 One command scans something, with no target list and no database to build by hand:
 
 ```bash
 agentaudit scan --demo                  # the bundled sample project
 agentaudit scan --path ./myproject      # a project already on disk
-agentaudit scan --repo owner/name       # fetch a GitHub repo and scan it
+agentaudit scan --repo owner/name       # fetch a public GitHub repo and scan it
 ```
 
+`--repo` clones the repository and needs `git` on your PATH; if there is no `git` it falls back
+to a tarball download. It works without a token on public repositories, but unauthenticated
+GitHub requests are rate-limited, so for a larger batch use the token route described under
+[Scanning a batch](#scanning-a-batch).
+
 To scan many repositories instead of one, there is a different route: find and screen
-candidates, fetch sources and build databases, then scan the batch. See
-[Scanning a batch](#scanning-a-batch) under "How it works".
+candidates, fetch sources and build databases, then scan the batch.
 
 ### Or use the menu
 
@@ -192,7 +155,11 @@ It prints the command line that each choice runs, so the menu teaches you the fl
 than hiding them. And where there is no terminal, in a pipe or in CI for example, it refuses to
 start rather than blocking on input.
 
-### What lands in `out/round-<tag>/`
+---
+
+## Reading the results
+
+Every scan writes a round to `out/round-<tag>/`:
 
 | File | What it is |
 |---|---|
@@ -200,15 +167,11 @@ start rather than blocking on input.
 | `report_draft.md` | the write-up, one section per candidate |
 | `index.html` | sortable / searchable table of every candidate |
 | `agentaudit.sarif` | the candidates as SARIF 2.1.0, for a code-scanning UI or an editor |
-| `results.sarif` | the CodeQL frontend's own raw output (full mode only) |
+| `results.csv` | the CodeQL frontend's own raw output (full mode only) |
 | `meta.json` | which mode ran, which rule switches were on, how long it took |
 
 Every one of those rows is a candidate. Nothing in this pipeline executes the code it looks
 at; it only reads it. So none of it is confirmed.
-
----
-
-## Reading the results
 
 `findings.tsv` is the raw table. These three commands are how you read it.
 
@@ -251,42 +214,58 @@ out; add `--all` to `agentaudit sarif` to include them.
 
 ---
 
-## Help me improve this
+## Commands
 
-If you are willing to send me your scan statistics, I would be genuinely grateful. They cost
-you nothing, and they contain no code. They are also the one thing I cannot produce on my own:
-how this scanner behaves on code I have never seen. A check that fires on your code and never on
-mine is the most useful thing you can send me.
+One command, several subcommands:
 
-Every scan appends one line to `./data/scan_log.jsonl`, locally:
-
-| Recorded | Never recorded |
+| Command | What it does |
 |---|---|
-| how many files, how many candidates | source code, or any fragment of it |
-| the split across checks and across verdicts | file paths or file names |
-| elapsed time, tool version, hashes of the rule config | the project name, or anything identifying it |
-| your Python minor version, and OS family | anything about you |
+| `agentaudit doctor` | say what this machine can and cannot do: dependency, CodeQL, key, where output lands |
+| `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
+| `agentaudit scan` | scan a target: `--demo`, `--path DIR`, `--repo OWNER/NAME` |
+| `agentaudit explain <round>` | show why a candidate was reported |
+| `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
+| `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
+| `agentaudit serve <round>` | read a round in a browser (localhost only) |
+| `agentaudit report <round>` | render the report draft |
+| `agentaudit index <round>` | render the HTML index |
+| `agentaudit sarif <round>` | export the round as SARIF 2.1.0 |
+| `agentaudit candidates <round>` | write the contract file another tool can read (`candidates.jsonl`, see below) |
+| `agentaudit round --tag NAME` | run one round over a target table |
+| `agentaudit all --tag NAME` | prepare → scan → report, resumable |
+| `agentaudit selftest` | run the rule self-tests |
+| `agentaudit validate` | check `core/config/*.yml` |
+| `agentaudit log` | show or export the local scan statistics |
+| `agentaudit targets` | find and screen GitHub targets for a batch. `screen --profile FILE` takes your own criteria instead of the defaults |
 
-```bash
-agentaudit log                    # summarise what you have scanned
-agentaudit log --export           # a small aggregate, written to scan_stats.json
-agentaudit log --clear            # delete it
-```
+Two of those exist for the cases where one scan is not the whole answer.
+`agentaudit investigate out/round-x` reads the source around each candidate offline and writes
+a new round holding what it found: the callers, the arguments bound to each parameter, and the
+conditions around the call, bounded by files, bytes, depth and seconds. It answers "what else
+is around this line" without spending a credit. `agentaudit import-sarif other.sarif --src
+./myproject` turns another analyzer's results into candidates and sends them down the same
+pipeline, so a Semgrep or commercial-backend result can be judged by the same rules instead of
+sitting in a second tool.
 
-**Nothing is ever uploaded.** There is no network code in any of this, so the only way any of
-it leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate
-against the table above and refuses to write anything that fails, so read it before you decide.
+### The candidates file (`candidates.jsonl`)
 
-If you are happy with it, open an
-[issue](https://github.com/phoen1x-git/agentaudit/issues) and paste it in. If you would rather
-not, that is a perfectly good answer too. The log is yours, and
-`--no-log` (or `AGENTAUDIT_NO_LOG=1`) turns the whole thing off.
+`agentaudit candidates out/round-x --repo owner/name --src-root ./myproject --out c.jsonl`
+projects a round into `candidates.jsonl`: one line per position, a stable id computed from the
+repo, file, line and sink name, and nothing else. Deliberately nothing else: no verdict, no
+confidence, no "probably". A candidate is a place that deserves a look; the conclusion lives in
+a separate file, and mixing the two is what makes such a file unusable by anything but its
+author. The source root is what lets it read each sink line, hash the file and decide the entry
+kind; without it the file would have to claim a shape it cannot see.
+
+The schema is frozen in `schemas/candidates.v1.json` and validated by
+`tools/check_contract_file.py`. The id does not depend on the rule that found it or on what
+anyone concluded, so rewriting a query does not break the trail back to earlier rounds.
 
 ---
 
 ## How it behaves
 
-Worth knowing before you trust any number it gives you.
+Worth reading before you trust any number it gives you.
 
 ### Two modes
 
@@ -323,10 +302,14 @@ could not be reached says which gap stopped it instead of sounding certain.
 ### Using it as a gate
 
 ```bash
-agentaudit scan --path ./myproject --fail-on any        # exit 1 if anything is reported
 agentaudit scan --path ./myproject --llm --fail-on vuln # exit 1 only on a `vuln` verdict
 agentaudit scan --path ./myproject --diff origin/main   # only files changed since a ref
 ```
+
+`--fail-on any` exists, but it is rarely the gate you want: it exits 1 as soon as *any*
+candidate is reported, and a candidate is a place worth looking at, not a confirmed
+vulnerability, so most projects report some. Use `--llm --fail-on vuln` to fail only when
+something was actually judged a vulnerability.
 
 `--diff` needs the source tree to be a git checkout, and is meant for "did this pull request
 introduce anything", not for a full audit.
@@ -401,7 +384,9 @@ These are deliberate trade-offs, not bugs. The long version is in
 [LIMITATIONS.md](LIMITATIONS.md): what the analysis cannot see at all, and which of its silences
 are meaningful.
 
-- **Python only.** The static frontend is bound to CodeQL's Python pack.
+- **Full analysis is Python only.** The static frontend is bound to CodeQL's Python pack. A
+  `--codeql-language javascript` pass exists but stops at window-level candidates: it does not
+  run the call-chain or argument-source analysis, so it produces no triage.
 - **The triage layer is noisy.** Re-run a candidate and a noticeable share of the verdicts
   change. Suspiciously stable results are usually a caching artefact, so change `--tag` when
   re-judging.
@@ -472,6 +457,15 @@ been reported upstream) are used by the batch path only.
 A batch has two slow stages, and both can be restarted. You can stop and re-run either of
 them, and finished work is skipped.
 
+Two files are yours, not shipped: the target table lists the repositories you scan, and
+`known_targets.yml` lists the ones you have already looked at, which is what makes "not yet
+examined" mean something. Copy the examples and fill them in:
+
+```bash
+cp core/config/targets.example.yml       core/config/targets.yml
+cp core/config/known_targets.example.yml core/config/known_targets.yml
+```
+
 ```bash
 # 1) build a candidate list (needs a GitHub token, and a few minutes)
 agentaudit targets fetch        # -> data/target_pool/pool.json
@@ -488,11 +482,6 @@ agentaudit index    out/round-my-round
 
 `agentaudit all --tag my-round --batch data/target_pool/batch1.json --targets-file
 core/config/targets.yml` chains those steps, skipping whatever is already done.
-
-The screener excludes repositories you have already looked at, which is what makes "not yet
-examined" mean something. That list lives in `core/config/known_targets.yml`, and it does not
-ship; copy the example and add your own. It is a file rather than a constant in the code,
-because a list of real repositories says more about whoever wrote the tool than about the tool.
 
 `agentaudit targets report --excluded` prints the projects the filters rejected and the reason
 for each. Most of those reasons describe the profile rather than the project, which is what
@@ -520,6 +509,8 @@ scripts/         setup.sh
 `core/` and `tools/` carry Chinese comments: they record what was tried and why, which was
 written in the author's own language as it happened. The documentation is bilingual.
 
+---
+
 ## Documentation
 
 | | |
@@ -528,6 +519,39 @@ written in the author's own language as it happened. The documentation is biling
 | [LIMITATIONS.md](LIMITATIONS.md) | what the tool does not find |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to run and extend the tests |
 | [CHANGELOG.md](CHANGELOG.md) | what changed |
+
+---
+
+## Help me improve this
+
+If you are willing to send me your scan statistics, I would be genuinely grateful. They cost
+you nothing, and they contain no code. They are also the one thing I cannot produce on my own:
+how this scanner behaves on code I have never seen. A check that fires on your code and never on
+mine is the most useful thing you can send me.
+
+Every scan appends one line to `./data/scan_log.jsonl`, locally:
+
+| Recorded | Never recorded |
+|---|---|
+| how many files, how many candidates | source code, or any fragment of it |
+| the split across checks and across verdicts | file paths or file names |
+| elapsed time, tool version, hashes of the rule config | the project name, or anything identifying it |
+| your Python minor version, and OS family | anything about you |
+
+```bash
+agentaudit log                    # summarise what you have scanned
+agentaudit log --export           # a small aggregate, written to scan_stats.json
+agentaudit log --clear            # delete it
+```
+
+**Nothing is ever uploaded.** There is no network code in any of this, so the only way any of
+it leaves your machine is if you carry it out yourself. `--export` re-checks the aggregate
+against the table above and refuses to write anything that fails, so read it before you decide.
+
+If you are happy with it, open an
+[issue](https://github.com/phoen1x-git/agentaudit/issues) and paste it in. If you would rather
+not, that is a perfectly good answer too. The log is yours, and
+`--no-log` (or `AGENTAUDIT_NO_LOG=1`) turns the whole thing off.
 
 ---
 

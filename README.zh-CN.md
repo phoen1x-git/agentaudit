@@ -25,12 +25,12 @@ Agent 项目里到处都是危险调用：`eval`、`subprocess`、`open`、`requ
 这些调用大多是必要的，要执行命令就得调 `subprocess`。所以传统的污点分析一跑，
 会把它们全部标出来，结果就是一大堆「这里有个危险调用」，很难用。
 
-真正的问题不是「有没有危险调用」，而是下面三个：
-
 ```python
 # 这是危险调用，但它不是漏洞：spec_name 来自本文件里的一个内置表，外面控制不了
 handler = eval(spec_name)
 ```
+
+真正的问题不是「有没有危险调用」，而是下面三个：
 
 | # | 问题 | 谁来回答 |
 |---|---|---|
@@ -46,14 +46,17 @@ handler = eval(spec_name)
 ## 安装
 
 需要 Python 3.10 或更高版本。[CodeQL CLI](https://github.com/github/codeql-cli-binaries)
-是可选的，它有几百 MB。不装的话工具会退回离线模式，查得少一些，
+是可选的，要占几百 MB。不装的话工具会退回离线模式，查得少一些，
 但除了 PyYAML 之外不需要装任何东西。
 
 ```bash
-git clone <本仓库> && cd agentaudit
+git clone https://github.com/phoen1x-git/agentaudit.git && cd agentaudit
 ./scripts/setup.sh                 # 装依赖 + 下载 CodeQL CLI；或者只：
 pip install -e .                   # 只装依赖，但会给你一条 `agentaudit` 命令
 ```
+
+`setup.sh` 需要 bash。macOS、Linux 和 Windows 上的 Git Bash 都能直接跑。在 PowerShell 或
+cmd 里，用 `pip install -e .` 并跳过 CodeQL，或者自己下载 CLI、用 `AF_CODEQL` 指向它。
 
 两种装法都能直接跑脚本（`python app/scan.py ...`）。用 `pip install -e .` 装过之后，
 还会多出一个统一的命令：
@@ -72,10 +75,11 @@ agentaudit --help
 
 ```bash
 agentaudit selftest                # 等价于 python tools/run_selftests.py
-agentaudit scan --demo             # 拿自带的示例项目跑一遍，出 13 条候选
+agentaudit scan --demo             # 扫自带的示例项目；不装 CodeQL 时出 13 条候选
 ```
 
 两条都只要几秒钟，而且不需要装任何别的东西。这两条过了，环境就没问题。
+装了 CodeQL 之后，同一个 demo 会扫出更多：完整模式会追跨函数的值，离线模式追不了。
 
 ### Docker
 
@@ -98,70 +102,31 @@ docker run --rm --entrypoint agentaudit agentaudit log
 docker run --rm --entrypoint /opt/agentaudit/_tools/codeql/codeql agentaudit version
 ```
 
-这个 Dockerfile 是在一台没有 Docker 的机器上写的，所以第一次构建就是第一次验证。
-它被写成「出错就尽早出错」：CodeQL CLI 会在构建过程中被执行一次，如果目录结构不对，
-构建直接失败，而不是产出一个扫描器根本跑不起来的镜像。
-CI 每次 push 都会构建它并做一遍冒烟测试。
-
-### 全部命令
-
-| 命令 | 做什么 |
-|---|---|
-| `agentaudit doctor` | 一屏说清这台机器能做什么：依赖、CodeQL、key、产物写在哪 |
-| `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
-| `agentaudit scan` | 扫一个目标：`--demo`、`--path 目录`、`--repo 用户名/仓库名` |
-| `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
-| `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
-| `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
-| `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
-| `agentaudit report <轮次>` | 生成报告草稿 |
-| `agentaudit index <轮次>` | 生成 HTML 清单页 |
-| `agentaudit sarif <轮次>` | 把该轮导出成 SARIF 2.1.0 |
-| `agentaudit candidates <轮次>` | 写一份别的工具能直接读的候选文件（`candidates.jsonl`，见下） |
-| `agentaudit round --tag 名字` | 按目标表跑一轮 |
-| `agentaudit all --tag 名字` | 下载 → 扫描 → 出报告，可断点续跑 |
-| `agentaudit selftest` | 跑规则自测 |
-| `agentaudit validate` | 校验 `core/config/*.yml` |
-| `agentaudit log` | 查看 / 导出本机的扫描统计 |
-| `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库）。`screen --profile 文件` 用你自己的条件代替默认值 |
-
-这两个命令解决的是「扫一遍还不够」的情况。`agentaudit investigate out/round-x` 会离线读每条
-候选周围的源码，把读到的东西写成新的一轮：谁调用了它、每个形参绑的是什么实参、调用点外面有哪些
-条件。读多少是有上限的（文件数、字节数、深度、秒数），所以它不会因为一个陌生项目跑一整晚。它回答
-的是「这一行周围还有什么」，不花一分钱额度。`agentaudit import-sarif 别的工具.sarif --src ./myproject`
-把另一个分析器的结果变成候选，送进同一条流水线，这样 Semgrep 或者商业扫描器的结果也能用同一套
-规则来判断，而不是躺在第二个工具里。
-
-### 别的工具能直接读的那份文件
-
-`agentaudit candidates out/round-x --repo 用户名/仓库名 --src-root ./myproject --out c.jsonl`
-把一轮投影成 `candidates.jsonl`：一行一个位置，带一个由仓库、文件、行号和 sink 名算出来的稳定
-id，别的不带。刻意不带：没有判定、没有把握度、没有"大概"。候选是"值得看一眼的位置"，结论在另一个
-文件里；把两样混在一份文件里，它就只能给作者自己用了。源码根（`--src-root`）是让它能读那一行源码、
-算文件哈希、判入口形态的东西；不给它，这份文件就得替你猜一个它看不见的形态。
-
-格式冻结在 `schemas/candidates.v1.json`，由 `tools/check_contract_file.py` 校验。这个 id
-不依赖是哪条规则报出来的，也不依赖谁判过什么，所以重写查询不会把回溯历史轮次的线弄断。
+镜像会在构建过程中执行一次 CodeQL CLI，如果目录结构不对，构建直接失败，而不是产出一个
+扫描器根本跑不起来的镜像。CI 每次 push 都会构建它并做一遍冒烟测试。
 
 ---
 
 ## 快速开始
 
-第一次扫描之前，先跑 `agentaudit doctor`：它一屏说清这台机器能做什么、不能做什么，缺的
-每一样解锁了什么。一秒钟的事，但它回答的是第一次扫描之后必然会冒出来的问题：「它报了
-13 条，这就是全部吗？」（没装 CodeQL 的话不是，扫描会退回到 AST 检查，那一层追不了跨函数
-的值是从哪来的。）
+第一次扫描之前，先跑 `agentaudit doctor`：一屏说清这台机器能做什么、不能做什么，缺了
+哪一样、装上能解锁什么。花不了一秒钟，但它回答的是第一次扫描之后必然会冒出来的那个问题：
+「报了 13 条，这就是全部吗？」没装 CodeQL 的话，答案是否定的：扫描会退回 AST 检查，
+而 AST 这一层追不了跨函数的值是从哪来的。
 
 一条命令就能扫，不用先准备目标清单，也不用自己建库：
 
 ```bash
 agentaudit scan --demo                  # 仓库里自带的示例项目
 agentaudit scan --path ./myproject      # 扫本地已有的一个项目
-agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
+agentaudit scan --repo owner/name       # 拉一个公开 GitHub 仓库来扫
 ```
 
+`--repo` 会 clone 仓库，需要 PATH 里有 `git`；没有 `git` 就退回用 tarball 下载。扫公开仓库
+不需要 token，但未认证的 GitHub 请求有频率限制，所以成批扫还是走下面
+[批量扫描](#scanning-a-batch) 里带 token 的那条路。
+
 要一次扫很多个仓库的话，走的是另一条路：先筛候选，再下源码、建库，然后成批扫描。
-完整步骤在下面「它怎么工作」里的 [批量扫描](#scanning-a-batch) 一节。
 
 ### 或者用菜单
 
@@ -181,7 +146,11 @@ agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 不是把参数藏起来。另外，如果在没有终端的地方运行（管道、CI），
 它会拒绝进入交互模式，而不是卡在那里等输入。
 
-### `out/round-<tag>/` 里有什么
+---
+
+## 读结果
+
+每次扫描会把一轮结果写到 `out/round-<tag>/`：
 
 | 文件 | 是什么 |
 |---|---|
@@ -189,15 +158,11 @@ agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 | `report_draft.md` | 报告草稿，一条候选一节 |
 | `index.html` | 可排序 / 可搜索的候选清单页 |
 | `agentaudit.sarif` | 候选清单导成 SARIF 2.1.0，可进 code-scanning 界面或编辑器 |
-| `results.sarif` | CodeQL 前端自己的原始输出（仅 full 模式） |
+| `results.csv` | CodeQL 前端自己的原始输出（仅 full 模式） |
 | `meta.json` | 用的是哪种模式、开了哪些规则开关、花了多久 |
 
-这里面的每一条都是候选。整条流水线**不运行被扫的代码**，只是读它，
+这里面的每一条都是候选。整条流水线**不运行被扫描的代码**，只是读它，
 所以没有任何一条是已确认的。
-
----
-
-## 读结果
 
 `findings.tsv` 是原始表。读它的时候，下面三条命令最常用。
 
@@ -208,8 +173,8 @@ agentaudit explain out/round-x --index 3
 ```
 
 不给 `--index` 也不给 `--fp` 时，它只展开第一条，并告诉你还剩几条；`--all` 把全部候选打出来。
-它会打印被标记那一行的上下文源码、能走到它的调用链、这条路上有哪些 if 守卫，
-以及那个危险实参是从哪来的。查不出来的话，它会明说「本次扫描没能确定」。
+它会打印被标记的那一行的上下文源码、能到达它的调用链、这条路上有哪些 if 守卫，
+以及危险实参是从哪来的。查不出来的话，它会明说「本次扫描没能确定」。
 在相信或否掉一条候选之前，先跑这个。
 
 ### 在浏览器里看整轮
@@ -238,34 +203,48 @@ agentaudit serve out/round-x
 
 ---
 
-## 帮我把它改得更好
+## 命令
 
-如果你愿意把扫描统计发给我，我会很感谢。它对你没有任何成本，里面也没有一行代码。
-而且它是我自己拿不到的东西：这个扫描器在我没见过的代码上是什么表现。
-一条在你的代码上会响、在我代码上从来不响的检查，是最值得给我的东西。
+一个入口，下面这些子命令：
 
-每次扫描会往 `./data/scan_log.jsonl` 本地追加一行：
-
-| 会记录 | 永远不会记录 |
+| 命令 | 做什么 |
 |---|---|
-| 扫了多少文件、出了多少候选 | 源码，或者源码的任何片段 |
-| 各检查、各判定的分布 | 文件路径、文件名 |
-| 耗时、工具版本、规则配置的哈希 | 项目名，或任何能定位到它的信息 |
-| 你的 Python 小版本号和操作系统种类 | 任何关于你个人的东西 |
+| `agentaudit doctor` | 一屏说清这台机器能做什么：依赖、CodeQL、key、产物写在哪 |
+| `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
+| `agentaudit scan` | 扫一个目标：`--demo`、`--path 目录`、`--repo 用户名/仓库名` |
+| `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
+| `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
+| `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
+| `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
+| `agentaudit report <轮次>` | 生成报告草稿 |
+| `agentaudit index <轮次>` | 生成 HTML 清单页 |
+| `agentaudit sarif <轮次>` | 把该轮导出成 SARIF 2.1.0 |
+| `agentaudit candidates <轮次>` | 写一份别的工具能直接读的候选文件（`candidates.jsonl`，见下） |
+| `agentaudit round --tag 名字` | 按目标表跑一轮 |
+| `agentaudit all --tag 名字` | 下载 → 扫描 → 出报告，可断点续跑 |
+| `agentaudit selftest` | 跑规则自测 |
+| `agentaudit validate` | 校验 `core/config/*.yml` |
+| `agentaudit log` | 查看 / 导出本机的扫描统计 |
+| `agentaudit targets` | 找出并筛选 GitHub 上的目标（给批量扫描用，不是单仓库）。`screen --profile 文件` 用你自己的条件代替默认值 |
 
-```bash
-agentaudit log                    # 看看你本机扫了什么
-agentaudit log --export           # 导出一份小聚合，写到 scan_stats.json
-agentaudit log --clear            # 删掉
-```
+这两个命令解决的是「扫一遍还不够」的情况。`agentaudit investigate out/round-x` 会离线读取
+每条候选周围的源码，把读到的内容写成新的一轮：谁调用了它、每个形参绑的是什么实参、调用点外面有哪些
+条件。读取的量有上限（文件数、字节数、深度、秒数），所以不会因为一个陌生项目跑一整晚。它回答
+的是「这一行周围还有什么」，不花一分钱。`agentaudit import-sarif 别的工具.sarif --src ./myproject`
+把另一个分析器的结果变成候选，送进同一条流水线，这样 Semgrep 或者商业扫描器的结果也能用同一套
+规则来判断，而不是躺在第二个工具里。
 
-**任何东西都不会被上传。** 这部分代码里没有任何网络请求，
-所以它离开你机器的唯一途径，是你自己把它拷出去。
-`--export` 会拿上面的表格再校验一次聚合结果，不通过就拒绝写出，
-所以先自己读一遍再决定。
+### 候选文件（candidates.jsonl）
 
-觉得没问题的话，开一个 [issue](https://github.com/phoen1x-git/agentaudit/issues) 贴进去就行。
-不想发也完全可以，日志是你的，`--no-log`（或 `AGENTAUDIT_NO_LOG=1`）可以整个关掉。
+`agentaudit candidates out/round-x --repo 用户名/仓库名 --src-root ./myproject --out c.jsonl`
+把一轮投影成 `candidates.jsonl`：一行一个位置，带一个由仓库、文件、行号和 sink 名算出来的稳定
+id，仅此而已。这里刻意不带任何别的东西：没有判定、没有把握度、也没有「大概」。候选是「值得
+看一眼的位置」，结论放在另一个文件里；两样一旦混进同一份文件，除了作者自己，别人就用不了了。
+源码根（`--src-root`）的作用是让它能读那一行源码、算文件哈希、判断入口形态；不提供它，这份文件
+就只能在看不见的情况下瞎猜一个形态。
+
+格式冻结在 `schemas/candidates.v1.json`，由 `tools/check_contract_file.py` 校验。这个 id
+不取决于哪条规则报出来的，也不取决于谁判过什么，所以重写查询不会弄断回溯历史轮次的那条线。
 
 ---
 
@@ -281,7 +260,7 @@ agentaudit log --clear            # 删掉
 | **offline** | 什么都不用 | 只有 AST 检查 |
 
 没装 CodeQL 时，它会明确告诉你走了离线模式。用的是哪种模式会记在 `meta.json` 里，
-也会印在报告开头，因为两种模式找到的东西不一样。`--no-codeql` 可以强制走离线。
+也会印在报告开头，因为两种模式找得到的结果不一样。`--no-codeql` 可以强制走离线。
 
 ### 模型判断默认关闭
 
@@ -295,20 +274,23 @@ agentaudit scan --path ./myproject --llm
 不加 `--llm` 就只有候选清单、没有判定。报告会如实说明这一点，不会暗示已经判过。
 
 实参来源不明（`arg_source=unknown`）的 `vuln` 会被降级成 `needs_human`。
-这类正是表现不稳定的那些：同一条候选反复跑，它们的翻转率明显高于其它候选。
+这类恰好是表现最不稳定的那批：同一条候选反复跑，翻转率明显高于其它候选。
 原始判定留在 `ai_reason` 和 `verdicts.json` 里，没有丢东西。
 `--no-unknown-downgrade` 可以关掉这个行为，轮次里会记录它是开还是关。
 
 每条判定还会带上它当时读到的证据：引用的那几行源码、输入内容的哈希，以及 `blocking_gaps`，
-也就是缺了哪一件证据。判断不出来的时候，它说的是「卡在哪一件」，而不是说得像很确定。
+也就是缺了哪一件证据。判断不出来的时候，它会明说「卡在哪一件证据上」，而不是装得很确定。
 
 ### 当门禁用
 
 ```bash
-agentaudit scan --path ./myproject --fail-on any        # 报了候选就退 1
 agentaudit scan --path ./myproject --llm --fail-on vuln # 只有判成 vuln 才退 1
 agentaudit scan --path ./myproject --diff origin/main   # 只看改动过的文件
 ```
+
+`--fail-on any` 这个选项是有的，但很少是你要的门禁：只要有候选报出来它就退 1，而候选只是
+「值得看一眼的位置」、不是已确认的漏洞，所以大多数项目都会报出一些。要只在真正判成漏洞时才
+失败，用 `--llm --fail-on vuln`。
 
 `--diff` 要求源码是一份 git 检出，用途是回答「这个 PR 有没有引入新东西」，
 不是做全量审计。
@@ -320,7 +302,7 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 ```
 
 模式是相对源码根的 glob，会写进轮次记录，这样两轮之间仍然可比。
-排除掉的东西就是没扫过的东西，所以如果 `vendor/` 被跳过了，
+你排除掉的就是你没扫的，所以如果 `vendor/` 被跳过了，
 「`vendor/` 里没有候选」这句话什么也说明不了。
 
 ### `scan` 的全部参数
@@ -366,7 +348,7 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 
 除了这些危险调用，内核还会检查三件事：同一个文件里各端点的鉴权是否一致、
 同一个函数里安全的写法和不安全的写法是否并存、以及一个危险点能不能从入口到达。
-（代码里管「危险点」叫 `sink`，`AF_SINKS_FS` 这类开关的组名就是从它来的。）
+（代码里把「危险点」叫作 `sink`，`AF_SINKS_FS` 这类开关名就是从 sink 来的。）
 
 加你自己的危险函数只要几行 YAML。字段说明见
 [CONFIGURING.md](CONFIGURING.md)，改完跑 `agentaudit validate` 检查一下。
@@ -376,16 +358,18 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 ## 它抓不到什么
 
 这些都是刻意的取舍，不是 bug。完整版在 [LIMITATIONS.md](LIMITATIONS.md)，
-里面包括分析根本看不见的那些模式，以及它哪些沉默是有意义的。
+里面包括分析根本看不见的那些模式，以及它在哪些情况下「不报」是有讲究的。
 
-- **只支持 Python。** 静态前端绑在 CodeQL 的 Python 包上。
+- **完整分析只支持 Python。** 静态前端绑在 CodeQL 的 Python 包上。有一个
+  `--codeql-language javascript` 的入口，但它只跑到窗口级的候选就停：不跑调用链、
+  也不跑实参来源分析，所以不出判定。
 - **模型判断这一层本身不稳定。** 同一条候选重跑，相当一部分判定会变。
   结果稳定得可疑，通常是缓存造成的，所以重新判的时候记得换 `--tag`。
 - **`arg_source=unknown` 不可信。** 这个值的意思是「模型自己也不知道实参从哪来」，
   这类行默认被降级。
 - **「没找到调用方」不等于「不可达」。** 这里只做基于名字的匹配，
   跨文件派发和动态派发都会漏。
-- **框架中介。** 实现落在 `site-packages` 而不是被扫的树里时，静态分析就停在 import 那一步。
+- **框架中介。** 实现落在 `site-packages` 而不是被扫描的源码树里时，静态分析就停在 import 那一步。
 - **离线模式查得更少。** 没有跨过程可达性，也没有框架建模。
 - **重新生成 CodeQL 查询需要 AgentFuzz 参考包。** 只有重新生成时才需要；
   已提交的 `core/ql/*.ql` 不装也能用（用 `AF_PAPER_QL` 指向它）。
@@ -402,7 +386,7 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 | `DEEPSEEK_KEY_FILE` | LLM API key 文件路径 | `~/.deepseek_key` |
 | `GITHUB_KEY_FILE` | GitHub token 文件路径（提高 API 额度） | `~/.github_token` |
 | `AF_LLM_MAX_CNY` | **单次运行的硬上限**；到限即停并报数 | `30` |
-| `AF_JUDGE_MT` | 复核层最大输出 token | `8000` |
+| `AF_JUDGE_MT` | 模型判断层最大输出 token | `8000` |
 | `AF_CODEQL` | CodeQL CLI 路径 | `./_tools/codeql/codeql[.exe]` |
 | `AF_PAPER_QL` | AgentFuzz 参考 QL 包路径 | `./agentfuzz-official/ql` |
 | `AF_SRC_DIR` / `AF_DB_DIR` | 源码 / 库放在哪 | `./_targets/src`、`./_targets/db` |
@@ -431,11 +415,11 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 |---|---|---|
 | 静态前端 | `core/static_frontend.py` | 建 CodeQL 库、跑 `core/ql/` 里的查询、解析 SARIF |
 | 强弱写法 | `core/duality.py` | 同一个函数里，同一件事一行写得安全、一行写得不安全 |
-| LLM 复核 | `core/llm_judge.py` | 五个维度：`verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
+| 模型判断 | `core/llm_judge.py` | 五个维度：`verdict` / `by_design` / `scope_exceeds` / `arg_source` / `guards_real` |
 | 报告素材 | `app/make_report.py`、`app/make_index.py`、`tools/to_sarif.py` | 报告草稿、可排序清单页、SARIF |
 
-另外两个横跨在上面：`core/consistency.py` 判断「证据支持不了什么」并拒绝报它，
-`core/cfg.py` 管规则配置。`core/gate.py`（这个目标值不值得扫）和
+此外还有两个模块贯穿始终：`core/consistency.py` 判断「证据支持不了什么」，
+对支持不了的拒绝上报，`core/cfg.py` 负责规则配置。`core/gate.py`（这个目标值不值得扫）和
 `core/upstream.py`（是不是已经有人报过）只在批量路径里用。
 
 <a id="scanning-a-batch"></a>
@@ -443,6 +427,14 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 ### 批量扫描
 
 批量这段路有两个又慢又能续跑的阶段：随时可以停、可以重跑，做完的部分会跳过。
+
+有两个文件是你自己的、不随仓库发布：目标表列出你要扫的仓库，`known_targets.yml` 列出你已经
+看过的仓库。正因为有后面这份清单，「还没看过」这句话才有意义。把示例复制一份再填：
+
+```bash
+cp core/config/targets.example.yml       core/config/targets.yml
+cp core/config/known_targets.example.yml core/config/known_targets.yml
+```
 
 ```bash
 # 1) 先攒一份候选清单（需要 GitHub token，要几分钟）
@@ -453,18 +445,13 @@ agentaudit targets screen       # -> data/target_pool/screened.json
 python app/prepare_targets.py data/target_pool/batch1.json
 
 # 3) 扫这批，然后出报告
-agentaudit round  --tag my-round --targets-file core/config/targets.yml
-agentaudit report out/round-my-round
-agentaudit index  out/round-my-round
+agentaudit round    --tag my-round --targets-file core/config/targets.yml
+agentaudit report   out/round-my-round
+agentaudit index    out/round-my-round
 ```
 
 `agentaudit all --tag my-round --batch data/target_pool/batch1.json --targets-file
 core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳过。
-
-筛选时会排除你已经看过的仓库，这是「还没看过」这句话有意义的前提。
-那份名单放在 `core/config/known_targets.yml`，不随仓库发布，把示例复制一份自己填。
-它做成文件而不是代码里的常量，是因为一份真实仓库清单，透露的关于写它的人的信息，
-比关于这个工具的信息更多。
 
 `agentaudit targets report --excluded` 会把被筛掉的项目和每一条原因印出来。这些原因多数说的是
 你的偏好，不是项目本身的问题，所以值得读：读它们才知道怎么写出一份更合适的 profile。
@@ -477,7 +464,7 @@ core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳�
 ## 仓库结构
 
 ```
-core/            内核（静态前端 / 复核 / 可达性 / 污点追踪 / CodeQL 查询）
+core/            内核（静态前端 / 模型判断 / 可达性 / 污点追踪 / CodeQL 查询）
 core/config/     规则：sinks.yml、sources.yml、filters.yml —— 见 CONFIGURING.md
 tools/           可复用工具（选择目标 / 下载 / 各项检查 / 自测）
 app/             入口（scan.py、run_all.py、explain.py、serve.py、cli.py）
@@ -488,7 +475,9 @@ scripts/         setup.sh
 ```
 
 `app/` 和 `tests/` 用英文写，因为那是别人打开仓库最先读到的一层。`core/` 和 `tools/` 里是中文注释，
-它们记的是试过什么、为什么这么改，这些当时就是用母语写下来的。文档两边各一份。
+它们记的是试过什么、为什么这么改，这些当时就是用母语写下来的。文档是中英双份的。
+
+---
 
 ## 文档
 
@@ -501,14 +490,45 @@ scripts/         setup.sh
 
 ---
 
+## 帮我把它改得更好
+
+如果你愿意把扫描统计发给我，我会很感谢。它对你没有任何成本，里面也没有一行代码。
+而且它是我自己造不出来的东西：这个扫描器在我没见过的代码上是什么表现，只能靠你告诉我。
+一条在你的代码上会报出来、在我的代码上从不出现的检查，是最值得给我的东西。
+
+每次扫描会往 `./data/scan_log.jsonl` 本地追加一行：
+
+| 会记录 | 永远不会记录 |
+|---|---|
+| 扫了多少文件、出了多少候选 | 源码，或者源码的任何片段 |
+| 各检查、各判定的分布 | 文件路径、文件名 |
+| 耗时、工具版本、规则配置的哈希 | 项目名，或任何能定位到它的信息 |
+| 你的 Python 小版本号和操作系统种类 | 任何关于你个人的东西 |
+
+```bash
+agentaudit log                    # 看看你本机扫了什么
+agentaudit log --export           # 导出一份小聚合，写到 scan_stats.json
+agentaudit log --clear            # 删掉
+```
+
+**任何东西都不会被上传。** 这部分代码里没有任何网络请求，
+所以它离开你机器的唯一途径，是你自己把它拷出去。
+`--export` 会拿上面的表格再校验一次聚合结果，不通过就拒绝写出，
+所以先自己读一遍再决定。
+
+觉得没问题的话，开一个 [issue](https://github.com/phoen1x-git/agentaudit/issues) 贴进去就行。
+不想发也完全可以，日志是你的，`--no-log`（或 `AGENTAUDIT_NO_LOG=1`）可以整个关掉。
+
+---
+
 ## 作者的话
 
 我是在做 AI Agent 安全的时候写它的。真正卡住我的不是「找到一个危险调用」，
 而是找到之后该怎么判它：同一条候选让模型看两遍，答案不一定一样。
-一个把这件事藏起来的工具，比一个会漏东西的工具更糟，因为你分不清它的哪条输出能信。
+一个把这种不确定性藏起来的工具，比一个会漏报的工具更糟，因为你分不清它的哪条输出能信。
 
-所以我给它定的原则很窄：这里任何东西都不许比它实际知道的更确定。
-`needs_human` 是一个正经结论；查不出来的东西就写「未确定」，不猜；
+所以我给它定的原则很窄：这里任何一条结论，都不许说得比它实际有的把握更满。
+`needs_human` 是一个正经结论；查不出来的就写「未确定」，不猜；
 每份报告都会写明没有经过实跑验证。
 [`LIMITATIONS.md`](LIMITATIONS.md) 是刻意维护的，因为一个只列自己强项的工具，
 等于什么都没告诉你。
@@ -529,7 +549,7 @@ CodeQL 前端和基线 sink 清单来自 **AgentFuzz**：
 
 `core/gen_ql.py` 从那个参考包重新生成查询，所以有 `AF_PAPER_QL` 这个变量。
 `core/config/sinks.yml` 里所有 `source: extra` 的条目、可达性检查、参数贯通检查、
-以及模型判断那一层，都是在这个基线之上加的东西。
+以及模型判断那一层，都是在这个基线上另加的。
 
 ---
 
