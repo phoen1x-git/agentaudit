@@ -124,6 +124,14 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 | `agentaudit validate` | 校验 `core/config/*.yml` |
 | `agentaudit log` | 查看 / 导出本机的扫描统计 |
 | `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库）。`screen --profile 文件` 用你自己的条件代替默认值 |
+
+这两个命令解决的是「扫一遍还不够」的情况。`agentaudit investigate out/round-x` 会离线读每条
+候选周围的源码，把读到的东西写成新的一轮：谁调用了它、每个形参绑的是什么实参、调用点外面有哪些
+条件。读多少是有上限的（文件数、字节数、深度、秒数），所以它不会因为一个陌生项目跑一整晚。它回答
+的是「这一行周围还有什么」，不花一分钱额度。`agentaudit import-sarif 别的工具.sarif --src ./myproject`
+把另一个分析器的结果变成候选，送进同一条流水线，这样 Semgrep 或者商业扫描器的结果也能用同一套
+规则来判断，而不是躺在第二个工具里。
+
 ### 别的工具能直接读的那份文件
 
 `agentaudit candidates out/round-x --repo 用户名/仓库名 --src-root ./myproject --out c.jsonl`
@@ -291,6 +299,9 @@ agentaudit scan --path ./myproject --llm
 原始判定留在 `ai_reason` 和 `verdicts.json` 里，没有丢东西。
 `--no-unknown-downgrade` 可以关掉这个行为，轮次里会记录它是开还是关。
 
+每条判定还会带上它当时读到的证据：引用的那几行源码、输入内容的哈希，以及 `blocking_gaps`，
+也就是缺了哪一件证据。判断不出来的时候，它说的是「卡在哪一件」，而不是说得像很确定。
+
 ### 当门禁用
 
 ```bash
@@ -325,7 +336,6 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 | `--llm` | 用 LLM 判断，要花钱，所以默认关 |
 | `--no-unknown-downgrade` | 实参来源不明时也保留 `vuln` 判定 |
 | `--no-codeql` | 强制走离线模式 |
-| `--codeql-language python\|javascript` | 建库语言（默认 `python`）。非 python 只跑到契约候选，`trace_level: window` |
 | `--codeql-language python\|javascript` | 建库语言（默认 `python`）。非 python 只跑到契约候选，`trace_level: window` |
 | `--lang en\|zh` | 报告语言（默认 `en`） |
 | `--diff [REF]` | 只报自 `REF` 以来改动过的文件 |
@@ -455,6 +465,9 @@ core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳�
 那份名单放在 `core/config/known_targets.yml`，不随仓库发布，把示例复制一份自己填。
 它做成文件而不是代码里的常量，是因为一份真实仓库清单，透露的关于写它的人的信息，
 比关于这个工具的信息更多。
+
+`agentaudit targets report --excluded` 会把被筛掉的项目和每一条原因印出来。这些原因多数说的是
+你的偏好，不是项目本身的问题，所以值得读：读它们才知道怎么写出一份更合适的 profile。
 
 > **注意花费。** 模型判断这一阶段会消耗 LLM 额度。脚本会事先印出预估花费，
 > `AF_LLM_MAX_CNY` 到限会硬停。

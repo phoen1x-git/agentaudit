@@ -128,6 +128,16 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit validate` | check `core/config/*.yml` |
 | `agentaudit log` | show or export the local scan statistics |
 | `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo. `screen --profile FILE` takes your own criteria instead of the defaults |
+
+Two of those exist for the cases where one scan is not the whole answer.
+`agentaudit investigate out/round-x` reads the source around each candidate offline and writes
+a new round holding what it found: the callers, the arguments bound to each parameter, and the
+conditions around the call, bounded by files, bytes, depth and seconds. It answers "what else
+is around this line" without spending a credit. `agentaudit import-sarif other.sarif --src
+./myproject` turns another analyzer's results into candidates and sends them down the same
+pipeline, so a Semgrep or commercial-backend result can be judged by the same rules instead of
+sitting in a second tool.
+
 ### The file another tool can read
 
 `agentaudit candidates out/round-x --repo owner/name --src-root ./myproject --out c.jsonl`
@@ -306,6 +316,10 @@ unstable ones: run the same candidate repeatedly and they flip noticeably more o
 rest. The original verdict stays in `ai_reason` and in `verdicts.json`, so nothing is lost;
 `--no-unknown-downgrade` turns the behaviour off, and the round records whether it was on.
 
+Every verdict also carries the evidence it was given: the source lines it quoted, a hash of
+the input, and `blocking_gaps`, which names the evidence that was missing. A judgement that
+could not be reached says which gap stopped it instead of sounding certain.
+
 ### Using it as a gate
 
 ```bash
@@ -340,7 +354,6 @@ vendor/" means nothing if `vendor/` was skipped.
 | `--llm` | triage with an LLM; it spends credits, so it is off by default |
 | `--no-unknown-downgrade` | keep a `vuln` verdict even when the argument source is unknown |
 | `--no-codeql` | force the offline mode |
-| `--codeql-language python\|javascript` | database language (default `python`). Anything but python stops at contract candidates, `trace_level: window` |
 | `--codeql-language python\|javascript` | database language (default `python`). Anything but python stops at contract candidates, `trace_level: window` |
 | `--lang en\|zh` | report language (default `en`) |
 | `--diff [REF]` | only report files changed since `REF` |
@@ -480,6 +493,10 @@ The screener excludes repositories you have already looked at, which is what mak
 examined" mean something. That list lives in `core/config/known_targets.yml`, and it does not
 ship; copy the example and add your own. It is a file rather than a constant in the code,
 because a list of real repositories says more about whoever wrote the tool than about the tool.
+
+`agentaudit targets report --excluded` prints the projects the filters rejected and the reason
+for each. Most of those reasons describe the profile rather than the project, which is what
+makes them worth reading: they are how you learn to write a better one.
 
 > **Mind the cost.** The triage stage spends LLM credits. Scripts print an estimated cost up
 > front, and `AF_LLM_MAX_CNY` hard-stops a run when the cap is reached.
