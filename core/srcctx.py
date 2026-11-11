@@ -41,9 +41,9 @@ def enclosing_function(path: str, line: int, max_lines: int = 120) -> tuple[str,
     node, lo, hi = best
     _all = src.splitlines()[lo - 1:hi]
     if len(_all) > max_lines:
-        # ★★★ 修—— **不再从头截**。
+        # ★★★ 这里修过：**不再从头截**。
         #   旧行为：`body[:max_lines]` = 只看函数的**前 N 行**，后面的**全丢**。
-        #   ★ 后果：9 条结论翻转里**有 1 条**的理由原文就是
+        #   ★ 后果（实测）：9 条结论翻转里**有 1 条**的理由原文就是
         #     「给定函数源码被截断、看不到 o…」—— 而**危险调用恰恰常在函数末尾**。
         #   新行为：**保证「目标行」一定落在窗口里** ——
         #     以它为锚，前面留够（含函数签名，用于看参数怎么来的），后面留够（含危险调用后的收尾）。
@@ -161,14 +161,20 @@ def _qualname(node: ast.AST) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ★★ 「这个配置值是从哪一层来的」—— 补输入，不是加规则
+# ★★ 「这个配置值是从哪一层来的」—— 补输入，不是加判据（docs/147 §四）
 # ---------------------------------------------------------------------------
-#   背景：upstream issue（外部真值）里 `base_url = config.get("base_url")`，
+#   背景：chunkhound #388（外部真值）里 `base_url = config.get("base_url")`，
 #         判定层判不出它是"操作者自己配的"还是"随仓库 clone 下来的" ——
 #         两种情况**可信度正好相反**，而判定层**看不到配置合并逻辑**。
 #   ★ 做法：去**同一个仓库里**找"配置从哪来"的**原文**（不猜、不下结论），
 #     把命中的**文件行原文**贴进 user prompt，让判定层自己判。
-#   ★ 只贴证据、绝不替它下结论 —— 判定尺度仍在 rubric 里。
+#   ★ 只贴证据、绝不替它下结论 —— 判定尺度仍在 rubric 里（`docs/113` 的教训）。
+
+# 「随仓库交付的配置文件」的名字 —— 这些文件**攻击者可控**（你 clone 它就有了）
+_REPO_CFG_NAMES = (
+    ".chunkhound.json", ".mcp.json", "mcp.json", ".cursor", ".aider",
+    "settings.json", "config.yaml", "config.yml", ".env", "pyproject.toml",
+)
 
 # 「配置分层 / 合并 / 覆盖」的代码痕迹
 _RE_CFG_MERGE = re.compile(
@@ -177,9 +183,9 @@ _RE_CFG_MERGE = re.compile(
     re.I,
 )
 
-# 「项目内配置文件」被加载的写法：open(...'.sampleproj.json') / Path(dir) / '.mcp.json'
+# 「项目内配置文件」被加载的写法：open(...'.chunkhound.json') / Path(dir) / '.mcp.json'
 _RE_CFG_LOAD = re.compile(
-    r"\.sampleproj\.json|\.mcp\.json|local_config_file|config_file.*target|"
+    r"\.chunkhound\.json|\.mcp\.json|local_config_file|config_file.*target|"
     r"target_dir.*config|project_dir.*config",
     re.I,
 )
@@ -191,7 +197,7 @@ def config_source_evidence(root: str, sink_path: str, limit: int = 8) -> list[di
     返回 [{"file": 相对路径, "line": 行号, "text": 该行原文, "why": 命中原因}]。
 
     ★ 只找两类东西（都是**可核的原文**）：
-      ① 有代码在**加载"随仓库交付的配置文件"**（.sampleproj.json / .mcp.json / …）；
+      ① 有代码在**加载"随仓库交付的配置文件"**（.chunkhound.json / .mcp.json / …）；
       ② 有代码在**做配置分层/合并/覆盖**（deep_merge / precedence / local_config / target_dir …）。
     ★ 特意**优先取与 sink 同目录或同仓根**的那些，避免跨包噪声。
     """

@@ -241,6 +241,9 @@ added without being documented.
 | `AF_JUDGE_REPOCFG` | `0` | treat a config file that was cloned with the repository as untrusted, rather than lumping it in with the operator's own config |
 | `AF_JUDGE_CFGSRC` | `0` | send evidence about where a config value comes from |
 | `AF_JUDGE_SCOPE2` | `0` | pin down what "exceeds its intended scope" means on the `scope_exceeds` axis |
+| `AF_JUDGE_PROMPT` | `contract` | how the judgement prompt is assembled. `legacy` restores the older block-by-block builder, kept for reproducing an old round |
+| `AF_JUDGE_STRICT` | `0` | reject a judgement whose quoted evidence does not match the source. Measured effect: it does not separate real findings from false ones, it only makes every verdict stricter (12 of 12 `vuln` verdicts turned into `needs_human`, including 4 real ones), so it is off by default |
+| `AF_LLM_WORKERS` | `1` | how many judgements run at once. Raising it cuts wall-clock time and does not change what is judged, but it multiplies the spend rate against the budget |
 
 ### Everything else
 

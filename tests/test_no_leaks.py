@@ -204,7 +204,10 @@ def _target_names() -> list[str]:
         return []
     found = []
     for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = re.match(r"^([A-Za-z0-9][A-Za-z0-9_.-]*):\s*$", line)
+        # The table is `targets:` followed by one key per project, indented two spaces.
+        # Anchoring on the indent matters: a looser pattern also matches structural keys
+        # such as `targets:` itself, and then the check fires on every use of the word.
+        m = re.match(r"^  ([A-Za-z0-9][A-Za-z0-9_.-]*):\s*$", line)
         if m:
             found.append(m.group(1))
     return found
