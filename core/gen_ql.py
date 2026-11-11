@@ -37,10 +37,10 @@ def _rename_predicate(src: str, name: str, new_name: str) -> tuple[str, str]:
     marker = f"predicate {name}("
     i = src.find(marker)
     if i < 0:
-        raise SystemExit(f"[FAIL] 论文 call.qll 里找不到 {marker}")
+        raise SystemExit(f"[FAIL] {marker} is not in the paper's call.qll")
     brace = src.find("{", i)
     if brace < 0:
-        raise SystemExit("[FAIL] 找不到谓词体起始 `{`")
+        raise SystemExit("[FAIL] cannot find the start of the predicate body")
     depth, j = 0, brace
     while j < len(src):
         if src[j] == "{":
@@ -150,7 +150,7 @@ predicate isIncludeLocationStr(string s) {{
  }}
 
 predicate isIncludeLocation(Location loc) {{ isIncludeLocation2(loc) }}
-''', "rel(相对路径 + 论文原黑名单)"
+''', "rel(relative paths + the paper's blacklist)"
 
     cfg = yaml.safe_load(
         (ROOT / "core" / "config" / "filters.yml").read_text(encoding="utf-8")) or {}
@@ -331,7 +331,7 @@ def _sources_qll() -> tuple[str, str, list]:
         if _p.exists():
             src_files.append(_p)
         else:
-            print(f"★ [sources] AF_SOURCES_FILE 指向的文件不存在，已忽略：{_p}")
+            print(f"★ [sources] AF_SOURCES_FILE points at a file that does not exist; ignored: {_p}")
     # ★ 按 id 去重（先加载者优先）—— 防止两个文件里出现同 id 导致条目重复计数。
     srcs, _seen_ids = [], set()
     for _fp in src_files:
@@ -591,13 +591,17 @@ predicate is_sink(CallNode cn) { sinkByShape(cn) or sinkByBoundObject(cn) }
         f"library: false\nwarnOnImplicitThis: false\nname: py-qs-kernel-{stamp}\nversion: 0.0.2\n"
         "dependencies:\n  codeql/python-all: \"*\"\n  codeql/suite-helpers: \"*\"\n"
         "  codeql/util: \"*\"\n", encoding="utf-8")
-    print(f"  包名 py-qs-kernel-{stamp}（内容哈希，配置变则包名变 → 缓存不会串）")
+    print(f"  pack name py-qs-kernel-{stamp} (content hash: a config change changes "
+          f"the name, so caches cannot mix)")
 
-    print(f"生成 → {OUT_QL}")
-    print(f"  extra 条目 {len(extras)} 个：{ids or '（空 → 与论文一致，即基线）'}")
-    print(f"  源头条目 {len(src_ids)} 个：{src_ids or '（空 → 只报 param，保守基线）'}")
-    print(f"  自带查询 {own_queries or '（无）'}")
-    print(f"  路径过滤 {filt_mode}（AF_PATH_FILTER=0 → 回到论文的子串黑名单）")
+    print(f"generated -> {OUT_QL}")
+    print(f"  {len(extras)} extra entries: "
+          f"{ids or '(empty -> same as the paper, i.e. the baseline)'}")
+    print(f"  {len(src_ids)} source entries: "
+          f"{src_ids or '(empty -> param only, the conservative baseline)'}")
+    print(f"  own queries: {own_queries or '(none)'}")
+    print(f"  path filter {filt_mode} (AF_PATH_FILTER=0 falls back to the paper's "
+          f"substring blacklist)")
     return 0
 
 

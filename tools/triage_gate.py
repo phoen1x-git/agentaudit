@@ -201,20 +201,22 @@ def report(rows: list, on_log=print) -> dict:
                             "failed": [k for k, v in g["checks"].items() if v is False],
                             "unknown": [k for k, v in g["checks"].items() if v is None],
                             "reasons": g["reasons"]})
-    on_log("候选 %d 条 → 够门槛 %d 条（%.0f%%）" % (
+    on_log("%d candidates -> %d clear the gate (%.0f%%)" % (
         out["n"], out["pass"], 100.0 * out["pass"] / max(1, out["n"])))
-    on_log("形态分布：" + str(dict(out["by_kind"])))
-    on_log("够门槛的形态：" + str(dict(out["kind_pass"])))
-    on_log("判否的条数（确实不满足）：" + str(dict(out["by_check"])))
-    on_log("★ 判不了的条数（缺数据，不是判否）：" + str(dict(out["by_unknown"])))
+    on_log("entry kinds: " + str(dict(out["by_kind"])))
+    on_log("kinds that clear the gate: " + str(dict(out["kind_pass"])))
+    on_log("counted as no (genuinely fails): " + str(dict(out["by_check"])))
+    on_log("★ cannot tell (missing data, which is not a no): "
+               + str(dict(out["by_unknown"])))
     return out
 
 
 def main() -> int:
     import argparse
     ap = argparse.ArgumentParser(description="按立卷门槛筛候选")
-    ap.add_argument("--round", help="轮次目录或 findings.json 路径")
-    ap.add_argument("--out", help="把结果写成 json")
+    ap.add_argument("--round",
+                    help="round directory, or a path to findings.json")
+    ap.add_argument("--out", help="write the result as JSON")
     a = ap.parse_args()
     if not a.round:
         ap.print_help()
@@ -228,7 +230,7 @@ def main() -> int:
     res = report(findings)
     if a.out:
         Path(a.out).write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
-        print("写到", a.out)
+        print("wrote", a.out)
     return 0
 
 

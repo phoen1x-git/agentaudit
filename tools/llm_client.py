@@ -166,8 +166,9 @@ USAGE = Usage()
 def read_key():
     if not os.path.exists(KEY_FILE):
         raise SystemExit(
-            "找不到 key 文件 %s\n"
-            "★ 别把 key 写进代码 —— 用环境变量 DEEPSEEK_KEY_FILE 指过去。" % KEY_FILE)
+            "no key file at %s\n"
+            "★ do not put the key in code; point DEEPSEEK_KEY_FILE at it instead."
+            % KEY_FILE)
     with open(KEY_FILE, "r", encoding="utf-8") as f:
         return f.read().strip()
 
@@ -302,7 +303,8 @@ def chat(system, user, tag="default", max_tokens=1600,
         finally:
             if budget:
                 budget.finish_unknown(ticket)
-    raise LLMResponseError("LLM 调用失败（重试 %d 次）：%s" % (retries, last), attempts)
+    raise LLMResponseError("the LLM call failed after %d attempt(s): %s"
+                              % (retries, last), attempts)
 
 
 def _last_cny(r):
@@ -400,32 +402,33 @@ def ask_json(system, user, tag="default", max_tokens=3600, *, return_meta=False,
             return got
         if a == 0:
             continue
-        raise JSONResponseError("两次都不是合法 JSON，原文尾部：\n%s" % txt[-400:], attempts)
+        raise JSONResponseError("neither attempt was valid JSON; tail of the "
+                              "response:\n%s" % txt[-400:], attempts)
 
 
 def self_test():
     """连通 + 缓存 + 成本记账 三件事一起验。"""
-    print("=== 1. 连通性 ===")
+    print("=== 1. reachability ===")
     r = chat("你是一个只会回答 JSON 的助手。",
              '输出 {"ok": 1, "msg": "连通"}', tag="selftest")
-    print("  回答:", r["choices"][0]["message"]["content"].strip()[:60])
+    print("  answer:", r["choices"][0]["message"]["content"].strip()[:60])
     print("  usage:", json.dumps(r.get("usage"), ensure_ascii=False))
 
-    print("\n=== 2. 缓存（第二次不该再花钱）===")
+    print("\n=== 2. cache (a second call must cost nothing) ===")
     before = USAGE.cny
     chat("你是一个只会回答 JSON 的助手。",
          '输出 {"ok": 1, "msg": "连通"}', tag="selftest")
-    print("  第二次调用后新增花费: %.6f 元（应为 0）" % (USAGE.cny - before))
-    print("  缓存命中次数:", USAGE.hit_cache)
+    print("  spend added by the second call: %.6f CNY (should be 0)" % (USAGE.cny - before))
+    print("  cache hits:", USAGE.hit_cache)
 
-    print("\n=== 3. JSON 解析（剥代码围栏）===")
+    print("\n=== 3. JSON parsing (strips code fences) ===")
     j = ask_json("你是一个只会回答 JSON 的助手。",
                   '输出 {"verdict": "not_vuln", "confidence": 0.9}', tag="selftest_json")
-    print("  解析结果:", json.dumps(j, ensure_ascii=False))
+    print("  parsed:", json.dumps(j, ensure_ascii=False))
 
-    print("\n=== 4. 成本记账 ===")
+    print("\n=== 4. cost accounting ===")
     print("  " + USAGE.report())
-    print("\n全部通过。")
+    print("\nall passed.")
 
 
 if __name__ == "__main__":

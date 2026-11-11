@@ -633,7 +633,8 @@ def judge(findings: list[F.Finding], on_log=print, tag: str = "kernel_judge",
                 _error(fd, e, audit=getattr(e, "triage_audit", None))
             if records:
                 fd.judge_json["_vote_records"] = records
-            on_log(f"  [{i}/{len(findings)}] ★ LLM 失败 {fd.sink_uri}:{fd.sink_line} — {e}")
+            on_log(f"  [{i}/{len(findings)}] ★ LLM call failed "
+                   f"{fd.sink_uri}:{fd.sink_line} - {e}")
             continue
         on_log(f"  [{i}/{len(findings)}] {fd.ai_verdict:11} conf={fd.ai_confidence:.2f} "
                f"byd={fd.by_design:7} exc={fd.scope_exceeds:7} "
@@ -662,7 +663,8 @@ def _judge_concurrent(findings: list[F.Finding], cache: dict, tag: str,
     def _work(fd: F.Finding):
         return judge_one(fd, cache, tag=tag)
 
-    on_log(f"[judge] ★ 并发判定：{workers} 个 worker（AF_LLM_WORKERS），共 {total} 条")
+    on_log(f"[judge] ★ concurrent triage: {workers} worker(s) (AF_LLM_WORKERS), "
+               f"{total} candidate(s)")
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_work, fd): fd for fd in findings}
         for fut in as_completed(futs):
@@ -672,7 +674,7 @@ def _judge_concurrent(findings: list[F.Finding], cache: dict, tag: str,
             except Exception as e:              # noqa: BLE001
                 _error(fd, e, audit=getattr(e, "triage_audit", None))
                 i = _tick()
-                on_log(f"  [{i}/{total}] ★ LLM 失败 {fd.sink_uri}:{fd.sink_line} — {e}")
+                on_log(f"  [{i}/{total}] ★ LLM call failed {fd.sink_uri}:{fd.sink_line} - {e}")
                 continue
             _apply(fd, r)
             i = _tick()

@@ -50,9 +50,9 @@ for path, want, why in CASES:
     got = _is_exempt_path(path)
     ok = (got == want)
     bad += (not ok)
-    print("  %s %-42s 期望=%-5s 实际=%-5s  %s"
+    print("  %s %-42s expected=%-5s got=%-5s  %s"
           % ("OK  " if ok else "FAIL", path, want, got, why))
 
 print()
-print("失败 %d / %d" % (bad, len(CASES)))
+print("%d of %d failed" % (bad, len(CASES)))
 sys.exit(1 if bad else 0)

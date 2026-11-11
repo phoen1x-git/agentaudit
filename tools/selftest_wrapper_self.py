@@ -43,11 +43,11 @@ def chk(desc, got, want):
     ok = (got == want)
     if not ok:
         BAD += 1
-    print("  %s %-54s 期望=%-22s 实际=%s"
+    print("  %s %-54s expected=%-22s got=%s"
           % ("OK  " if ok else "FAIL", desc, want, got))
 
 
-print("=== A. _wrapper_names 排除自身与异常构造 ===")
+print("=== A. _wrapper_names leaves out itself and exception constructors ===")
 CASES = [
     # (说明, 端点 unparse 结果, self_name, 期望 names)
     ("★缺陷A: def 行自己带 request 形参",
@@ -88,7 +88,7 @@ for desc, src, sn, want in CASES:
     chk(desc, got, want)
 
 print()
-print("=== B. 端到端：那个 /chat 端点不该被认成有鉴权 ===")
+print("=== B. end to end: that /chat endpoint must not count as authenticated ===")
 SRC = "\n".join([
     "from fastapi import FastAPI, HTTPException",
     "app = FastAPI(title='Sample Agent', version='0.2.0')",
@@ -115,10 +115,10 @@ n = res["inconsistent_auth"]["n_hits"]
 chk("inconsistent_auth（应 0：/chat 没鉴权且不该引爆 /conversations）", n, 0)
 if n:
     for h in res["inconsistent_auth"]["hits"]:
-        print("       误报: %s:%s" % (h["file"], h["line"]))
+        print("       false positive at %s:%s" % (h["file"], h["line"]))
 
 print()
-print("=== C. 反向档：真鉴权端点仍要被认出来（别修过头）===")
+print("=== C. reverse case: real auth is still recognised (do not over-fix)===")
 # ★ 用字符串拼接而不是三引号嵌套 —— 嵌套引号会被外层截断，
 #   我第一版就是这么写的，结果 analyze() 报 0，误以为规则坏了。
 SRC2 = "\n".join([
@@ -143,15 +143,15 @@ SRC2 = "\n".join([
 ])
 res2, _ = A.analyze(SRC2, "r.py")
 h2 = res2["inconsistent_auth"]
-print("  inconsistent_auth 命中 %d 处（期望 1，且是 /b）" % h2["n_hits"])
+print("  inconsistent_auth hit %d place(s) (expected 1, and it should be /b)" % h2["n_hits"])
 for hh in h2["hits"]:
     print("       %s:%s  %s" % (hh["file"], hh["line"], hh["text"]))
 ok = (h2["n_hits"] == 1 and "b" in (h2["hits"][0]["text"] or ""))
 if not ok:
     BAD += 1
-print("  %s 反向档：真鉴权端点被认出来、无鉴权的那个被报出来"
+print("  %s reverse case: the authenticated endpoint is recognised, the other one is reported"
       % ("OK  " if ok else "FAIL"))
 
 print()
-print("失败 %d" % BAD)
+print("failed %d" % BAD)
 sys.exit(1 if BAD else 0)

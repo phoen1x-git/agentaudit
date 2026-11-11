@@ -261,8 +261,8 @@ def _selftest() -> int:
     second = apply_unknown_downgrade([f])
     idem = (f.ai_verdict == "needs_human" and not second)
     ok += idem
-    print(f"  {'✅' if idem else '❌'} {'幂等（跑第二遍不再改）':32} → {f.ai_verdict}")
-    print(f"\n★ 自测 {ok}/{len(cases) + 1} 通过")
+    print(f"  {'✅' if idem else '❌'} {'idempotent (a second run changes nothing)':32} → {f.ai_verdict}")
+    print(f"\n★ self-test: {ok}/{len(cases) + 1} passed")
     return 0 if ok == len(cases) + 1 else 1
 
 

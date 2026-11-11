@@ -68,17 +68,27 @@ def kernel_version() -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="把一轮扫描投影成 candidates/v1（JSONL）")
-    ap.add_argument("--round", required=True, help="轮次目录，里面要有 findings.json")
-    ap.add_argument("--repo", required=True, help="owner/name，靶的仓库身份")
-    ap.add_argument("--commit", default="", help="40 位 sha；缺省从 --src-root 的 git 取，取不到写全 0")
-    ap.add_argument("--src-root", default="", help="靶源码根，用来读 sink 原文和算 file_sha256")
+    ap = argparse.ArgumentParser(description="project one scan round into candidates/v1 (JSONL)")
+    ap.add_argument("--round", required=True,
+                    help="round directory, which must contain findings.json")
+    ap.add_argument("--repo", required=True,
+                    help="owner/name: the repository identity of the target")
+    ap.add_argument("--commit", default="",
+                    help="40-character sha; default: read from git at --src-root, "
+                         "or write all zeroes if that fails")
+    ap.add_argument("--src-root", default="",
+                    help="source root of the target: used to read the sink line and "
+                         "compute file_sha256")
     ap.add_argument("--entry-kind", default="", choices=("",) + C.ENTRY_KINDS,
-                    help="人工指定整轮的入口形态（覆盖自动判）。不填则逐条按候选所在文件判，需要 --src-root")
+                    help="set the entry kind for the whole round, overriding the automatic "
+                         "judgement. Left empty, it is decided per candidate from "
+                         "the file it is in, which needs --src-root")
     ap.add_argument("--entry-auth", default="unknown", choices=C.ENTRY_AUTH)
-    ap.add_argument("--entry-value", default="", help="http 给 'POST /chat'；mcp 给 tool 名")
+    ap.add_argument("--entry-value", default="",
+                    help="for http, something like 'POST /chat'; for mcp, the tool name")
     ap.add_argument("--only-project", default="",
-                    help="一轮里混了多个项目时，只取这一个（其余丢弃）。不填则多项目直接报错")
+                    help="when a round mixes several projects, keep only this one and drop the "
+                         "rest. Left empty, a mixed round is an error")
     ap.add_argument("--trace-level", default="full", choices=C.TRACE_LEVELS)
     ap.add_argument("--backend-name", default="codeql")
     ap.add_argument("--backend-version", default="")
@@ -88,17 +98,17 @@ def main() -> int:
     rd = Path(a.round)
     fj = rd / "findings.json"
     if not fj.exists():
-        raise SystemExit(f"{fj} 不存在：--round 要指到轮次目录")
+        raise SystemExit(f"{fj} does not exist: --round must point at a round directory")
 
     rows = json.loads(fj.read_text(encoding="utf-8"))
     if not isinstance(rows, dict):
-        raise SystemExit(f"{fj} 不是 {{fingerprint: row}} 结构")
+        raise SystemExit(f"{fj} is not a {{fingerprint: row}} mapping")
 
     projects = sorted({(v.get("project") or "") for v in rows.values()} - {""})
     if a.only_project:
         rows = {k: v for k, v in rows.items() if (v.get("project") or "") == a.only_project}
         if not rows:
-            raise SystemExit("--only-project %s 在这一轮里一条都没有" % a.only_project)
+            raise SystemExit("--only-project %s matched nothing in this round" % a.only_project)
         projects = [a.only_project]
     if len(projects) > 1:
         raise SystemExit(
@@ -180,9 +190,11 @@ def main() -> int:
         "skip_reasons": skipped[:3],
     }, ensure_ascii=False, indent=1))
     if commit == C.UNKNOWN_COMMIT:
-        print("[warn] 取不到 commit，写的是四十个 0（版本未知）", file=sys.stderr)
+        print("[warn] no commit available; writing forty zeroes (version unknown)",
+          file=sys.stderr)
     if disagree:
-        print("[warn] 有 %d 条人工指定的形态与自动判不一致（见 entry_kind_notes）" % disagree,
+        print("[warn] %d hand-set kind(s) disagree with the automatic judgement "
+              "(see entry_kind_notes)" % disagree,
               file=sys.stderr)
     return 0
 

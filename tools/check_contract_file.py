@@ -13,7 +13,7 @@ V = jsonschema.Draft7Validator(schema)
 path = Path(sys.argv[1])
 rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
 errs = [(r.get("file"), r.get("line"), e.message) for r in rows for e in V.iter_errors(r)]
-print("条数 %d ｜ schema 错 %d" % (len(rows), len(errs)))
+print("%d row(s) | %d schema error(s)" % (len(rows), len(errs)))
 for f, l, m in errs[:5]:
     print("  X %s:%s %s" % (f, l, m))
 
@@ -25,7 +25,7 @@ for r in rows:
           % (r["file"][-42:], r["line"], r["entry"]["kind"], s.get("kind") or "-",
              s.get("via") or "-", (s.get("evidence") or "")[:60]))
 
-print("\n--- profile.kind 是否都等于 entry.kind ---")
+print("\n--- does every profile.kind match entry.kind ---")
 bad = [r["file"] for r in rows
        if (r.get("entry_profile") or {}).get("kind") not in (None, r["entry"]["kind"])]
-print("不一致：%d" % len(bad))
+print("mismatched: %d" % len(bad))

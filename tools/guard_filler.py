@@ -519,14 +519,15 @@ def to_case_shape(filled: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="自动填 guards_relevant（静态，只看源码窗口）")
-    ap.add_argument("--root", required=True, help="源码根目录")
-    ap.add_argument("--file", required=True, help="候选所在文件（相对 root）")
-    ap.add_argument("--line", type=int, required=True, help="sink 行号")
+    ap.add_argument("--root", required=True, help="source root")
+    ap.add_argument("--file", required=True,
+                    help="file the candidate is in, relative to root")
+    ap.add_argument("--line", type=int, required=True, help="line number of the sink")
     ap.add_argument("--value", action="append", default=None,
                     help="危险实参的变量名，可给多次；不给则从 sink 调用实参自动取")
     ap.add_argument("--for-case", action="store_true",
                     help="只输出 schema v2 认得的字段（去掉 direction/expression），可直接填进案卷")
-    ap.add_argument("--out", help="把结果写成 JSON")
+    ap.add_argument("--out", help="write the result as JSON")
     a = ap.parse_args()
 
     out = fill(a.root, a.file, a.line, a.value)
@@ -535,7 +536,7 @@ def main() -> int:
     text = json.dumps(out, ensure_ascii=False, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")
-        print(f"写入 {a.out}")
+        print(f"wrote {a.out}")
     else:
         print(text)
     return 0

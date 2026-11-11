@@ -111,11 +111,10 @@ CI builds it and runs a smoke test on every push.
 
 | Command | What it does |
 |---|---|
+| `agentaudit doctor` | say what this machine can and cannot do: dependency, CodeQL, key, where output lands |
 | `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
 | `agentaudit scan` | scan a target: `--demo`, `--path DIR`, `--repo OWNER/NAME` |
 | `agentaudit explain <round>` | show why a candidate was reported |
-| `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
-| `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
 | `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
 | `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
 | `agentaudit serve <round>` | read a round in a browser (localhost only) |
@@ -128,8 +127,7 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit selftest` | run the rule self-tests |
 | `agentaudit validate` | check `core/config/*.yml` |
 | `agentaudit log` | show or export the local scan statistics |
-| `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo |
-
+| `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo. `screen --profile FILE` takes your own criteria instead of the defaults |
 ### The file another tool can read
 
 `agentaudit candidates out/round-x --repo owner/name --out c.jsonl` projects a round into

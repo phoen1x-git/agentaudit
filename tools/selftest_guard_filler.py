@@ -111,7 +111,7 @@ def sink_line_of(path: Path, func: str) -> int:
                     name = G._call_name(sub)
                     if name in ("eval", "open"):
                         return sub.lineno
-    raise AssertionError(f"夹具里没找到 {func} 的 sink")
+    raise AssertionError(f"the fixture has no sink for {func}")
 
 
 def main() -> int:
@@ -130,21 +130,21 @@ def main() -> int:
     def verdicts(rows_):
         return str([(x["location"], x["kind"], x["verdict"]) for x in rows_])
 
-    print("[1] 恒等转换必须判 bogus")
+    print("[1] an identity transform is bogus")
     got, _, sl = rows("identity_str")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("str(payload) 判 bogus", bool(hit) and hit[0]["verdict"] == "bogus", verdicts(got))
     rec("str 的 why 里点名「对字符串是恒等」", bool(hit) and "恒等" in hit[0]["why"],
         hit[0]["why"][:60] if hit else "")
 
-    print("[2] 真净化判 real，且 why 要提「抛异常本身可能是 DoS」")
+    print("[2] a real sanitizer is real, and why must say that throwing can itself be a DoS")
     got, _, sl = rows("real_float")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("float(payload) 判 real", bool(hit) and hit[0]["verdict"] == "real", verdicts(got))
     rec("real 的 why 不许让下游读成「安全」", bool(hit) and "DoS" in hit[0]["why"],
         hit[0]["why"][:70] if hit else "")
 
-    print("[3] 只判存在性 = 假守卫（CASE-0001 那条）")
+    print("[3] an existence check is not a guard")
     got, _, sl = rows("exist_only")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("os.path.isfile 判 bogus", bool(hit) and hit[0]["verdict"] == "bogus", verdicts(got))
@@ -153,40 +153,40 @@ def main() -> int:
     rec("同时抓到了上游的 os.path.join", any(x["location"] == at(sl, 2) for x in got),
         str([x["location"] for x in got]))
 
-    print("[4] 字面量白名单判 real")
+    print("[4] a literal allowlist is real")
     got, _, sl = rows("whitelist")
     # 夹具里 `if` 与 sink 之间隔着 `return None`，所以是往上第 2 行。
     # ★ 这条断言我改错过两次 —— 手写行偏移很容易错位，测试自己也该被怀疑。
     hit = [x for x in got if x["location"] == at(sl, 2)]
     rec("`x not in (...)` 判 real", bool(hit) and hit[0]["verdict"] == "real", verdicts(got))
 
-    print("[5] 不认识的函数一律 unknown，不许猜")
+    print("[5] an unknown function stays unknown; do not guess")
     got, _, sl = rows("unknown_func")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("mystery_transform 判 unknown", bool(hit) and hit[0]["verdict"] == "unknown", verdicts(got))
     rec("unknown 的 why 写明「无法判断」而不是沉默", bool(hit) and "无法判断" in hit[0]["why"],
         hit[0]["why"][:70] if hit else "")
 
-    print("[6] sink 自身那一行不算它的守卫")
+    print("[6] the sink's own line is not its guard")
     got, r, sl = rows("sink_self")
     rec("`payload = eval(payload)` 没被报成 transform",
         not any(x["location"] == at(sl) for x in got), str([x["location"] for x in got]))
     rec("结果里如实记了「同行嵌套转换未纳入」",
         any("同一行内" in u for u in r["unresolved"]), str(r["unresolved"])[:80])
 
-    print("[7] 别名族要能传三层")
+    print("[7] an alias chain carries through three levels")
     got, _, sl = rows("alias_chain")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("a→b→c 的末端 str() 被找到", bool(hit), verdicts(got))
     rec("constrains_value 是末端变量 c 而不是 payload",
         bool(hit) and hit[0]["constrains_value"] == "c", hit[0]["constrains_value"] if hit else "")
 
-    print("[8] 模式是变量时判 unknown（看不到模式就不许说白名单）")
+    print("[8] a variable pattern is unknown: you cannot call it an allowlist if you cannot see it")
     got, _, sl = rows("unknown_if")
     hit = [x for x in got if x["location"] == at(sl, 1)]
     rec("re.match(SOME_VAR, ...) 判 unknown", bool(hit) and hit[0]["verdict"] == "unknown", verdicts(got))
 
-    print("[9] 真类型约束判 real，并提醒 bool 的坑")
+    print("[9] a real type constraint is real, and the bool trap is named")
     got, _, sl = rows("real_isinstance")
     # 夹具里 `if` 与 sink 之间还隔了一行 `return None`，所以是往上第 2 行
     hit = [x for x in got if x["location"] == at(sl, 2)]
@@ -194,20 +194,20 @@ def main() -> int:
     rec("real 的 why 提 isinstance(True, int)", bool(hit) and "True" in hit[0]["why"],
         hit[0]["why"][:70] if hit else "")
 
-    print("[10] 一条守卫都没有时，要说清「这不等于没有守卫」")
+    print("[10] with no guard found, say so: that does not mean there is none")
     got, r, sl = rows("no_guard")
     rec("没有相关语句时 guards_relevant 为空", got == [], str(got))
     rec("why_empty 提醒可能是来源在调用方", "不等于" in (r.get("why_empty") or ""),
         (r.get("why_empty") or "")[:80])
 
-    print("[11] 别的函数的守卫不能串进来")
+    print("[11] another function's guard must not leak in")
     got, _, sl = rows("identity_str")
     others = {at(rows("real_float")[2], 0), at(rows("exist_only")[2], 1), at(rows("whitelist")[2], 1)}
     rec("结果里不含其它函数的行", not any(x["location"] in others for x in got),
         str([x["location"] for x in got]))
     rec("条数不超过 MAX_ROWS", len(got) <= G.MAX_ROWS, str(len(got)))
 
-    print("[12] to_case_shape 必须剔掉 schema 不认的两个字段")
+    print("[12] to_case_shape drops the two fields the schema rejects")
     _, r, _ = rows("real_float")
     case = G.to_case_shape(r)
     allowed = {"location", "kind", "constrains_value", "verdict", "why"}
@@ -219,7 +219,7 @@ def main() -> int:
             for row in case["guards_relevant"]),
         str([row["why"][:6] for row in case["guards_relevant"]]))
 
-    print("[13] 文件不存在/语法错时给错误，不许静默返回空")
+    print("[13] a missing file or a syntax error is an error, not an empty result")
     r = G.fill(tmp, "nope.py", 1)
     rec("文件不存在时报 error", bool(r.get("error")), str(r.get("error")))
     (tmp / "broken.py").write_text("def f(:\n  pass\n", encoding="utf-8")
@@ -227,8 +227,8 @@ def main() -> int:
     rec("语法错时报 error 并带行号", bool(r2.get("error")) and "行" in r2["error"], str(r2.get("error")))
 
     print()
-    print(f"通过 {OK} 项，失败 {BAD} 项")
-    print("全部通过" if BAD == 0 else "有失败")
+    print(f"passed {OK}, failed {BAD}")
+    print("all passed" if BAD == 0 else "there are failures")
     return 0 if BAD == 0 else 1
 
 

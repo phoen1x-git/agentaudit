@@ -27,11 +27,30 @@ from . import cfg as CFG
 # ----------------------------------------------------------------------------
 # CodeQL 可执行文件定位（默认在本项目 _tools 下；可用环境变量覆盖）
 # ----------------------------------------------------------------------------
-_HERE = Path(__file__).resolve().parent          # .../个人项目_全自动挖掘/core
-_PROJ = _HERE.parent                              # .../个人项目_全自动挖掘
-_WORKSPACE = _PROJ.parent                         # .../网安项目
+_HERE = Path(__file__).resolve().parent          # .../agentaudit/core
+_PROJ = _HERE.parent                              # .../agentaudit
+_WORKSPACE = _PROJ.parent                         # the directory the checkout sits in
 
-DEFAULT_CODEQL = _WORKSPACE / "_tools" / "codeql" / "codeql.exe"
+
+def _default_codeql() -> Path:
+    """Where `scripts/setup.sh` puts the CLI: `<checkout>/_tools/codeql`.
+
+    ★ It used to point one level above the checkout, which was right in the directory this
+      code was extracted from and wrong everywhere else. The failure was quiet and expensive:
+      setup.sh installed CodeQL into the repository, the frontend looked for it in the parent
+      directory, did not find it, and fell back to the offline path. The scan finished, said
+      nothing, and simply found less. `agentaudit doctor` now prints the path it will use, so
+      the two can be compared.
+    """
+    base = _PROJ / "_tools" / "codeql"
+    for name in ("codeql.exe", "codeql"):
+        candidate = base / name
+        if candidate.exists():
+            return candidate
+    return base / ("codeql.exe" if os.name == "nt" else "codeql")
+
+
+DEFAULT_CODEQL = _default_codeql()
 # ★★ 优先用**我们自己的包**（core/ql，由 `core/gen_ql.py` 从 sinks.yml 生成）。
 #    没有它才退回论文原包 —— 那时 sinks.yml 只是个摆设。
 _KERNEL_QL = _PROJ / "core" / "ql"
@@ -78,24 +97,24 @@ def run_analyze(db_dir: str, out_path: str, on_log: Callable[[str], None] = prin
     exe = codeql_exe()
     ql = ql_root or ql_dir()
     if not os.path.exists(exe):
-        on_log(f"[FAIL] 找不到 codeql: {exe}")
+        on_log(f"[FAIL] codeql not found: {exe}")
         return False
     names = QUERIES if queries is None else queries
     qpaths = [os.path.join(ql, q) for q in names]
     missing = [q for q in qpaths if not os.path.exists(q)]
     if missing:
-        on_log(f"[FAIL] 缺规则文件: {missing}")
+        on_log(f"[FAIL] missing rule file(s): {missing}")
         return False
     cmd = [exe, "database", "analyze", db_dir, *qpaths,
            "--format=csv", f"--output={out_path}", f"--search-path={ql}"]
     on_log("[cmd] " + " ".join(f'"{c}"' if " " in c else c for c in cmd[1:]))
     p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if p.returncode != 0:
-        on_log(f"[FAIL] codeql 退出码 {p.returncode}")
+        on_log(f"[FAIL] codeql exited {p.returncode}")
         tail = (p.stdout or "")[-1500:] + (p.stderr or "")[-1500:]
         on_log(tail)
         return False
-    on_log("[ok] 结果已写入 " + out_path)
+    on_log("[ok] results written to " + out_path)
     return True
 
 
@@ -112,11 +131,13 @@ def run_and_parse_argsrc(db_dir: str, project: str,
         return {}
     ql = ql_dir()
     if not os.path.exists(os.path.join(ql, ARG_QUERY)):
-        on_log(f"[argsrc] 跳过：包里没有 {ARG_QUERY}（用 --no-dataflow 可显式关）")
+        on_log(f"[argsrc] skipped: the pack has no {ARG_QUERY} "
+           "(--no-dataflow turns it off explicitly)")
         return {}
     tmp = os.path.join(tempfile.gettempdir(), f"af_{project}_argsrc.csv")
     if not run_analyze(db_dir, tmp, on_log, queries=[ARG_QUERY]):
-        on_log("[argsrc] ★ 查询失败 → 本轮没有实参来源证据（判定层会照旧标 unknown）")
+        on_log("[argsrc] ★ the query failed, so this round has no argument-source "
+           "evidence; triage will report unknown as it did before")
         return {}
     prefix = _read_src_prefix(db_dir)
     idx: dict = {}
@@ -153,7 +174,8 @@ def run_and_parse_argsrc(db_dir: str, project: str,
                     "src_line": int(parts[5]) if parts[5].isdigit() else 0,
                     "src_text": parts[6],
                 })
-    on_log(f"[argsrc] 实参来源证据：{sum(len(v) for v in idx.values())} 行，"
+    on_log(f"[argsrc] argument-source evidence: {sum(len(v) for v in idx.values())} "
+           f"row(s), "
            f"覆盖 {len(idx)} 个 sink 位置")
     return idx
 
@@ -261,7 +283,8 @@ def parse_results(csv_path: str, project: str) -> list[F.Finding]:
                     chain=_chain_text(payload),
                 ))
     if bad:
-        print("[parse] ★ %d 行不是本版查询的输出（JSON 解析失败），已跳过" % bad)
+        print("[parse] ★ %d row(s) are not this query version's output "
+              "(JSON parse failed); skipped" % bad)
     return out
 
 
@@ -338,13 +361,13 @@ def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
                 with_src += 1
         kept.append(fd)
     if dropped:
-        on_log(f"[filter] 路径过滤掉了 {dropped} 条（开关 path-filter）")
+        on_log(f"[filter] the path filter dropped {dropped}")
     if argsrc:
-        on_log(f"[argsrc] {with_src} 条 finding 拿到了实参来源证据")
+        on_log(f"[argsrc] {with_src} finding(s) got argument-source evidence")
     if kept:
         from collections import Counter
         kinds = Counter((f.entry_profile or {}).get("kind", "unknown") for f in kept)
-        on_log("[entry] 形态分布 " + " / ".join("%s=%d" % (k, v) for k, v in kinds.most_common())
+        on_log("[entry] entry kinds: " + " / ".join("%s=%d" % (k, v) for k, v in kinds.most_common())
                + "（按候选所在文件判，不是按仓库 import 判）")
         # ★ 入口薄、实现厚：这些候选文件本身是库，但同仓库的入口文件把它接进去了。
         #   强证据（有 import 语句）和弱证据（只是同目录）分开数，不许混成一个数。
@@ -352,7 +375,8 @@ def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
         if sibs:
             strong = sum(1 for s in sibs if s.get("via") == "import")
             by_kind = Counter(s.get("kind", "?") for s in sibs)
-            on_log("[entry] 其中 %d 条是「库文件被入口接进去」（import 强证据 %d / 同目录弱证据 %d）：%s"
+            on_log("[entry] %d of them are library files pulled in by an entry point "
+           "(import: strong %d / same directory: weak %d): %s"
                    % (len(sibs), strong, len(sibs) - strong,
                       " / ".join("%s=%d" % (k, v) for k, v in by_kind.most_common())))
     return kept
@@ -385,8 +409,9 @@ def run_db_to_findings(db_dir: str, project: str,
         #    实测踩到：CodeQL 的 IMB 缓存目录被另一个进程锁住 → 退出码 2 →
         #    却记成"命中 0 条"，在基准上表现为**假漏检**（凭空压低召回率）。
         # 这是同一类"失败伪装成结论"的问题（参 的截断坑）。
-        raise RuntimeError(f"CodeQL 分析失败（{project}）：查询没跑成，不是『没有结果』")
+        raise RuntimeError(f"CodeQL analysis failed ({project}): the query did not run, "
+                           "which is not the same as no results")
     raw = parse_results(tmp, project)
-    on_log(f"[parse] 原始结果 {len(raw)} 条")
+    on_log(f"[parse] {len(raw)} raw result(s)")
     argsrc = run_and_parse_argsrc(db_dir, project, on_log)
     return finalize(raw, db_dir, filters, on_log, argsrc=argsrc, src_fallback=src_fallback)

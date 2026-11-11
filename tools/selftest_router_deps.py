@@ -32,7 +32,7 @@ def chk(desc, got, want):
     ok = (got == want)
     if not ok:
         BAD += 1
-    print("  %s %-56s 期望=%-5s 实际=%s"
+    print("  %s %-56s expected=%-5s got=%s"
           % ("OK  " if ok else "FAIL", desc, want, got))
 
 
@@ -77,7 +77,7 @@ for desc, src, want in CASES:
     chk(desc, got, want)
 
 print()
-print("=== B. _router_var_of_deco（从装饰器反查 router 变量）===")
+print("=== B. _router_var_of_deco (recover the router variable from the decorator)===")
 DECO = [
     ("@router.get('/x')", "router"),
     ("@self.app.get('/x')", "app"),          # ★ 取最后一段
@@ -89,7 +89,7 @@ for code, want in DECO:
     chk(code, _router_var_of_deco(d), want)
 
 print()
-print("=== C. 端到端：真实形态不应被报成「无鉴权」===")
+print("=== C. end to end: a real shape must not be reported as unauthenticated===")
 import ast_criteria as A  # noqa: E402
 
 SRC = '''
@@ -113,9 +113,9 @@ n_inc = res["inconsistent_auth"]["n_hits"]
 n_un = res["unauth_endpoint"]["n_hits"]
 chk("inconsistent_auth（router 级鉴权后应全有 → 0）", n_inc, 0)
 chk("unauth_endpoint（同上）", n_un, 0)
-print("     规则标签:", res["inconsistent_auth"]["label"])
-print("     规则标签:", res["unauth_endpoint"]["label"])
+print("     rule label:", res["inconsistent_auth"]["label"])
+print("     rule label:", res["unauth_endpoint"]["label"])
 
 print()
-print("失败 %d" % BAD)
+print("failed %d" % BAD)
 sys.exit(1 if BAD else 0)

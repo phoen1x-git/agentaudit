@@ -497,6 +497,29 @@ def main() -> int:
         _log(f"  raw     {rd / 'results.csv'}  (the CodeQL frontend's own output)")
     _log("=" * 74)
 
+    # What to do next. Listing the output files answers "where did it go", which is not the
+    # question a first-time reader has: they have a number they cannot interpret yet.
+    # The path is shortened to how a person would type it, since these are commands to copy.
+    try:
+        shown = Path(os.path.relpath(rd)).as_posix()   # forward slashes: they paste anywhere
+        if shown.startswith(".."):
+            shown = Path(rd).as_posix()
+    except ValueError:            # different drive on Windows
+        shown = Path(rd).as_posix()
+    _log("")
+    _log("next:")
+    _log(f"  agentaudit explain {shown}")
+    _log("      why a candidate was reported: the surrounding source, the call chain, "
+         "the guards")
+    _log(f"  agentaudit serve {shown}")
+    _log("      the same round in a browser")
+    if not a.llm:
+        _log("")
+        _log("  A candidate is a place worth looking at, not a finding. These checks say a")
+        _log("  dangerous call happens here; they do not say it can be reached from outside")
+        _log("  or that nothing guards it. `--llm` adds that judgement, and needs a key")
+        _log("  (`agentaudit doctor` says whether this machine has one).")
+
     if a.serve and a.fail_on == "none":
         # Hand over to the local viewer. Note it does not return until Ctrl-C, so it is not
         # combined with --fail-on (which is meant for a non-interactive build step).

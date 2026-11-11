@@ -131,7 +131,7 @@ def _one_line(s: str) -> str:
 
 def _check(value: str, allowed: tuple[str, ...], field: str) -> str:
     if value not in allowed:
-        raise ValueError(f"{field}={value!r} 不在 {allowed} 里")
+        raise ValueError(f"{field}={value!r} is not one of {allowed}")
     return value
 
 
@@ -151,7 +151,8 @@ def _entry_profile(prof: dict | None, entry_kind: str) -> dict:
         # ★ 与其让消费者去核两个 kind 一不一致，不如在这里就不许写出来。
         #   出现过一次真实情况：人工 --entry-kind 覆盖了自动判，两者不同，
         #   那时正确的做法是**不写 profile**（见 tools/export_candidates.py），不是写一份拧的。
-        raise ValueError("entry_profile.kind=%s 与 entry.kind=%s 不一致" % (pk, entry_kind))
+        raise ValueError("entry_profile.kind=%s does not match entry.kind=%s"
+                         % (pk, entry_kind))
     out = {
         "kind": pk,
         "reach": (prof.get("reach") or "").strip(),
@@ -171,7 +172,8 @@ def _entry_profile(prof: dict | None, entry_kind: str) -> dict:
                 % (via, strength))
         if not (sib.get("evidence") or "").strip():
             # 没有原文就不是证据，只是猜测。弱证据有它固定的话术，强证据必须有那句 import。
-            raise ValueError("sibling_entry 缺 evidence：说不出是哪一行 import 就不要写成强证据")
+            raise ValueError("sibling_entry has no evidence: if you cannot name the import "
+                         "line, it is not strong evidence")
         s = {
             "kind": _check(sib.get("kind"), SIBLING_KINDS, "entry_profile.sibling_entry.kind"),
             "file": (sib.get("file") or "").replace("\\", "/"),
@@ -182,7 +184,7 @@ def _entry_profile(prof: dict | None, entry_kind: str) -> dict:
             if sib.get(k):
                 s[k] = _one_line(sib[k])
         if not s["file"]:
-            raise ValueError("entry_profile.sibling_entry 缺 file")
+            raise ValueError("entry_profile.sibling_entry has no file")
         out["sibling_entry"] = s
     return {k: v for k, v in out.items() if v}
 
@@ -201,11 +203,12 @@ def from_row(row: dict, *, repo: str, commit: str, entry_kind: str,
     line = int(row.get("line") or 0)
     func, qualname = split_sink(row.get("sink") or "")
     if not rel or line <= 0 or not func:
-        raise ValueError(f"行不完整：file={rel!r} line={line} sink={row.get('sink')!r}")
+        raise ValueError(f"incomplete row: file={rel!r} line={line} "
+                         f"sink={row.get('sink')!r}")
 
     text = source_line(src_root, rel, line) or _one_line(row.get("snippet") or "")
     if not text:
-        raise ValueError(f"{rel}:{line} 取不到 sink 那一行原文")
+        raise ValueError(f"{rel}:{line}: cannot read the sink's own line")
 
     rec: dict = {
         "schema": SCHEMA,
@@ -276,7 +279,7 @@ def write_jsonl(path, records: list[dict]):
     ids = [r["candidate_id"] for r in records]
     dupes = {i for i in ids if ids.count(i) > 1}
     if dupes:
-        raise ValueError(f"输出里有重复 candidate_id：{sorted(dupes)[:3]}")
+        raise ValueError(f"duplicate candidate_id in the output: {sorted(dupes)[:3]}")
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w", encoding="utf-8", newline="\n") as fh:
@@ -295,5 +298,5 @@ def read_jsonl(path) -> list[dict]:
             try:
                 out.append(json.loads(line))
             except json.JSONDecodeError as e:
-                raise ValueError(f"{path}:{n}: 不是 JSON（{e}）") from e
+                raise ValueError(f"{path}:{n}: not JSON ({e})") from e
     return out

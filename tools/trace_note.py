@@ -350,23 +350,25 @@ def render_text(note):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='给一条候选生成 trace_note（语法级，不追运行时）')
-    ap.add_argument('--root', help='源码根目录')
-    ap.add_argument('--file', help='相对源码根的路径')
-    ap.add_argument('--line', type=int, help='候选所在行')
-    ap.add_argument('--jsonl', help='契约候选 jsonl（配合 --id）')
+    ap.add_argument('--root', help='source root')
+    ap.add_argument('--file', help='path relative to the source root')
+    ap.add_argument('--line', type=int, help='line the candidate is on')
+    ap.add_argument('--jsonl', help='candidates.jsonl (use with --id)')
     ap.add_argument('--id', help='candidate_id')
-    ap.add_argument('--out', help='写 JSON 到文件')
+    ap.add_argument('--out', help='write the JSON to a file')
     ap.add_argument('--max-seconds', type=float, default=20.0)
     ap.add_argument('--max-nodes', type=int, default=3_000_000,
                     help='AST 节点预算；默认给到 300 万，OSWorld 这种量级才刚够（50 万会在半路截断）')
     ap.add_argument('--max-files', type=int, default=2000)
-    ap.add_argument('--excerpt', type=int, default=8, help='每段源码窗口行数')
-    ap.add_argument('--job', default='', help='串行任务名，会记进 note（便于对账）')
+    ap.add_argument('--excerpt', type=int, default=8,
+                    help='lines of source around each hit')
+    ap.add_argument('--job', default='',
+                    help='name of the batch, recorded in the note so it can be reconciled')
     args = ap.parse_args(argv)
 
     if args.jsonl:
         if not args.id:
-            ap.error('--jsonl 要给 --id')
+            ap.error('--jsonl needs --id')
         rec = None
         for row in Path(args.jsonl).read_text(encoding='utf-8').splitlines():
             if not row.strip():
@@ -376,7 +378,7 @@ def main(argv=None):
                 rec = obj
                 break
         if rec is None:
-            ap.error('jsonl 里没有这个 candidate_id：%s' % args.id)
+            ap.error('no such candidate_id in the jsonl: %s' % args.id)
         rel = args.file or rec.get('file')
         line = args.line or rec.get('line')
         root = args.root or rec.get('src_root') or ''
@@ -384,7 +386,7 @@ def main(argv=None):
         rel, line, root = args.file, args.line, args.root
 
     if not (root and rel and line):
-        ap.error('要么给 --root/--file/--line，要么给 --jsonl/--id')
+        ap.error('give either --root/--file/--line, or --jsonl/--id')
 
     budget = SearchBudget(max_seconds=args.max_seconds, max_nodes=args.max_nodes, max_files=args.max_files)
     note = build_note(root, rel, line, budget=budget, excerpt_lines=args.excerpt)

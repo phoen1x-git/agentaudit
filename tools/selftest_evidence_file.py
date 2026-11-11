@@ -50,7 +50,7 @@ def hits_of(src, route):
 
 
 # ---------------------------------------------------------------- 1~3
-print("\n=== 1~3. file 必须是文件路径 / route 另存 / hit_files 对 ===")
+print("\n=== 1-3. file must be a path / the route kept apart / hit_files aligned ===")
 
 # 故意用「路由名和文件名不一样」的组合，否则测不出来
 res, mine, got = hits_of(
@@ -102,7 +102,7 @@ check("1.6 三个路由同文件 → hit_files 只有 1 项（files_top 不会�
       "实际=%r" % (hf,))
 
 # ---------------------------------------------------------------- 4
-print("\n=== 4. 每个命中的 file 都等于传进去的路径（多文件批）===")
+print("\n=== 4. every hit's file equals the path that was passed in (multi-file batch)===")
 
 two = {
     "pkg/svc/alpha_api.py":
@@ -131,7 +131,7 @@ check("4.3 hit_files 两个文件都在",
       "实际=%r" % sorted(res3["unauth_endpoint"]["hit_files"]))
 
 # ---------------------------------------------------------------- 5
-print("\n=== 5. 形式二（裸调用 app.post('/x', handler)）**必须保持关闭** ===")
+print("\n=== 5. the second form (a bare app.post('/x', handler)) **must stay off** ===")
 #★★★★★★ 的教训：这条分支原来匹配不到东西（死分支），
 #   我把它改活之后跑全量 29 项目，114 处业务命中**全是字典取键**
 #   （blueprint.get('topology') / server.get('name') / route.get('target')）。
@@ -154,7 +154,7 @@ check("5.2 同理：web.get('title') 这种两参数取键也不报",
                   "t = web.get('title', None)\n", "/none")[1]) == 0)
 
 # ---------------------------------------------------------------- 6
-print("\n=== 6. 反向：不能因为修了记录层而多报/少报 ===")
+print("\n=== 6. reverse: fixing the recording layer must not change the count ===")
 # 有鉴权 → 一处都不该报
 res5, mine5, got5 = hits_of(
     "from fastapi import APIRouter, Depends\n"
@@ -188,10 +188,10 @@ check("6.2 同一个文件里没鉴权的 /open 仍然要报（别修过头）",
 
 # ---------------------------------------------------------------- 汇总
 print("\n" + "=" * 70)
-print("通过 %d / %d" % (len(PASS), len(PASS) + len(FAIL)))
+print("%d of %d passed" % (len(PASS), len(PASS) + len(FAIL)))
 if FAIL:
-    print("失败：")
+    print("failed:")
     for f in FAIL:
         print("  - " + f)
     sys.exit(1)
-print("全部通过 ✓")
+print("all passed")

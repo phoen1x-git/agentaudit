@@ -57,7 +57,7 @@ def build(root: Path) -> None:
         "def handler(x):\n    return eval(x)\n", encoding="utf-8")
 
 
-print("caller_status 自测")
+print("caller_status self-test")
 
 with tempfile.TemporaryDirectory() as td:
     root = Path(td)
@@ -103,5 +103,5 @@ with tempfile.TemporaryDirectory() as td:
         r["status"] != "framework_callback", str(r))
 
 print("-" * 60)
-print("结果：%d 通过 / %d 失败" % (n_pass, n_fail))
+print("result: %d passed / %d failed" % (n_pass, n_fail))
 sys.exit(1 if n_fail else 0)

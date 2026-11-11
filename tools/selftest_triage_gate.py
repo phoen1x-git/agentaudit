@@ -43,7 +43,7 @@ LIB = {'kind': 'library', 'exposure': 'low', 'reach': '只有显式 import 的�
 SRC_UP = [{'i': 0, 'kind': 'param', 'src_file': 'a.py', 'src_line': 3, 'src_text': 'request', 'arg_text': 'x'}]
 SRC_LOCAL = [{'i': 0, 'kind': 'local', 'arg_text': 'lit'}]
 
-print('立卷门槛自测 —— 14 档')
+print('triage gate self-test - 14 cases')
 
 # 1. http + 危险动作 + 有上游 → 立案
 g = G.gate(mk(entry_profile=HTTP, arg_sources=SRC_UP))
@@ -99,5 +99,5 @@ rec('cli 有上游→立案 / 无上游→挡', g_ok['pass'] is True and g_no['p
     '%s / %s' % (g_ok['checks'], g_no['checks']))
 
 print('-' * 60)
-print('结果：%d 通过 / %d 失败' % (n_pass, n_fail))
+print('result: %d passed / %d failed' % (n_pass, n_fail))
 sys.exit(1 if n_fail else 0)

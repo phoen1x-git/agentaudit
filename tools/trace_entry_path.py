@@ -555,24 +555,25 @@ def trace(root: str | Path, rel_file: str, line: int, max_depth: int = 3) -> dic
 def main() -> int:
     ap = argparse.ArgumentParser(description="从 sink 往上追到入口，判断参数是不是外面给的")
     ap.add_argument("--root", required=True)
-    ap.add_argument("--file", required=True, help="相对源码根的路径")
+    ap.add_argument("--file", required=True,
+                    help="path relative to the source root")
     ap.add_argument("--line", type=int, required=True)
     ap.add_argument("--max-depth", type=int, default=3,
                     help="往上追几层（默认 3；1 = 只看直接调用方）")
-    ap.add_argument("--json", help="结果写成 JSON")
+    ap.add_argument("--json", help="write the result as JSON")
     a = ap.parse_args()
 
     r = trace(a.root, a.file, a.line, a.max_depth)
     print("sink   %s:%s" % (r["sink"]["file"], r["sink"]["line"]))
     if r.get("function"):
-        print("函数   %s(%s)%s" % (r["function"]["name"], ", ".join(r["function"]["params"]),
+        print("function %s(%s)%s" % (r["function"]["name"], ", ".join(r["function"]["params"]),
                                  ("  装饰器 " + str(r["function"]["decorators"]))
                                  if r["function"]["decorators"] else ""))
-    print("被污染 %s" % (", ".join(r.get("tainted_params") or []) or "（无）"))
+    print("tainted  %s" % (", ".join(r.get("tainted_params") or []) or "(none)"))
     print()
     for p in r.get("paths") or []:
         if p.get("status") == "entry":
-            print("  [%d] -> 入口 %s  %s:%s  %s" % (
+            print("  [%d] -> entry %s  %s:%s  %s" % (
                 p["depth"], p["entry_kind"], p["caller"]["file"], p["caller"]["line"],
                 p["caller"]["function"]))
         elif p.get("caller"):
@@ -584,12 +585,12 @@ def main() -> int:
         for k, v in (p.get("fed") or {}).items():
             print("         %-12s = %-40s %s" % (k, v, (p.get("arg_nature") or {}).get(k, "")))
     print()
-    print("判定   %s —— %s" % (r["verdict"].upper(), r["why"]))
-    print("层数   %d / 上限 %d" % (r.get("layers") or 0, a.max_depth))
+    print("verdict  %s - %s" % (r["verdict"].upper(), r["why"]))
+    print("depth    %d / limit %d" % (r.get("layers") or 0, a.max_depth))
     if a.json:
         Path(a.json).write_text(json.dumps(r, ensure_ascii=False, indent=1) + "\n",
                                 encoding="utf-8")
-        print("明细   %s" % a.json)
+        print("detail   %s" % a.json)
     return 0 if r["verdict"] == "external" else 2
 
 

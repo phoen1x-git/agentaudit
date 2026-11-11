@@ -77,5 +77,5 @@ if os.path.exists(DEP):
 else:
     print("(no cached sample source available; skipping the real-file section)")
 
-print("failed %d / %d" % (bad, len(CASES)))
+print("%d of %d failed" % (bad, len(CASES)))
 sys.exit(1 if bad else 0)

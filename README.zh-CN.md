@@ -107,11 +107,10 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 
 | 命令 | 做什么 |
 |---|---|
+| `agentaudit doctor` | 一屏说清这台机器能做什么：依赖、CodeQL、key、产物写在哪 |
 | `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
 | `agentaudit scan` | 扫一个目标：`--demo`、`--path 目录`、`--repo 用户名/仓库名` |
 | `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
-| `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
-| `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
 | `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
 | `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
 | `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
@@ -124,8 +123,7 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 | `agentaudit selftest` | 跑规则自测 |
 | `agentaudit validate` | 校验 `core/config/*.yml` |
 | `agentaudit log` | 查看 / 导出本机的扫描统计 |
-| `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库） |
-
+| `agentaudit targets` | 找并筛 GitHub 上的目标（给批量扫描用，不是单仓库）。`screen --profile 文件` 用你自己的条件代替默认值 |
 ### 别的工具能直接读的那份文件
 
 `agentaudit candidates out/round-x --repo 用户名/仓库名 --out c.jsonl` 把一轮投影成

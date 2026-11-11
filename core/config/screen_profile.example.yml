@@ -1,0 +1,45 @@
+# What you are looking for, in your own terms.
+#
+# Copy this file, edit it, and pass it to `agentaudit targets screen --profile your.yml`.
+# Without a profile, screening uses the defaults below plus `intent: report`, and every
+# user who runs it gets the same list. That is the point of this file: the filters are
+# a statement about the project you want to read next, not a universal truth.
+#
+# Unknown keys are an error rather than a shrug. A misspelled key in a config file is the
+# quiet kind of bug: the tool runs, ignores what you meant, and the output still looks like
+# an answer.
+
+# What kind of project you want to read. An empty list means any form.
+# Choose from: mcp, web, cli, library
+# Judged from topics and the description only, with no extra API request, so it is coarse.
+# It answers "is this the kind of thing I want", not "what shape is its attack surface".
+forms: []
+
+# What you intend to do with what you find. This narrows the thresholds below.
+#   report: you are going to report what you find upstream, so the project must be alive
+#           and unarchived, or nobody will act on the report
+#   fix:    you are going to patch it yourself, so it must have been touched recently
+#   study:  you are reading it to learn from its design, so an unmaintained or a very
+#           popular project is fine and the star ceiling is lifted entirely
+intent: report
+
+# Which languages the pipeline can actually read. The static frontend handles Python, and
+# CodeQL handles JavaScript behind --codeql-language. Anything else will be collected and
+# never analysed, which wastes your time rather than the tool's.
+languages: [python]
+
+# Star band, inclusive. High means the project has been audited by many people already;
+# low means it may be a toy or unmaintained.
+stars: [200, 5000]
+
+# How stale a project may be. `intent` can lower this further, never raise it.
+max_days_since_push: 183
+
+# Archived and forked projects are excluded by default. Turn either off if you know why
+# you want them: a fork can still be worth reading if the upstream is gone.
+skip_archived: true
+skip_fork: true
+
+# Skip projects this pipeline has already measured. The list lives outside the repository,
+# in core/config/known_targets.yml, because it names real projects.
+skip_known: true

@@ -338,18 +338,18 @@ def run_round_dir(rd: Path, on_log=print, only_verdict: str = "vuln") -> dict:
     rd = Path(rd)
     tsv = rd / "findings.tsv"
     if not tsv.exists():
-        on_log(f"  [upstream] 找不到 {tsv}，跳过")
+        on_log(f"  [upstream] no {tsv}; skipped")
         return {}
     rows = list(csv.DictReader(open(tsv, encoding="utf-8-sig"), delimiter="\t"))
     reps = [r for r in rows if (not only_verdict) or (r.get("ai_verdict") == only_verdict)]
     if not reps:
-        on_log(f"  [upstream] 本轮没有 {only_verdict} 候选，无需核实")
+        on_log(f"  [upstream] no {only_verdict} candidates this round; nothing to verify")
         (rd / "upstream.json").write_text(
             json.dumps({"_meta": {"skipped": f"no {only_verdict} candidates",
                                   "checked_at": time.strftime("%Y-%m-%d %H:%M:%S")}},
                        ensure_ascii=False, indent=1), encoding="utf-8")
         return {}
-    on_log(f"  [upstream] 核实 {len(reps)} 条（只查会报出去的）…")
+    on_log(f"  [upstream] verifying {len(reps)} (only the ones that would be reported) ...")
     res = run(rd, reps, on_log=on_log)
     (rd / "upstream.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     ok = sum(1 for v in res.values() if v.get("still_present") is True)
@@ -357,7 +357,7 @@ def run_round_dir(rd: Path, on_log=print, only_verdict: str = "vuln") -> dict:
     arch = sum(1 for v in res.values() if v.get("archived"))
     # ★★ 必须把"没查成"单列 —— 否则 0/0 看起来像"查过了，没人报过"
     norepo = sum(1 for v in res.values() if v.get("error"))
-    on_log(f"  [upstream] 上游仍存在 {ok} ｜ 上游已找不到 {gone} ｜ 仓库已归档 {arch} ｜ "
+    on_log(f"  [upstream] still upstream {ok} | gone upstream {gone} | archived {arch} | "
            f"★★ 没查成 {norepo}"
            + ("（★ 这 {0} 条**不许**当「未报」用）".format(norepo) if norepo else "")
            + " → upstream.json")
@@ -385,7 +385,7 @@ def run(rd: Path, findings: list[dict], on_log=print) -> dict:
             seen_repo[key] = r
             if r.get("error"):
                 # ★★ 没查成必须**出声**，而且不许和"查过了、上游没这文件"混为一谈
-                on_log(f"  [{proj}] ★★ 没查成：{r['error']}")
+                on_log(f"  [{proj}] ★★ could not check: {r['error']}")
             else:
                 flag = "★ 已归档" if r.get("archived") else "未归档"
                 on_log(f"  [{proj}] {r.get('repo')} default_branch={r.get('default_branch')} "
@@ -395,14 +395,14 @@ def run(rd: Path, findings: list[dict], on_log=print) -> dict:
         if r.get("still_present") is True:
             loc = r.get("path_present", fd["file"])
             moved = "" if loc == fd["file"] else f"  ★ 文件已挪到 `{loc}`"
-            on_log(f"    {fd['file']}: 上游仍在（现在第 {r.get('line_now')} 行）{moved}")
+            on_log(f"    {fd['file']}: still upstream (now at line {r.get('line_now')}) {moved}")
         elif r.get("still_present") is False:
             where = r.get("path_present") or r.get("path_now") or fd["file"]
-            on_log(f"    {fd['file']}: ★ 上游找不到该处（查了 {where}）")
+            on_log(f"    {fd['file']}: ★ not found upstream (looked in {where})")
         else:
-            on_log(f"    {fd['file']}: ★ 上游文件已不存在"
+            on_log(f"    {fd['file']}: ★ the file no longer exists upstream"
                    f"（同名文件候选 {r.get('path_candidates', [])[:2]}）")
         if r.get("advisories"):
-            on_log(f"    ★ 该包有 {len(r['advisories'])} 条公开公告")
+            on_log(f"    ★ this package has {len(r['advisories'])} public advisory(ies)")
         res[fp] = r
     return res

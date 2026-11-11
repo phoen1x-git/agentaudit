@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """One command for the whole tool.
 
+    agentaudit doctor                     what this machine can and cannot do
     agentaudit scan --demo                 scan a target (--demo / --path / --repo)
     agentaudit explain out/round-x         show why a candidate was reported
     agentaudit serve  out/round-x          read the results in a browser
@@ -29,6 +30,7 @@ sys.path.insert(0, str(ROOT))
 
 # name -> (script, one-line description)
 COMMANDS: dict[str, tuple[str, str]] = {
+    "doctor": ("app/doctor.py", "say what this machine can and cannot do, in one screen"),
     "scan": ("app/scan.py", "scan a target: --demo, --path DIR or --repo OWNER/NAME"),
     "explain": ("app/explain.py", "show why a candidate was reported"),
     "investigate": ("app/investigate.py", "collect bounded source evidence into a new round, offline"),

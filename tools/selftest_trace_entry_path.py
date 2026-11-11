@@ -96,7 +96,7 @@ def main() -> int:
         root = Path(td)
         build(root)
 
-        print("=== 1. 一层就到入口（@mcp.tool 带参数）===")
+        print("=== 1. one hop to the entry point (@mcp.tool, with arguments)===")
         r = T.trace(root, "pkg/impl.py", 4)
         print("    impl  -> %s  %s" % (r["verdict"], r.get("why", "")[:60]))
         rec("impl：追到 mcp 入口", r["verdict"] == "external", str(r.get("paths"))[:200])
@@ -104,54 +104,54 @@ def main() -> int:
             any(p.get("entry_kind") == "mcp" and p["caller"]["function"] == "tool_a"
                 for p in r.get("paths") or []), str(r.get("paths"))[:200])
 
-        print("=== 2. 两层才到入口（tool -> helper -> sink）===")
+        print("=== 2. two hops to the entry point (tool -> helper -> sink)===")
         r = T.trace(root, "pkg/impl.py", 7)
-        print("    impl2 -> %s  层数 %s" % (r["verdict"], r.get("layers")))
+        print("    impl2 -> %s  depth %s" % (r["verdict"], r.get("layers")))
         rec("impl2：两层后仍能追到入口", r["verdict"] == "external", str(r.get("paths"))[:200])
         rec("impl2：经过 helper 这一层",
             any(p.get("caller", {}).get("function") == "helper" for p in r.get("paths") or []),
             str([p.get("caller", {}).get("function") for p in r.get("paths") or []]))
 
-        print("=== 3. 只被常量调用 → 不是 external ===")
+        print("=== 3. called only with constants, so not external ===")
         r = T.trace(root, "pkg/impl.py", 10)
         print("    impl_const -> %s" % r["verdict"])
         rec("impl_const：不许判成 external", r["verdict"] != "external", r["verdict"])
 
-        print("=== 4. 没有调用方（测试里的不算）===")
+        print("=== 4. no callers (calls from tests do not count)===")
         r = T.trace(root, "pkg/impl.py", 13)
-        print("    orphan -> %s  跳过测试调用 %s 处"
+        print("    orphan -> %s  skipped %s call(s) from tests"
               % (r["verdict"], r.get("skipped_test_calls", 0)))
         rec("orphan：判 no_caller（测试调用被跳过）",
             r["verdict"] == "no_caller" and r.get("skipped_test_calls") == 1,
             "%s / skipped=%s" % (r["verdict"], r.get("skipped_test_calls")))
 
-        print("=== 5. ★ 方法调用的 self 不占实参位 ===")
+        print("=== 5. ★ self in a method call does not take an argument slot ===")
         r = T.trace(root, "pkg/cls.py", 5)
-        print("    K.m -> %s  被污染 %s" % (r["verdict"], r.get("tainted_params")))
+        print("    K.m -> %s  tainted %s" % (r["verdict"], r.get("tainted_params")))
         rec("K.m：能回溯到 v（不是被 self 顶掉）", r.get("tainted_params") == ["v"],
             str(r.get("tainted_params")))
         rec("K.m：能追到 use 这一层",
             any(p.get("caller", {}).get("function") == "use" for p in r.get("paths") or []),
             str(r.get("paths"))[:200])
 
-        print("=== 6. ★ 同名不串（os.open 不是方法 m / 不是内置 open）===")
+        print("=== 6. ★ same name must not leak across (os.open is neither method m nor builtin open)===")
         r = T.trace(root, "pkg/impl.py", 4)
         files = {p.get("caller", {}).get("file") for p in r.get("paths") or []}
         rec("impl 的路径里没有 noise.py", "pkg/noise.py" not in files, str(files))
 
-        print("=== 7. ★ 表达式不许读成常量 ===")
+        print("=== 7. ★ an expression is not a constant ===")
         r = T.trace(root, "pkg/impl.py", 21)
         print("    uses_factory -> %s" % r["verdict"])
         rec("内部工厂生成的值 → internal_generated",
             r["verdict"] == "internal_generated", r["verdict"])
 
-        print("=== 8. 层数用完要说「没追完」，不许说「不可达」===")
+        print("=== 8. when the depth runs out, say 'not finished', never 'unreachable'===")
         r = T.trace(root, "pkg/impl.py", 7, max_depth=1)
         print("    impl2 max_depth=1 -> %s" % r["verdict"])
         rec("层数用完 → exhausted（不是 constant / internal）",
             r["verdict"] == "exhausted", r["verdict"])
 
-        print("\n结果：%d 通过 / %d 失败" % (npass, nfail))
+        print("\nresult: %d passed / %d failed" % (npass, nfail))
         return 0 if nfail == 0 else 1
 
 

@@ -271,7 +271,7 @@ def run():
         A._ALL_MODULE_SRC = ""
         res, err = A.analyze(src, "<t>")
         if err:
-            print("  FAIL %-46s 解析失败 %s" % (name, err))
+            print("  FAIL %-46s parse failed: %s" % (name, err))
             failed += 1
             continue
         hits = res["unauth_endpoint"]["hits"]
@@ -279,16 +279,16 @@ def run():
         ok = (got_auth == expect)
         if ok:
             passed += 1
-            print("  OK   %-46s %s" % (name, "认成有鉴权" if expect else "认成无鉴权"))
+            print("  OK   %-46s %s" % (name, "read as authenticated" if expect else "read as unauthenticated"))
         else:
             failed += 1
-            print("  FAIL %-46s 期望%s 实得%s"
+            print("  FAIL %-46s expected %s got %s"
                   % (name, "有鉴权" if expect else "无鉴权", "有鉴权" if got_auth else "无鉴权"))
             for h in hits[:2]:
-                print("         命中: %s  %s" % (h.get("route", "-"), h.get("text", "")[:60]))
-            print("         原因: %s" % why)
+                print("         hit: %s  %s" % (h.get("route", "-"), h.get("text", "")[:60]))
+            print("         why: %s" % why)
     print("-" * 70)
-    print("失败 %d / %d" % (failed, len(CASES)))
+    print("%d of %d failed" % (failed, len(CASES)))
     return 0 if failed == 0 else 1
 
 

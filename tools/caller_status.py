@@ -227,14 +227,15 @@ def main() -> int:
     ap.add_argument("--root", required=True)
     ap.add_argument("--file", required=True)
     ap.add_argument("--line", type=int, required=True)
-    ap.add_argument("--entry-kind", default="", help="http/mcp/cli/library；影响「框架回调」那一态")
-    ap.add_argument("--out", help="结果写成 JSON")
+    ap.add_argument("--entry-kind", default="",
+                    help="http/mcp/cli/library; it decides the framework-callback state")
+    ap.add_argument("--out", help="write the result as JSON")
     a = ap.parse_args()
     r = classify(a.root, a.file, a.line, on_log=print, entry_kind=(a.entry_kind or None))
     text = json.dumps(r, ensure_ascii=False, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")
-        print("写入 %s" % a.out)
+        print("wrote %s" % a.out)
     else:
         print(text)
     return 0

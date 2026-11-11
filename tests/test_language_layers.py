@@ -112,3 +112,42 @@ def test_the_allowed_list_has_no_stale_entries():
     assert not stale, (
         "these files no longer contain Chinese; remove them from ZH_ALLOWED:\n"
         + "\n".join(stale))
+
+
+# ---------------------------------------------------------------------------- what it prints
+#
+# The directory rule above is necessary and not sufficient. `core/` owns no user-facing file,
+# yet it prints: a scan once emitted one Chinese status line between two English ones, from a
+# rule that lived in core/. No rule about directories could see it. So this one runs the
+# commands and reads the terminal.
+
+PRINTED_COMMANDS = [
+    (["doctor"], "the screen a new user runs first"),
+    (["--help"], "the command list"),
+    (["selftest"], "the rules' own tests"),
+    (["targets", "--help"], "the batch path, which was the last Chinese help page"),
+    (["candidates", "--help"], "the contract command"),
+    (["scan", "--demo", "--tag", "lang-check", "--no-log"], "the demo scan"),
+]
+
+
+@pytest.mark.parametrize("argv,why", PRINTED_COMMANDS, ids=[c[0][0] for c in PRINTED_COMMANDS])
+def test_what_a_command_prints_is_english(argv, why, tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    proc = subprocess.run(
+        [sys.executable, "-m", "app.cli", *argv],
+        cwd=str(tmp_path),               # output lands in the test's own directory
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, timeout=180,
+    )
+    output = (proc.stdout or "") + (proc.stderr or "")
+    offenders = [ln for ln in output.splitlines() if CJK.search(ln)]
+    assert not offenders, (
+        f"`agentaudit {' '.join(argv)}` ({why}) prints Chinese. Whatever reaches the "
+        f"terminal is read by the same stranger as the README:\n"
+        + "\n".join(offenders[:15]))
+
