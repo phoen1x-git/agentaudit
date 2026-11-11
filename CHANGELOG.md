@@ -33,9 +33,54 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
   record.
 - **Rounds are resumable.** Findings are written incrementally, so a long run that is
   interrupted keeps what it had instead of losing the whole round.
+- **`agentaudit doctor`** says what this machine can and cannot do: Python, dependencies,
+  CodeQL, the LLM key and its budget, where output lands, and what each missing piece would
+  unlock. Two of those fail quietly -- without CodeQL a scan degrades to the offline path,
+  without a key triage does not run -- so both used to look like "it worked, and found less".
+- **Screening takes a profile.** `agentaudit targets screen --profile your.yml` replaces the
+  built-in thresholds with yours: what form of project you want, what you intend to do with
+  it, which languages you can read, how stale and how popular it may be. Without a profile
+  every user batches to the same list, which is the one thing a screening tool should not do.
+  Unknown keys are an error rather than a shrug, because a config key that is silently
+  ignored makes the tool look like it answered.
+- **The report says what it dropped, and why.** `agentaudit targets report --excluded` adds a
+  table of the projects the filters rejected with the reason for each. Most of those reasons
+  are about the profile rather than the project, so seeing them is how you learn to write a
+  better one.
+- **A scan ends by saying what to do next**, and says plainly that a candidate is a place
+  worth looking at rather than a finding. Listing four output paths answered "where did it go",
+  which is not the question a first-time reader has.
+
+- **`agentaudit doctor`** says what this machine can and cannot do: Python, dependencies,
+  CodeQL, the LLM key and its budget, where output lands, and what each missing piece would
+  unlock. Two of those fail quietly -- without CodeQL a scan degrades to the offline path,
+  without a key triage does not run -- so both used to look like "it worked, and found less".
+- **Screening takes a profile.** `agentaudit targets screen --profile your.yml` replaces the
+  built-in thresholds with yours: what form of project you want, what you intend to do with
+  it, which languages you can read, how stale and how popular it may be. Without a profile
+  every user batches to the same list, which is the one thing a screening tool should not do.
+  Unknown keys are an error rather than a shrug, because a config key that is silently
+  ignored makes the tool look like it answered.
+- **The report says what it dropped, and why.** `agentaudit targets report --excluded` adds a
+  table of the projects the filters rejected with the reason for each. Most of those reasons
+  are about the profile rather than the project, so seeing them is how you learn to write a
+  better one.
+- **A scan ends by saying what to do next**, and says plainly that a candidate is a place
+  worth looking at rather than a finding. Listing four output paths answered "where did it go",
+  which is not the question a first-time reader has.
 
 ### Changed
 
+- **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
+  17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
+  on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
+  not. A test runs six commands and reads their output, because a rule about directories
+  cannot see a Chinese line printed from `core/`.
+- **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
+  17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
+  on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
+  not. A test runs six commands and reads their output, because a rule about directories
+  cannot see a Chinese line printed from `core/`.
 - **The queries write CSV, not SARIF.** The message field carries JSON, and SARIF escapes it a
   second time, so parsing it back was lossy. One CSV row can hold several argument positions.
 - **`app/` and `tests/` are English, and now a test says so.** That layer is what a stranger
@@ -47,6 +92,16 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 
 ### Fixed
 
+- **CodeQL was looked for one directory above the checkout.** That was right in the directory
+  this code was extracted from and wrong everywhere else: `scripts/setup.sh` installs into the
+  repository, the frontend searched the parent, missed it, and fell back to the offline path.
+  A user who had just installed CodeQL got a quieter scan and no message. It now looks inside
+  the checkout, and `doctor` prints the path so the two can be compared.
+- **CodeQL was looked for one directory above the checkout.** That was right in the directory
+  this code was extracted from and wrong everywhere else: `scripts/setup.sh` installs into the
+  repository, the frontend searched the parent, missed it, and fell back to the offline path.
+  A user who had just installed CodeQL got a quieter scan and no message. It now looks inside
+  the checkout, and `doctor` prints the path so the two can be compared.
 - **`tools/llm_client.py` no longer falls back to a path on the author's machine.** On any
   other machine that path does not exist, and a missing key surfaced later as "no response"
   rather than "no key".

@@ -156,6 +156,12 @@ anyone concluded, so rewriting a query does not break the trail back to earlier 
 
 ## Quick start
 
+Before the first scan, `agentaudit doctor` prints what this machine can and cannot do, and
+what each missing piece would unlock. It takes a second and it answers the question the
+first scan otherwise raises: "it found thirteen things, is that everything?" (Without
+CodeQL it is not: a scan falls back to the AST checks, which cannot follow a value across
+functions.)
+
 One command scans something, with no target list and no database to build by hand:
 
 ```bash
