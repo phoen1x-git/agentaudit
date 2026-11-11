@@ -6,6 +6,64 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## 0.5.0 — 2026-11-11
+
+### Added
+
+- **The judgement now carries the evidence it was given.** It used to return a paragraph; it
+  returns a `Judgment` with the source snapshot, the lines it quoted, a hash of the input, and
+  `blocking_gaps` naming the evidence that was missing. A verdict can be checked against the
+  lines that produced it, and a judgement that could not be reached says why instead of
+  sounding certain.
+- **`agentaudit candidates <round>`** writes `candidates.jsonl` against a frozen schema
+  (`candidates/v1`). This is the interface another tool consumes, and it is the first release
+  where that interface exists at all. One position is one line: three rules on the same `eval`
+  collapse into one candidate, because they are one place to look at. No verdict may appear in
+  it. A candidate says where to look; what was concluded lives in a separate file.
+- **`agentaudit investigate <round>`** collects the source around each candidate offline: the
+  callers, the arguments bound to each parameter, the conditions guarding the call. It is
+  bounded on purpose (files, bytes, depth, seconds), and it writes a new round rather than
+  mutating the old one.
+- **`agentaudit import-sarif <file>`** brings another analyzer's results in as candidates,
+  keeping its rule id, so a CodeQL-only, Semgrep-only or commercial-backend result can be
+  triaged and adjudicated by the same pipeline.
+- **A second language.** `--codeql-language javascript` builds a JS database and runs a
+  window-level query. It stops at contract candidates, on purpose: window-level results have
+  no call chain and no argument source, and passing them to triage would mean judging half a
+  record.
+- **Rounds are resumable.** Findings are written incrementally, so a long run that is
+  interrupted keeps what it had instead of losing the whole round.
+
+### Changed
+
+- **The queries write CSV, not SARIF.** The message field carries JSON, and SARIF escapes it a
+  second time, so parsing it back was lossy. One CSV row can hold several argument positions.
+- **`app/` and `tests/` are English, and now a test says so.** That layer is what a stranger
+  opens first; `core/` and `tools/` keep their Chinese notes, because they record what was
+  tried and why. The README says this out loud rather than leaving a reader to discover it.
+- **The internal-vocabulary guard lost three words.** "Criterion", "scope of a measurement"
+  and "red line" are ordinary Chinese technical words; banning them forced awkward prose and
+  protected nobody, because the sentence around them is Chinese either way.
+
+### Fixed
+
+- **`tools/llm_client.py` no longer falls back to a path on the author's machine.** On any
+  other machine that path does not exist, and a missing key surfaced later as "no response"
+  rather than "no key".
+- **Three switches that the code read were missing from `CONFIGURING.md`**, and `.github`
+  placeholders that survived the last release are gone, with a test for each class of mistake.
+
+### Known gaps
+
+- **Whether the rewritten queries return the same candidates as before is not verified here.**
+  That comparison needs a CodeQL database and a real source tree; this release was cut on a
+  machine with neither. The offline path is covered by tests, the CodeQL path is not.
+- `sink.arg_index` is still `-1` on the AST frontend: that frontend cannot tell which argument
+  is the dangerous one.
+- `needs_human` remains the most common verdict, and the reason is almost always the same: the
+  argument's origin is not inside the code that was handed over. That is a tracing limit, not
+  a triage limit.
+
 ## 0.4.0 — 2026-10-16
 
 ### Added

@@ -64,6 +64,50 @@ model reading the evidence".
 
 ---
 
+## 5. What we measured and could not fix
+
+These are not guesses. Each one cost a round of work to establish, and none of them has a fix
+in this release.
+
+- **What a project is multiplies the answer; it does not add to it.** The same `open(path)` is
+  a different question in a library (whoever imports it decides the attack surface), a CLI (the
+  attacker is sitting at the machine), a web service (remote and untrusted) and an MCP server
+  (the caller is a model, and a model can be steered by content it reads). Getting the form
+  wrong does not weaken one axis, it changes every axis at once, which is why the form is a
+  field on the candidate rather than a scoring input.
+- **The second language cannot reach a verdict.** The JS query answers "is there a dangerous
+  call in this window", which is a position, not a story: no call chain, no argument source.
+  It is wired to stop at contract candidates instead of inventing the missing columns.
+- **`needs_human` is the most common verdict, and the reason is usually the same one.** When
+  triage answers "the origin of this value is not in the code I was given", that is accurate.
+  The gap is upstream: the tracing layer stops at the function boundary, so the judge is asked
+  a question the input cannot answer.
+- **Two rules on one line used to read as two findings.** They are one place to look at. The
+  candidate layer collapses them, and records which rule ids were folded, so the count of
+  candidates is a count of positions rather than a count of rule hits.
+
+## 5. What we measured and could not fix
+
+These are not guesses. Each one cost a round of work to establish, and none of them has a fix
+in this release.
+
+- **What a project is multiplies the answer; it does not add to it.** The same `open(path)` is
+  a different question in a library (whoever imports it decides the attack surface), a CLI (the
+  attacker is sitting at the machine), a web service (remote and untrusted) and an MCP server
+  (the caller is a model, and a model can be steered by content it reads). Getting the form
+  wrong does not weaken one axis, it changes every axis at once, which is why the form is a
+  field on the candidate rather than a scoring input.
+- **The second language cannot reach a verdict.** The JS query answers "is there a dangerous
+  call in this window", which is a position, not a story: no call chain, no argument source.
+  It is wired to stop at contract candidates instead of inventing the missing columns.
+- **`needs_human` is the most common verdict, and the reason is usually the same one.** When
+  triage answers "the origin of this value is not in the code I was given", that is accurate.
+  The gap is upstream: the tracing layer stops at the function boundary, so the judge is asked
+  a question the input cannot answer.
+- **Two rules on one line used to read as two findings.** They are one place to look at. The
+  candidate layer collapses them, and records which rule ids were folded, so the count of
+  candidates is a count of positions rather than a count of rule hits.
+
 ## How to find out for a specific candidate
 
 ```bash

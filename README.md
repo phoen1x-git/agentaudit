@@ -130,6 +130,30 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit log` | show or export the local scan statistics |
 | `agentaudit targets` | find and screen GitHub targets, for a batch rather than one repo |
 
+### The file another tool can read
+
+`agentaudit candidates out/round-x --repo owner/name --out c.jsonl` projects a round into
+`candidates.jsonl`: one line per position, a stable id computed from the repo, file, line and
+sink name, and nothing else. Deliberately nothing else: no verdict, no confidence, no
+"probably". A candidate is a place that deserves a look; the conclusion lives in a separate
+file, and mixing the two is what makes such a file unusable by anything but its author.
+
+The schema is frozen in `schemas/candidates.v1.json` and validated by
+`tools/check_contract_file.py`. The id does not depend on the rule that found it or on what
+anyone concluded, so rewriting a query does not break the trail back to earlier rounds.
+
+### The file another tool can read
+
+`agentaudit candidates out/round-x --repo owner/name --out c.jsonl` projects a round into
+`candidates.jsonl`: one line per position, a stable id computed from the repo, file, line and
+sink name, and nothing else. Deliberately nothing else: no verdict, no confidence, no
+"probably". A candidate is a place that deserves a look; the conclusion lives in a separate
+file, and mixing the two is what makes such a file unusable by anything but its author.
+
+The schema is frozen in `schemas/candidates.v1.json` and validated by
+`tools/check_contract_file.py`. The id does not depend on the rule that found it or on what
+anyone concluded, so rewriting a query does not break the trail back to earlier rounds.
+
 ---
 
 ## Quick start
