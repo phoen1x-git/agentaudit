@@ -288,9 +288,9 @@ agentaudit scan --path ./myproject --llm --fail-on vuln # 只有判成 vuln 才�
 agentaudit scan --path ./myproject --diff origin/main   # 只看改动过的文件
 ```
 
-`--fail-on any` 这个选项是有的，但很少是你要的门禁：只要有候选报出来它就退 1，而候选只是
-「值得看一眼的位置」、不是已确认的漏洞，所以大多数项目都会报出一些。要只在真正判成漏洞时才
-失败，用 `--llm --fail-on vuln`。
+`--fail-on any` 这个选项存在，但它几乎不是你要的那道门禁：只要报出一条候选，它就立刻返回
+退出码 1。而候选只是「值得看一眼的位置」，不是已确认的漏洞，大多数项目都会报出几条。
+想让它只在真正判成漏洞时才失败，加 `--llm --fail-on vuln`。
 
 `--diff` 要求源码是一份 git 检出，用途是回答「这个 PR 有没有引入新东西」，
 不是做全量审计。
