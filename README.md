@@ -208,9 +208,10 @@ at; it only reads it. So none of it is confirmed.
 agentaudit explain out/round-x --index 3
 ```
 
-It prints the source around the flagged line, the call chain that reaches it, the guards on
-that path, and where the dangerous argument comes from. If the scan could not determine that, it
-says so. Run this before believing or dismissing a candidate.
+Without `--index` or `--fp` it opens the first candidate only and tells you how many are left;
+`--all` prints every one. It prints the source around the flagged line, the call chain that
+reaches it, the guards on that path, and where the dangerous argument comes from. If the scan
+could not determine that, it says so. Run this before believing or dismissing a candidate.
 
 ### Watch the whole round in a browser
 

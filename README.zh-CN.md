@@ -199,6 +199,7 @@ agentaudit scan --repo owner/name       # 拉一个 GitHub 仓库来扫
 agentaudit explain out/round-x --index 3
 ```
 
+不给 `--index` 也不给 `--fp` 时，它只展开第一条，并告诉你还剩几条；`--all` 把全部候选打出来。
 它会打印被标记那一行的上下文源码、能走到它的调用链、这条路上有哪些 if 守卫，
 以及那个危险实参是从哪来的。查不出来的话，它会明说「本次扫描没能确定」。
 在相信或否掉一条候选之前，先跑这个。
