@@ -114,6 +114,10 @@ CI builds it and runs a smoke test on every push.
 | `agentaudit interactive` | a menu, for when you don't want to remember flags (a bare `agentaudit` opens it too) |
 | `agentaudit scan` | scan a target: `--demo`, `--path DIR`, `--repo OWNER/NAME` |
 | `agentaudit explain <round>` | show why a candidate was reported |
+| `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
+| `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
+| `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
+| `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
 | `agentaudit serve <round>` | read a round in a browser (localhost only) |
 | `agentaudit report <round>` | render the report draft |
 | `agentaudit index <round>` | render the HTML index |

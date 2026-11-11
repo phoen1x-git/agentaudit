@@ -31,6 +31,8 @@ sys.path.insert(0, str(ROOT))
 COMMANDS: dict[str, tuple[str, str]] = {
     "scan": ("app/scan.py", "scan a target: --demo, --path DIR or --repo OWNER/NAME"),
     "explain": ("app/explain.py", "show why a candidate was reported"),
+    "investigate": ("app/investigate.py", "collect bounded source evidence into a new round, offline"),
+    "import-sarif": ("app/import_sarif.py", "import external analyzer candidates and source context"),
     "serve": ("app/serve.py", "serve a round directory on localhost"),
     "report": ("app/make_report.py", "render the report draft for a round"),
     "index": ("app/make_index.py", "render the HTML index for a round"),

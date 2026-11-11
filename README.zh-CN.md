@@ -110,6 +110,10 @@ CI 每次 push 都会构建它并做一遍冒烟测试。
 | `agentaudit interactive` | 交互菜单（不想记参数时用；直接敲 `agentaudit` 也会进） |
 | `agentaudit scan` | 扫一个目标：`--demo`、`--path 目录`、`--repo 用户名/仓库名` |
 | `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
+| `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
+| `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
+| `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
+| `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
 | `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
 | `agentaudit report <轮次>` | 生成报告草稿 |
 | `agentaudit index <轮次>` | 生成 HTML 清单页 |
