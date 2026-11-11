@@ -312,7 +312,7 @@ def main() -> int:
     ap.add_argument("--serve", action="store_true",
                     help="after the scan, serve the round directory on localhost")
     ap.add_argument("--no-sarif", dest="no_sarif", action="store_true",
-                    help="do not keep results.csv (the raw query output) in the round directory")
+                    help="do not write agentaudit.sarif (the SARIF export for a code-scanning UI)")
     ap.add_argument("--no-log", action="store_true",
                     help="do not append to the local statistics log (see tools/scan_log.py)")
     a = ap.parse_args()
