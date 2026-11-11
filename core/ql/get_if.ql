@@ -13,7 +13,7 @@
 // 现在只用库自带的 BasicBlock.getASuccessor*()，不自己造边。
 //
 // ★ 跨函数那一层**故意不保留**。原版靠 icfg_edge 把调用链上游的 if 也算进守卫，
-//   实测 panwatch 上那条是 `lifespan` 里 `if init_auth_from_env(db):`
+//   实测某个样本上那条是 `lifespan` 里 `if init_auth_from_env(db):`
 //   —— 它判断的是"要不要从环境变量初始化认证账号"，和 sink（`subprocess.run`
 //   装 playwright）没有任何关系。上游函数里"任意一个 if"被当成这个 sink 的守卫，
 //   是误报，不是能力。

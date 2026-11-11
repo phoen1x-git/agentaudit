@@ -4,7 +4,7 @@
     python tools/trace_entry_path.py --root <靶源码根> --file mcp/work.py --line 143
     python tools/trace_entry_path.py --root ... --file ... --line ... --json out/x.json
 
-★ 为什么要这个工具（`docs/179` 的那个老缺口，今天第四次撞到）
+★ 为什么要这个工具（一个老缺口，今天第四次撞到）
   判定层对「实参是 param」的候选只能说 `needs_human`：参数是传进来的，可**谁传的、传的是什么**，
   写在给定代码之外。它不是在推卸，是真的看不到。这个工具把那一段补上：
   **把「参数 ← 调用方 ← 调用方」这条路走一遍，走到带装饰器的入口就停**。

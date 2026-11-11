@@ -445,7 +445,7 @@ module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
     # ★★ 开关 AF_MAD（默认 **0 = 现状**）：让 srcKind 也读 CodeQL 的 MaD
     #    （Models as Data，模型写在 core/modelpack/models/*.yml，跑查询时 --model-packs=af/python-model-pack）。
     # 为什么需要（§四，实测）：
-    #      · MaD 本身**能被 CodeQL 读到**（探针查询已验证，camel db 上命中 openai 调用）
+    #      · MaD 本身**能被 CodeQL 读到**（探针查询在一个样本的库上命中 openai 调用）
     #      · 但我们的 `srcKindCfg`/`isSinkArgCfg` 是**自定义谓词，不读 MaD** ⇒ 写了也"吃不到"
     #      · 桥接 API 来自 CodeQL 自己的 DataFlowPrivate.qll:1084 ——
     #        `source = ModelOutput::getASourceNode(_, model).asSource()`，即 `API::Node::asSource()`
@@ -454,7 +454,7 @@ module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
     _mad = os.environ.get("AF_MAD", "0") == "1"
     # ★★ 白名单（AF_MAD_KINDS，逗号分隔，默认只认 llm-output）—— **必须加**：
     #    `ModelOutput::getASourceNode(k)` 返回的是**所有** MaD source，
-    #    **包括 CodeQL 标准库自带的**（实测：不带白名单时 camel 上多出 78 行，
+    #    **包括 CodeQL 标准库自带的**（实测：不带白名单时某个样本上多出 78 行，
     #    新增 kind 是 `commandargs` / `environment`，**不是**我们要的 llm-output）。
     #    ⇒ 不加白名单，A/B 的差异里会混进标准库的 source，**不干净**。
     #    ★ 反过来说：`environment`（环境变量）是我们 sources.yml 里**没有**的一档，
@@ -483,7 +483,7 @@ predicate srcKind(DataFlow::Node n, string k) {
   or
   (n instanceof DataFlow::ParameterNode and k = "param")
   // ★ 跨过程分析里，参数常常表现为**汇总节点**（toString 形如 "[summary param] position 1 in f"），
-  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：vanna exec 的 arg0 消失了）。
+  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：某个样本 exec 的 arg0 消失了）。
   or
   (n.toString().matches("[summary param]%") and k = "param")
 """ + _mad_branch + """}

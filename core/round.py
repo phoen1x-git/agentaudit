@@ -1,6 +1,6 @@
 """内核 · 一轮的落盘。
 
-★ 轮次目录 = 只读快照（docs/95 §九 9.1）。确认靠人改 findings.tsv 的最后一列，
+★ 轮次目录 = 只读快照。确认靠人改 findings.tsv 的最后一列，
    累积进 confirmations.json（本轮不做合并，先留占位）。
 
 产出：
@@ -56,7 +56,7 @@ def write_findings_json(path: Path, findings: list[F.Finding]) -> None:
       ★ 修法选**只加 json、不动 tsv**：`to_row()` 与 `COLS` 一字不改
         （tsv 的列变了会波及报告/审阅页），只在 json 里补上结构化字段。
       ⚠️ **历史轮次的 `findings.json` 补不回来**（那些文件里本来就没写过）→
-        受影响的对照必须**在新轮次上重做**（在 `docs/189` 里写明了）。
+        受影响的对照必须**在新轮次上重做**（写明过）。
     """
     d = {}
     for fd in findings:
@@ -108,7 +108,7 @@ def write_meta(path: Path, meta: dict) -> None:
 # ★ 只落"这个靶的候选"，不碰最终产物：最终 findings.tsv/json 仍由原路径写，
 #   所以**下游（报告 / 审阅页 / 记录）看到的格式一字未变**。
 # ★ 用 `asdict` 存**全部字段**（含 `guards` 列表与 `arg_sources`），读回时 `Finding(**d)` 即可 ——
-#   避免重演 `docs/189` 那个"只写 to_row() ⇒ arg_sources 永远是空"的坑。
+#   避免重演那个"只写 to_row() ⇒ arg_sources 永远是空"的坑。
 def partial_dir(rd: Path) -> Path:
     d = rd / "partial"
     d.mkdir(parents=True, exist_ok=True)

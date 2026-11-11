@@ -51,12 +51,12 @@ EXEC_FUNCS = {
     "pexpect.spawn", "pexpect.run", "pexpect.execute",
     "pty.spawn", "pty.call",
     "pickle.loads", "pickle.load", "dill.loads", "marshal.loads",
-    # ★★★ 10-08 补：语义等价的反序列化库，★ 之前一个都没进清单。
+    # ★★★ 语义等价的反序列化库，★ 之前一个都没进清单。
     #   cloudpickle/dill/marshal 的 `loads` 行为一致 —— 都执行 __reduce__。
-    #   ★ 为什么漏：找LazyLLM 漏洞时，`load_obj` 里的 `cloudpickle.loads`
+    #   ★ 为什么漏：找一个样本的漏洞时，`load_obj` 里的 `cloudpickle.loads`
     #   正好在 `open(path)` 之后，★ 视觉上被「读文件」盖住了；
     #   而清单里只有 `pickle.loads`，★ 于是所有判据都漏了它。
-    #   ★ 实测本批漏了 5 处（EvoAgentX / LazyLLM）。
+    #   ★ 实测本批漏了 5 处，分散在两个样本里。
     #   ★★ 教训：**清单要按「语义组」维护，不是逐个词打补丁**。
     "cloudpickle.loads", "cloudpickle.load",
     "jsonpickle.decode", "jsonpickle.unpickler.decode",
@@ -73,7 +73,7 @@ EXEC_FUNCS = {
 #     `filename = re.sub(r"[/\\]", "_", filename)` 被报成「输入直落执行点」。
 #     补了 re.sub 之后才想到：**整个 `re.*` 家族 + 各类数据转换函数
 #     都不执行外部内容**。
-#     → 教训与 wcgw 的 pexpect、TaskWeaver 的 chainlit 完全一致：
+#     → 教训与另外两个样本里的 pexpect、chainlit 完全一致：
 #       **按能力归类，别按名字逐个列。列不全的表现是静默误报。**
 #
 # 分类：
@@ -110,10 +110,10 @@ AUTH_WORDS = {"login_required", "require_auth", "verify_token",
               "check_permission", "authenticate", "authorize",
               "current_user", "get_current_user", "is_admin",
               "check_access", "permission_required",
-              # ★★ 补词（Adala 逼出来的）：这一组在实际项目里很常见，
+              # ★★ 补词（一个样本逼出来的）：这一组在实际项目里很常见，
               #   漏了它们会让「认证鉴权痕迹」判据输出 0，
               #   而0 在报告里长得和「确实没有鉴权」一模一样 —— 假阴性。
-              #   与 wcgw 的 pexpect.spawn、TaskWeaver 的 chainlit 装饰器同类。
+              #   与另外两个样本里的 pexpect.spawn、chainlit 装饰器同类。
               "auth_header", "authorization", "api_key", "apikey",
               "credentials", "credentials_payload", "authenticate_user",
               "get_api_key", "load_credentials", "token", "access_token",
@@ -125,7 +125,7 @@ TOOL_WORDS = {"tool", "agent_tool", "register_tool", "mcp_tool", "tool_registry"
 # ★★★ 「对外发起请求的客户端」—— 危险点，但性质与 exec 不同
 #
 #   实测踩过：六项目高覆盖对比时「输入×危险共现」0/5 全部未检出，
-#   查下去发现 Adala 真实的洞就在这里——
+#   查下去发现一个样本的真实漏洞就在这里：
 #       AsyncOpenAI(api_key=runtime_params["api_key"],
 #                   base_url=runtime_params["base_url"])
 #   之前只把 exec/subprocess 当危险点，**漏了整个「LLM SDK 客户端」这一类**。
@@ -161,7 +161,7 @@ DANGEROUS_ALL = EXEC_FUNCS | CLIENT_FUNCS
 #       →病根：把「变量名长得像用户输入」当成「它就是用户输入」。
 #   (2) ★★ 六项目高覆盖对比时，「输入×危险共现」0/5 全部未检出，
 #       看起来像「这类漏洞真的不存在」。用已知答案一验才发现是**判据太钝**：
-#       Adala 真实代码里是
+#       那个样本的真实代码是：
 #           client = AsyncOpenAI(api_key=runtime_params["api_key"],
 #                                 base_url=runtime_params["base_url"])
 #       而 `runtime_params` 不在词表里 → 不算外部输入 → 漏报。
@@ -179,9 +179,9 @@ STRONG_INPUT_TOKENS = re.compile(
     r"aiohttp_request|starlette_request|websocket)$", re.I)
 
 # ★ 中转变量：外部数据常先被装进这些名字，再到危险点
-#   （Adala 的 runtime_params 就是这种）
+#   （某个样本的 runtime_params 就是这种）
 #   ★★★ 但**仅凭名字会大量误报**，实测：
-#     Adala 里`OpenAI(api_key=api_key, base_url=base_url)` 被判成外部输入，
+#     某个样本里 `OpenAI(api_key=api_key, base_url=base_url)` 被判成外部输入，
 #     可那 两个值是**服务端自己的配置**（函数形参），不是请求数据。
 #     → 病根与之前几次相同：**靠名字判断数据来源**。
 #   → 所以 CARRIER 只作为「需要追来源」的提示，
@@ -357,7 +357,7 @@ def _is_input_expr(node, depth=0):
             return False
         if STRONG_INPUT_TOKENS.match(n):
             return True
-        # ★ 中转变量：外部数据常先装进这里再到危险点（Adala 的 runtime_params）
+        # ★ 中转变量：外部数据常先装进这里再到危险点（某个样本的 runtime_params）
         if CARRIER_INPUT_TOKENS.match(n):
             return True
         if WEAK_INPUT_TOKENS.match(n):
@@ -425,7 +425,7 @@ def _sqlish(arg):
 def _src(node, full_text):
     """取节点的源码片段。**full_text = 整个文件的原文**（已 join 好的字符串）。
 
-    ★★★★★★ 性能（10-07 修）：原来签名是 `(node, code_lines)`，
+    ★★★★★★ 性能：原来签名是 `(node, code_lines)`，
       内部每次都 `"\n".join(code_lines)`。
       实测 dataelement/Clawith 的 `agent_tools.py`：
       **108 万字符 / 28028 行 / 133754 个 AST 节点**
@@ -492,7 +492,7 @@ def _has_auth_wordroot_call(body_src):
 #     这是**有意的**：单文件模式本来就无法解析跨文件别名。
 _ALL_MODULE_SRC = ""
 
-# ★★★★★★ 第 7 种写法的别名**缓存**（10-07 修，性能）。
+# ★★★★★★ 第 7 种写法的别名**缓存**（性能）。
 #
 #   ★ 这不是微优化，是**能不能跑完的问题**：
 #   `_ALL_MODULE_SRC` 是全项目源码拼起来的大字符串。
@@ -510,7 +510,7 @@ _AUTH_ALIASES_CACHE = [None]
 def _auth_aliases():
     """取鉴权别名集合，**带自愈**。
 
-    ★★★★★★ 为什么不能直接读 `_AUTH_ALIASES_CACHE[0]`（10-07踩了）：
+    ★★★★★★ 为什么不能直接读 `_AUTH_ALIASES_CACHE[0]`（踩过）：
       自测（`selftest_auth.py` 第 14 档）只设 `A._ALL_MODULE_SRC = ...`，
       不走 `analyze_files()`，于是缓存还是 None → 别名认不出来 →
       **期望 1 实得 0，测试直接把这个 bug 抓出来了。**
@@ -702,7 +702,7 @@ def analyze(text, path="<file>"):
 
         # a2) ★★ 外部输入直落「对外请求客户端」→ SSRF / 凭据外泄
         #     这一档是六项目对比里 0/5 全未检出后才发现的：
-        #     Adala 的真实洞是
+        #     某个样本的真实漏洞是：
         #         AsyncOpenAI(api_key=runtime_params["api_key"],
         #                     base_url=runtime_params["base_url"])
         #     而 `AsyncOpenAI` 原本不在任何危险点词表里 → 整条判据失灵。
@@ -710,7 +710,7 @@ def analyze(text, path="<file>"):
         if not _is_safe_call(nm) and \
                 (nm in CLIENT_FUNCS or base_nm in CLIENT_FUNCS):
             # ★★ 用污点追踪而不是「看名字」：
-            #   实测踩过 —— Adala 的 `OpenAI(api_key=api_key, base_url=base_url)`
+            #   实测踩过 —— 某个样本的 `OpenAI(api_key=api_key, base_url=base_url)`
             #   里两个值都是**服务端自己的配置**，但因为名字像用户输入，
             #   被判成外部输入 → 满屏误报。
             #   而 `runtime_params["base_url"]` 才是真外部输入。
@@ -784,8 +784,8 @@ def analyze(text, path="<file>"):
 
 # ★★ 对外端点鉴权检查
 #
-# ★ 这条判据是被Adala 逼出来的：
-#   实测它的 server/app.py 有 124 个调用，其中 app.post×6 / app.get×3
+# ★ 这条判据是被一个样本逼出来的：
+#   实测某个样本的主模块里有一批对外端点（app.post×6 / app.get×3），
 #   —— **全是对外 HTTP 端点，而全文件找不到任何鉴权痕迹**。
 #   我原有的 4 条判据此时全部输出「0 处」，看起来像"这项目没问题"，
 #   实际上它是最值得看的一个。
@@ -872,7 +872,7 @@ NO_AUTH_WEAK = re.compile(
     r"^[^/]*(?:/[^/]+)*/(info|version|status|ready|readiness|liveness|"
     r"health|ping|index|home|schema|spec)$", re.I)
 
-#★★★★★ 协议性公开（第 8 类豁免，10-05 08:1x 补，实测依据见 docs/47）
+#★★★★★ 协议性公开（第 8 类豁免）
 #
 #  为什么必须和「业务上公开」分开：
 #    业务公开（register/login/health）是**项目自己的选择** ——
@@ -949,7 +949,7 @@ def _route_from_decorator(d):
 #   uid = _uid(request) / who = _whoami(request) / ctx = _ctx_user(request)
 #   为什么要单独识别：见_find_inconsistent_auth 里第 6 种写法的说明。
 #
-# ★★★ 10-05 修的真实缺陷：request 不一定是**第一个**实参，也不一定叫 `request`。
+# ★★★ 一个真实缺陷：request 不一定是**第一个**实参，也不一定叫 `request`。
 #   实测 academic-commercialization-agent 第 1131 行：
 #       _authorize_run_mutation(run_id, http_request)   ← 第 2 个实参，且叫 http_request
 #   老正则 `\b(\w+)\s*\(\s*request\s*[,)]` 要求 request 紧跟左括号 →
@@ -1219,10 +1219,10 @@ def _guard_called_names(body_src, self_name=None):
     return names
 
 
-# ★★★★★★ 10-07 补：**跨文件定义查找的结果缓存**。
+# ★★★★★★ **跨文件定义查找的结果缓存**。
 #
 #   起因：`_def_body_in` 在 973 万字符的 `_ALL_MODULE_SRC` 上
-#   **每次调用都重新扫一遍**。实测 LazyLLM：
+#   **每次调用都重新扫一遍**。实测一个样本：
 #       调 269 次 × 0.081 秒 = **21.8 秒**（占整个 analyze 29 秒的 75%）。
 #   同一次 analyze 里问的名字大量重复 → 缓存收益极大。
 #

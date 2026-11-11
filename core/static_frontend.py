@@ -8,7 +8,7 @@
 
 用法（内核内部）：
     from core.static_frontend import run_db_to_findings
-    fnd = run_db_to_findings(db_dir, project="taskweaver", on_log=print)
+    fnd = run_db_to_findings(db_dir, project="example", on_log=print)
 """
 from __future__ import annotations
 
@@ -158,7 +158,7 @@ def run_and_parse_argsrc(db_dir: str, project: str,
             #       "local@@0@@1609@@static_dir@@⏎param@@1@@1609@@path@@server.py@@1608@@path"
             #   而 `csv.reader` 会把整段读成**一个** cell（引号内的换行合法），
             #   所以按 `@@` 直接切会得到 13 段，`parts[:7]` 只取到第一个实参 —— 后面的**静默丢掉**。
-            #   实测代价：panwatch `server.py:1609` 的 `os.path.join(static_dir, path)`，
+            #   实测代价：某个样本 `server.py` 里的 `os.path.join(static_dir, path)`，
             #   `arg1`（`path`，外部可控的那个）一直没有落盘，`arg0`（`static_dir`，本地常量）占了位。
             #   这就是"实参来源看着全是 local"的一半原因 —— 不是追不到，是**报上来又被自己扔了**。
             for seg in (row[3] or "").splitlines():
@@ -294,9 +294,9 @@ def finalize(findings: list[F.Finding], db_dir: str, filters: dict,
              src_fallback: Optional[str] = None) -> list[F.Finding]:
     prefix = _read_src_prefix(db_dir)
     # ★★ 修：库内的 `sourceLocationPrefix` 是**建库那一刻**的绝对路径。
-    #    工作区搬过家之后（Desktop\网安项目 → Desktop\agent审计），这个前缀就指向不存在的目录，
+    #    工作区搬过家之后（换了目录、换了机器），这个前缀就指向不存在的目录，
     #    而它被用来做三件事：判入口形态（entry_kind.classify）、读源码窗口（_read_line）、
-    #    记 `src_root`。三件事一起静默失效 —— 实测 panwatch 那一轮 136 条**全部**判成
+    #    记 `src_root`。三件事一起静默失效 —— 实测某一轮 136 条**全部**判成
     #    `kind=unknown / why=文件不存在`，看起来像"形态判不出来"，其实是"文件都打不开"。
     #    这是"失败伪装成结论"的又一例：判不出形态会让人以为工具能力不够，
     #    而真相是一行路径过期。所以这里**不许静默**：前缀不可用时必须出一行日志。

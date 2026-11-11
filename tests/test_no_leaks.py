@@ -67,6 +67,12 @@ PATTERNS = {
     "a private project's directory convention":
         re.compile(r"_targets[/\\]a1|a1_batch|a1db|a1src|tp2x_db|pkgdb"),
     "the author's machine account": re.compile(r"\bphoenix\b"),
+    # A reference such as "docs/95, section twelve" points into a directory that is not in
+    # this repository and never will be. To a reader it is a dead end that also says "this
+    # was written elsewhere first". The sentence around it usually carries the finding, so
+    # the reference goes and the sentence stays. Thirty-five of these were found only when
+    # merging the development copy, which is the argument for checking mechanically.
+    "a reference to a numbered internal note": re.compile(r"\bdocs/\d{2,}"),
 }
 
 # A bare date is a reliable sign that a comment was copied out of a private work log: it says

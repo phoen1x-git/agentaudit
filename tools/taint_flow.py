@@ -10,9 +10,9 @@
 
 | 场景 | 变量名 | 真实来源 | 结论 |
 |---|---|---|---|
-| Adala 真漏洞 | `runtime_params["base_url"]` | `request.headers.get("base_url")` | ★ 是外部输入 |
-| Adala 误报 | `base_url`（函数形参） | 服务端自己的配置 | ★ 不是 |
-| reagent 误报 | `api_key`（函数形参） | 环境变量/配置 | ★ 不是 |
+| a real vuln in one sample | `runtime_params["base_url"]` | `request.headers.get("base_url")` | ★ 是外部输入 |
+| a false positive, same sample | `base_url`（函数形参） | 服务端自己的配置 | ★ 不是 |
+| a false positive, another sample | `api_key`（函数形参） | 环境变量/配置 | ★ 不是 |
 
 **名字长得一样，来源完全不同。**
 
@@ -182,7 +182,7 @@ def _expr_is_config(node):
        → 改成**按 AST 节点类型判定**，这是结构信息，不靠猜。
 
     ★★ 另一个坑：形参（None 默认值）原本被判成「不是外部输入」，
-       但 Adala 的 `runtime_params` 恰恰是形参，
+       但某个样本的 `runtime_params` 恰恰是形参，
        真实来源在**另一个函数**里（那里确实来自 request.headers）。
        → 单函数内追不到，正确结论是 unknown（不确定），不是 not_input（安全）。
        → ★ 与「没检出 ≠ 没有」同源：
