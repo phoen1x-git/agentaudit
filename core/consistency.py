@@ -9,9 +9,12 @@ LLM 判定层最后那两层是**主观判断**：
 一个判 "not_vuln（既定行为）"、一个判 "vuln（超出范围）" —— **差异不来自代码，来自判定层自己的措辞**。
 而这种飘动**直接改变最终 vuln 计数**。
 
-★ 本模块只做一件事：**发现并报出来**，不改任何判定。
+★ 本模块的主体只做一件事：**发现并报出来**，不改任何判定。
   为什么不自作主张改：改判定 = 又是一个单变量实验，得单独做、单独量。
   自查规则："结论对 ≠ 机制对"——先把它变成可看见的，再决定怎么修。
+★ 例外：文件末尾有**两个可选的"处置"**（都只改 `ai_verdict`，原文保留进 `ai_reason`）——
+  · `apply_downgrade`        —— 同形态结论不一致 ⇒ 整组降级（默认关，需显式开）
+  · `apply_unknown_downgrade` —— `arg_source` 未知的 vuln ⇒ 降级（立，默认开）
 
 分组键为什么是 (project, sink, arg_source)
 ----------------------------------------
@@ -29,6 +32,9 @@ LLM 判定层最后那两层是**主观判断**：
 from __future__ import annotations
 
 from collections import defaultdict
+
+# 主观层字段：这三个里任何一个在同一形态组内出现多值，就算"飘"
+SUBJECTIVE = ("ai_verdict", "by_design", "scope_exceeds")
 
 
 def shape_key(f) -> tuple:
@@ -92,11 +98,11 @@ def check(findings, min_group: int = 2) -> dict:
 def render_md(res: dict) -> str:
     s = res["stats"]
     L = ["# 判定一致性检查", ""]
-    L += ["> ★ 只报不改。改判定要单独做单变量实验。", ""]
+    L += ["> ★ 只报不改。改判定要单独做单变量实验（见 ``）。", ""]
     L += ["## 统计", "",
           f"- 参与条数（已判定的）：**{s['n_judged']}**",
           f"- 形态组数 `(project, sink, arg_source)`：**{s['n_shape_groups']}**",
-          f"- 同输入不同结论（严格约定，理论上必须 0）：**{s['n_strict_inconsistent']}**"
+          f"- 同输入不同结论（严格口径，理论上必须 0）：**{s['n_strict_inconsistent']}**"
           f" / {s['n_strict_groups']} 组"] + (
           ["  - ★ 不为 0 → 判定层对完全相同的输入给出了不同结论，是硬 bug"] if s["n_strict_inconsistent"] else
           ["  - ✅ 为 0 → 给定它自己的字段，判定层内部自洽", ""]) + [
@@ -151,22 +157,22 @@ def write_report(path, res: dict) -> None:
     path.write_text(render_md(res), encoding="utf-8")
 
 
-# --------------------------------- Optional fix-up A: unknown-source downgrade
-# ★ 依据（重复运行实测）：把一批"补了调用方上下文"的条目换缓存标签复判三轮，
-#   从 `needs_human` 翻成 `vuln` 的 8 条里**三轮全稳只有 4/8** ——
-#   而**不稳的几乎全是 `arg_source=unknown` 那一档**。
+# ------------------------------------------- 可选处置 A：来源未知降级（立）
+# ★ 依据（``）：46 条补了调用方上下文后复判，其中 8 条从 `needs_human` 翻成 `vuln`；
+#   但**三轮全稳只有 4/8** —— 而**不稳的几乎全是 `arg_source=unknown` 那一档**。
+# 叠加旧结论：``（翻转率 24.3%）、``（「unknown 档的 vuln 不可信」）。
 #
 # ★ 为什么是"降级"而不是"按 vuln 处理"：
 #   `unknown` 的字面含义是「**判定层看不到这个值从哪来**」。
-#   既然看不到来源，就**不能断言"外部可控"** —— 正确答案是「待定，给人看」，
-#   而不是替它猜一个。（同 `apply_downgrade`：不编我们并不掌握的结论。）
+#   既然看不到来源，就**不能断言"外部可控"** —— 正确答案是「待定，给人/给调用方看」，
+#   而不是替它猜一个。（同 `apply_downgrade` 的理由：不编我们并不掌握的结论。）
 #
-# ★ 为什么不是降成 `not_vuln`：我们**没有**证据说"它不是洞"，
-#   只有证据说"**判得稳不稳**"。降成 `not_vuln` 会把可能真存在的洞埋掉。
+# ★ 为什么不是降成 `not_vuln`：
+#   我们**没有**证据说"它不是洞"，只有证据说"**判得稳不稳**"。
+#   降成 `not_vuln` 会把可能真存在的洞埋掉；降成 `needs_human` 只是把它从"可报"挪到"待核"。
 #
-# ★ Only the reporting verdict (`ai_verdict`) changes; the original one stays in
-#   `ai_reason` and `verdicts.json`, so nothing is lost.
-UNKNOWN_TOKENS = ("", "unknown", "none", "null", "n/a", "unknown_source")
+# ★ 只改 `ai_verdict`（即报告口径）；原判定进 `ai_reason` 与 `verdicts.json`，**不丢**。
+UNKNOWN_TOKENS = ("", "unknown", "未知", "none", "null", "n/a", "(空)")
 
 
 def _is_unknown_source(x) -> bool:
@@ -176,7 +182,7 @@ def _is_unknown_source(x) -> bool:
 def apply_unknown_downgrade(findings, *, only_verdict: str = "vuln") -> list[dict]:
     """把「判 `vuln` 但实参来源未知」的条目降级为 `needs_human`。**幂等。**
 
-    返回改动清单（`from` / `to` / `reason`），供日志使用。
+    返回改动清单（`from` / `to` / `reason`），供日志与记录使用。
     """
     changed: list[dict] = []
     for x in findings or []:
@@ -189,22 +195,23 @@ def apply_unknown_downgrade(findings, *, only_verdict: str = "vuln") -> list[dic
                         "sink": x.sink_func, "from": x.ai_verdict, "to": "needs_human",
                         "reason": "argument source unknown (unknown-downgrade)"})
         x.ai_verdict = "needs_human"
-        x.ai_reason = ("[unknown-source downgrade] arg_source was "
-                       f"`{raw or '(empty)'}`, i.e. the triage stage could not see where "
-                       "this value comes from. Repeats of this bucket are only stable about "
-                       "one time in three, so it must not be reported as-is. "
-                       "Original reason: " + (x.ai_reason or "")[:120])
+        x.ai_reason = ("[unknown-source downgrade] the judge filled arg_source with "
+                       f"`{raw or '(empty)'}`, so it cannot see where this value comes "
+                       "from. Measured: a `vuln` on this tier held across three runs about "
+                       "one time in three, which is not enough to report. Send it to a "
+                       "person, or supply the caller's context. Original verdict: "
+                       + (x.ai_reason or "")[:120])
     return changed
 
 
-# ---------------------------------------------------------------- 可选处置
+# ---------------------------------------------------------------- 可选处置 B
 def apply_downgrade(findings, res: dict) -> list[dict]:
     """把「同形态、结论不同」的组**整组降级为 needs_human**。
 
     ★ 为什么不是"统一成多数票"：
       多数票是在**编**一个我们并不掌握的结论。降级才是诚实的——
       判定层自己都对同形态代码给不出稳定答案，那正确答案就是"待定，给人看"。
-    ★ 为什么默认不开：它会改判定 = 又一个单变量实验，要单独量。
+    ★ 为什么默认不开：它会改判定 = 又一个单变量实验，要单独量（见 ）。
       注意它是**保守方向**：只会让更少的东西被报出去。
     """
     changed = []
@@ -220,3 +227,47 @@ def apply_downgrade(findings, res: dict) -> list[dict]:
                                f"（本组 {len(d['members'])} 条），无法据此稳定判定。"
                                "原判定：" + (x.ai_reason or "")[:120])
     return changed
+
+
+# ---------------------------------------------------------------- 自测
+def _selftest() -> int:
+    """对着 7 个已知情形验 `apply_unknown_downgrade` 本身准不准（★ 判据先钉住，再上全池）。"""
+    import sys
+    from core.finding import Finding
+
+    def mk(v: str, src: str):
+        f = Finding(project="demo", sink_func="open", sink_uri="a.py", sink_line=1)
+        f.ai_verdict, f.arg_source, f.ai_reason = v, src, "原始理由"
+        return f
+
+    cases = [
+        ("vuln", "unknown", True, "unknown 的 vuln ⇒ 降级"),
+        ("vuln", "", True, "arg_source 为空 ⇒ 也算未知 ⇒ 降级"),
+        ("vuln", "llm_output", False, "LLM 输出 ⇒ 不动"),
+        ("vuln", "user_input", False, "用户输入 ⇒ 不动"),
+        ("vuln", "config", False, "配置来源 ⇒ 不动（不在本次证据范围内）"),
+        ("not_vuln", "unknown", False, "本来就 not_vuln ⇒ 不动"),
+        ("needs_human", "unknown", False, "本来 needs_human ⇒ 不动"),
+    ]
+    ok = 0
+    for v, src, want, desc in cases:
+        f = mk(v, src)
+        got = bool(apply_unknown_downgrade([f]))
+        good = got == want
+        ok += good
+        print(f"  {'✅' if good else '❌'} {desc:32} {v:11} → {f.ai_verdict}")
+    f = mk("vuln", "unknown")
+    apply_unknown_downgrade([f])
+    second = apply_unknown_downgrade([f])
+    idem = (f.ai_verdict == "needs_human" and not second)
+    ok += idem
+    print(f"  {'✅' if idem else '❌'} {'幂等（跑第二遍不再改）':32} → {f.ai_verdict}")
+    print(f"\n★ 自测 {ok}/{len(cases) + 1} 通过")
+    return 0 if ok == len(cases) + 1 else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    if "--selftest" in _sys.argv:
+        raise SystemExit(_selftest())
+    print(__doc__)

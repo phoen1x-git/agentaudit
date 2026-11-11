@@ -321,6 +321,8 @@ vendor/" means nothing if `vendor/` was skipped.
 | `--llm` | triage with an LLM; it spends credits, so it is off by default |
 | `--no-unknown-downgrade` | keep a `vuln` verdict even when the argument source is unknown |
 | `--no-codeql` | force the offline mode |
+| `--codeql-language python\|javascript` | database language (default `python`). Anything but python stops at contract candidates, `trace_level: window` |
+| `--codeql-language python\|javascript` | database language (default `python`). Anything but python stops at contract candidates, `trace_level: window` |
 | `--lang en\|zh` | report language (default `en`) |
 | `--diff [REF]` | only report files changed since `REF` |
 | `--fail-on none\|any\|vuln` | exit non-zero, as a build gate |

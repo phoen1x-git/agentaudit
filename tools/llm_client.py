@@ -19,6 +19,7 @@ import io
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -26,11 +27,29 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
 
+JSON_SUFFIX = "\n\n★只输出一个 JSON 对象，不要任何解释文字、不要代码围栏。"
+
+
+class JSONResponseError(ValueError):
+    def __init__(self, message, attempts):
+        super().__init__(message)
+        self.attempts = attempts
+
+
+class LLMResponseError(RuntimeError):
+    def __init__(self, message, attempts):
+        super().__init__(message)
+        self.attempts = attempts
+
 # ============ 配置 ============
 # ★ key 从**文件**读，**不硬编码、不进版本库**。
 #   设环境变量 `DEEPSEEK_KEY_FILE=/path/to/deepseek.txt`，
 #   或把 key 写进 `~/.deepseek_key`。
-KEY_FILE = os.environ.get("DEEPSEEK_KEY_FILE") or os.path.expanduser("~/.deepseek_key")
+KEY_FILE = os.environ.get("DEEPSEEK_KEY_FILE")
+KEY_FILE = KEY_FILE or os.path.expanduser("~/.deepseek_key")
+# ★ No fallback to a path on the author's machine: on any other machine that path does
+#   not exist, and a key file that is looked for in the wrong place fails later as
+#   "no response" instead of "no key".
 
 # ============ ★★ 连续失败熔断============
 # 起因：一次**余额/额度**故障被当成普通网络抖动 → 扫描白跑 1 小时多、判定行全变 `error`
@@ -39,21 +58,25 @@ KEY_FILE = os.environ.get("DEEPSEEK_KEY_FILE") or os.path.expanduser("~/.deepsee
 #   任何原因（余额 / 额度 / 网络 / 网关）都算 —— 因为"连续 N 次都不成功"本身就是结论。
 _CONSEC_FAIL = 0
 _CONSEC_FAIL_LIMIT = 8
+_SUCCESS_LOCK = threading.Lock()   # 复用一个锁名，见下面两处
 
 
 def _bump_fail() -> None:
     global _CONSEC_FAIL
-    _CONSEC_FAIL += 1
-    if _CONSEC_FAIL >= _CONSEC_FAIL_LIMIT:
+    with _SUCCESS_LOCK:              # ★ 并发下两个线程同时失败，不加锁会漏计一次
+        _CONSEC_FAIL += 1
+        n = _CONSEC_FAIL
+    if n >= _CONSEC_FAIL_LIMIT:
         raise SystemExit(
             "★ 连续 %d 次 LLM 调用失败 —— 先停下来查原因（余额 / 额度 / 网络），"
             "别继续烧时间。规则提醒：余额不足**会以不同状态码出现**"
-            "（402 带 body，或 405 带空 body）。" % _CONSEC_FAIL)
+            "（402 带 body，或 405 带空 body）。" % n)
 
 
 def _reset_fail() -> None:
     global _CONSEC_FAIL
-    _CONSEC_FAIL = 0
+    with _SUCCESS_LOCK:
+        _CONSEC_FAIL = 0
 
 
 # ============ ★★ 单次运行的「防失控」上限============
@@ -99,8 +122,13 @@ PRICE = {
     "output": 8.0 / 1000000.0,          # 8 元 / 百万
 }
 
-CACHE_DIR = os.path.join(ROOT, "data", "llm_cache")
-LOG_PATH = os.path.join(ROOT, "data", "llm_usage.jsonl")
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+from core import workspace  # noqa: E402
+from core.llm_budget import current_budget, RequestBudgetExceeded, usage_cost  # noqa: E402
+
+CACHE_DIR = str(workspace() / "data" / "llm_cache")
+LOG_PATH = str(workspace() / "data" / "llm_usage.jsonl")
 
 
 # ============ 成本记账 ============
@@ -190,10 +218,35 @@ def chat(system, user, tag="default", max_tokens=1600,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + key})
     last = None
+    attempts = []
     for a in range(retries):
+        budget = current_budget()
+        ticket = None
+        if budget:
+            try:
+                ticket = budget.reserve(payload, PRICE)
+            except RequestBudgetExceeded as exc:
+                exc.attempts = attempts
+                raise
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
                 r = json.loads(resp.read().decode("utf-8"))
+            if budget:
+                budget.finish(ticket, r, PRICE)
+            attempts.append({"raw_text": r["choices"][0]["message"].get("content") or "",
+                             "model": r.get("model"), "usage": r.get("usage", {}),
+                             "finish_reason": r["choices"][0].get("finish_reason"),
+                             "max_tokens": payload["max_tokens"]})
+            # Truncated completions also consumed tokens. Count them before retrying.
+            USAGE.add(r)
+            os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+            with open(LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "tag": tag, "model": r.get("model", MODEL),
+                                    "usage": r.get("usage", {}),
+                                    "finish_reason": r["choices"][0].get("finish_reason"),
+                                    "cny": round(_last_cny(r), 6)}, ensure_ascii=False) + "\n")
+            _check_budget(_last_cny(r))
             # ★★ 输出被截断就把缓存文件删掉 —— 否则下次会一直拿到这段残缺内容
             if r["choices"][0].get("finish_reason") == "length":
                 last = "finish_reason=length（输出被截断，JSON 不完整）"
@@ -215,18 +268,12 @@ def chat(system, user, tag="default", max_tokens=1600,
                     "%s —— 这个模型是推理模型，thinking 需要更多 token。"
                     "解法：换 deepseek-flash（实测完成率明显更高），"
                     "或把 max_tokens 再加大" % last)
-            USAGE.add(r)
             _reset_fail()          # ★ 成功一次就归零（熔断只针对"**连续**失败"）
-            _check_budget(_last_cny(r))   # ★★ 花费硬上限：到限硬停并报数
+            r["_request"] = {"model": MODEL, "max_tokens": payload["max_tokens"],
+                              "temperature": temperature}
+            r["_attempts"] = attempts
             with open(cp, "w", encoding="utf-8") as f:
                 json.dump(r, f, ensure_ascii=False, indent=1)
-            os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-            with open(LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "tag": tag, "model": MODEL,
-                    "usage": r.get("usage", {}), "cny": round(_last_cny(r), 6),
-                }, ensure_ascii=False) + "\n")
             return r
         except urllib.error.HTTPError as e:
             body = ""
@@ -252,14 +299,14 @@ def chat(system, user, tag="default", max_tokens=1600,
             _bump_fail()                       # ★ 网络类失败也算
             if a < retries - 1:
                 time.sleep(2 * (a + 1))
-    raise RuntimeError("LLM 调用失败（重试 %d 次）：%s" % (retries, last))
+        finally:
+            if budget:
+                budget.finish_unknown(ticket)
+    raise LLMResponseError("LLM 调用失败（重试 %d 次）：%s" % (retries, last), attempts)
 
 
 def _last_cny(r):
-    u = r.get("usage") or {}
-    return (u.get("prompt_tokens", 0) * PRICE["input_miss"]
-            + (u.get("prompt_cache_hit_tokens") or 0) * PRICE["input_hit"]
-            + u.get("completion_tokens", 0) * PRICE["output"])
+    return usage_cost(r, PRICE)
 
 
 def _extract_json(txt):
@@ -307,23 +354,53 @@ def _extract_json(txt):
     return None
 
 
-def ask_json(system, user, tag="default", max_tokens=3600, **kw):
+def ask_json(system, user, tag="default", max_tokens=3600, *, return_meta=False,
+             strict=False, **kw):
     """要 JSON 回答。
 
     ★ max_tokens 默认给到 3600 —— 推理模型的 thinking + 正文要一起算，
       给少了会被截断（实测 pro@1200 只有 3/8 能出完整 JSON）。
     """
+    attempts = []
     for a in range(2):
-        r = chat(system + "\n\n★只输出一个 JSON 对象，不要任何解释文字、"
-                        "不要代码围栏。", user, tag=tag,
+        try:
+            r = chat(system + JSON_SUFFIX, user, tag=tag,
                  max_tokens=max_tokens * (1 if a == 0 else 2), **kw)
+        except (LLMResponseError, RequestBudgetExceeded) as exc:
+            exc.attempts = attempts + exc.attempts
+            raise
         txt = r["choices"][0]["message"]["content"] or ""
-        got = _extract_json(txt)
-        if got is not None:
+        attempt = {"raw_text": txt, "model": r.get("model"), "tag": tag,
+                   "finish_reason": r["choices"][0].get("finish_reason"),
+                   "request": r.get("_request"), "usage": r.get("usage", {}),
+                   "transport_attempts": r.get("_attempts", [])}
+        attempts.append(attempt)
+        if strict:
+            # Do not repair missing braces or extract an object out of an array/prose.
+            # The normal legacy callers retain their existing extraction behavior.
+            def pairs(items):
+                result = {}
+                for key, value in items:
+                    if key in result:
+                        raise ValueError("duplicate JSON key")
+                    result[key] = value
+                return result
+            try:
+                got = json.loads(txt, object_pairs_hook=pairs)
+                valid_json = True
+            except (ValueError, TypeError):
+                got = None
+                valid_json = False
+        else:
+            got = _extract_json(txt)
+        if got is not None or (strict and valid_json):
+            if return_meta:
+                return {"parsed": got, "raw_text": txt, "response_model": r.get("model"),
+                        "requested_model": MODEL, "attempts": attempts}
             return got
         if a == 0:
             continue
-        raise ValueError("两次都不是合法 JSON，原文尾部：\n%s" % txt[-400:])
+        raise JSONResponseError("两次都不是合法 JSON，原文尾部：\n%s" % txt[-400:], attempts)
 
 
 def self_test():

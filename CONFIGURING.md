@@ -244,6 +244,10 @@ added without being documented.
 | `AF_JUDGE_PROMPT` | `contract` | how the judgement prompt is assembled. `legacy` restores the older block-by-block builder, kept for reproducing an old round |
 | `AF_JUDGE_STRICT` | `0` | reject a judgement whose quoted evidence does not match the source. Measured effect: it does not separate real findings from false ones, it only makes every verdict stricter (12 of 12 `vuln` verdicts turned into `needs_human`, including 4 real ones), so it is off by default |
 | `AF_LLM_WORKERS` | `1` | how many judgements run at once. Raising it cuts wall-clock time and does not change what is judged, but it multiplies the spend rate against the budget |
+| `AF_MAD` | `1` | let the generated query read CodeQL's own models-as-data for a sink's source kind, instead of only the shapes written in `sinks.yml`. Off by default: the models cover the standard library, so switching it on widens recall and noise together |
+| `AF_MAD_KINDS` | `llm-output` | which model kinds are trusted when `AF_MAD=1`, comma separated. The allowlist matters: some kinds describe ordinary data, and accepting them turns every argument into a tainted one |
+| `AF_MAD` | `1` | let the generated query read CodeQL's own models-as-data for a sink's source kind, instead of only the shapes written in `sinks.yml`. Off by default: the models cover the standard library, so switching it on widens recall and noise together |
+| `AF_MAD_KINDS` | `llm-output` | which model kinds are trusted when `AF_MAD=1`, comma separated. The allowlist matters: some kinds describe ordinary data, and accepting them turns every argument into a tainted one |
 
 ### Everything else
 

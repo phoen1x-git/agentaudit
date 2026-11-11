@@ -12,16 +12,22 @@ triages the candidates with an LLM, and writes a report. It is the same engine a
 Two modes:
 
 * **full** - a CodeQL database is built and the CodeQL queries run, plus the AST checks.
-  Needs the CodeQL CLI (see README). Produces `results.sarif` alongside the report.
+  Needs the CodeQL CLI (see README). Produces `results.csv` (raw query output) next to the report.
 * **offline** - only the built-in AST checks run. No CodeQL, no API key, no downloads.
   It finds strictly less; the run records which mode produced it.
 
 LLM triage is **off by default**. Pass `--llm` to turn it on; the run prints the number of
 candidates and the estimated cost first, and `AF_LLM_MAX_CNY` stops it at the cap.
+
+Other languages: `--codeql-language javascript` builds a JS database and runs the
+window-level query in `core/ql/js/`, then stops at **contract candidates** -- it does not write
+`findings.json` and does not run the judge, because those stages read Python-only columns
+(callchain / arg_source). The contract carries `trace_level: "window"` for exactly this case.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -39,6 +45,10 @@ from core import finding as F                    # noqa: E402
 from core import workspace                       # noqa: E402
 from core import static_frontend as SF           # noqa: E402
 import ast_scan                                  # noqa: E402
+
+# Query pack for the second language. It depends on codeql/javascript-all and is not the
+# same pack as the Python queries in core/ql.
+JS_QL_DIR = ROOT / "core" / "ql" / "js"
 
 
 def _log(msg: str = "") -> None:
@@ -65,13 +75,45 @@ def _codeql_exe() -> str:
     return alt if os.path.exists(alt) else exe
 
 
-def build_db(src: Path, db: Path) -> bool:
-    if (db / "codeql-database.yml").exists():
-        _log(f"[db] reusing {db}")
-        return True
+def build_db(src: Path, db: Path, language: str = "python") -> bool:
+    """Build a database, or reuse one only if **neither the source nor the tool changed**.
+
+    ★★★ Never decide this by asking whether `codeql-database.yml` exists. Reusing a database
+      because that file was present cost us twice: (1) the source had changed, so the report
+      pointed at the previous version's line numbers while triage read the new file and the
+      frontend recorded the old position, and the mismatch was invisible; (2) CodeQL had
+      changed version, so the schema no longer matched the queries and results silently
+      shrank. The marker now records the source-tree fingerprint and the identity of the
+      CodeQL binary in `agentaudit-source.json` and compares them byte for byte with the
+      current state; any difference rebuilds. The same marker is what `database_status()`
+      reports as `matched` / `mismatch` / `unverified`, and it travels into
+      `analysis_provenance`.
+    ★ If the source changes while the database is being built, someone is editing at the same
+      time: return False and **write no marker**. Positions from that round would be
+      untrustworthy, and a failure is better than a result that merely looks normal.
+    """
+    from core.source_version import python_tree
     exe = _codeql_exe()
+    marker = db / "agentaudit-source.json"
+    before = python_tree(src)
+    if before["symlink_dirs_not_followed"]:
+        _log("[db] a symlinked directory means the source version cannot be fingerprinted; using offline mode")
+        return False
+    stat = Path(exe).stat()
+    identity = {"path": str(Path(exe).resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+    expected = {"source": before, "codeql_executable": identity, "language": language}
+    if (db / "codeql-database.yml").exists() and marker.exists():
+        try:
+            if json.loads(marker.read_text(encoding="utf-8")) == expected:
+                _log(f"[db] reusing source-matched {db}")
+                return True
+        except (ValueError, OSError):
+            pass
+    # a database whose marker does not match is always rebuilt, never reused silently
+    if marker.exists():
+        marker.unlink()
     db.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [exe, "database", "create", str(db), "--language=python",
+    cmd = [exe, "database", "create", str(db), f"--language={language}",
            f"--source-root={src}", "--overwrite"]
     _log("[db] " + " ".join(cmd[1:]))
     t0 = time.time()
@@ -80,19 +122,44 @@ def build_db(src: Path, db: Path) -> bool:
         _log(f"[db] FAILED (exit {p.returncode})")
         _log(((p.stdout or "") + (p.stderr or ""))[-1500:])
         return False
+    if python_tree(src) != before:
+        _log("[db] the source changed while the database was being built; this database is not reusable")
+        return False
+    marker.write_text(json.dumps(expected, ensure_ascii=False, indent=2), encoding="utf-8")
     _log(f"[db] built in {time.time() - t0:.0f}s -> {db}")
     return True
 
 
-def scan_codeql(src: Path, db: Path, project: str, sarif_out: Path) -> list[F.Finding]:
-    if not SF.run_analyze(str(db), str(sarif_out), _log):
+def scan_codeql(src: Path, db: Path, project: str, csv_out: Path) -> list[F.Finding]:
+    if not SF.run_analyze(str(db), str(csv_out), _log):
         raise SystemExit("CodeQL analysis failed -- that is not the same as 'no findings'")
-    raw = SF.parse_sarif(str(sarif_out), project)
+    raw = SF.parse_results(str(csv_out), project)
     _log(f"[codeql] {len(raw)} raw results")
     argsrc = SF.run_and_parse_argsrc(str(db), project, _log)
     fnd = SF.finalize(raw, str(db), CFG.load_filters(), _log, argsrc=argsrc)
     fnd = list(fnd) + DX.scan_dir(src, project, on_log=_log)
     return F.dedup(fnd)
+
+
+def scan_js(src: Path, db: Path, project: str, rd: Path, repo: str,
+            rule_id: str = "js-window/sink2") -> Path:
+    """The JavaScript path: a built database, one window-level query, contract candidates.
+
+    ★ It stops at candidates. **No findings.json and no triage**, because triage reads
+      findings and this path yields window-level positions only, with no call chain and no
+      argument source. Feeding that in would hand the next stage half a record, which is
+      worse than stopping where the data ends.
+    """
+    csv_out = rd / "js_results.csv"
+    ok = SF.run_analyze(str(db), str(csv_out), _log,
+                        queries=["sinks2.ql"], ql_root=str(JS_QL_DIR))
+    if not ok:
+        raise SystemExit("CodeQL analysis failed -- that is not the same as 'no findings'")
+    from tools import import_js_candidates as IJC       # noqa: E402  (imported late: the Python path should not pay for it)
+    out = rd / "candidates.v1.jsonl"
+    IJC.main(["--csv", str(csv_out), "--root", str(src), "--repo", repo,
+              "--rule-id", rule_id, "--out", str(out)])
+    return out
 
 
 def fetch_repo(repo: str, dst_root: Path) -> Path:
@@ -225,6 +292,9 @@ def main() -> int:
                          "three across repeats")
     ap.add_argument("--no-codeql", action="store_true",
                     help="force the offline AST-only mode even if CodeQL is available")
+    ap.add_argument("--codeql-language", default="python", choices=["python", "javascript"],
+                    help="database language for CodeQL. Anything but python stops at contract "
+                         "candidates (window level): no findings.json, no triage")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="report language")
     ap.add_argument("--diff", nargs="?", const="HEAD~1", default="",
                     metavar="REF",
@@ -238,9 +308,8 @@ def main() -> int:
                          "(repeatable), e.g. --ignore 'vendor/**'")
     ap.add_argument("--serve", action="store_true",
                     help="after the scan, serve the round directory on localhost")
-    ap.add_argument("--no-sarif", action="store_true",
-                    help="do not write agentaudit.sarif (relative paths only, "
-                         "for a code-scanning UI)")
+    ap.add_argument("--no-sarif", dest="no_sarif", action="store_true",
+                    help="do not keep results.csv (the raw query output) in the round directory")
     ap.add_argument("--no-log", action="store_true",
                     help="do not append to the local statistics log (see tools/scan_log.py)")
     a = ap.parse_args()
@@ -273,8 +342,31 @@ def main() -> int:
     _log(f"mode  {mode}" + ("" if mode == "full" else "  (AST checks only, no CodeQL)"))
     _log("=" * 74)
 
+    if a.codeql_language != "python":
+        # Second language: stops at contract candidates. See scan_js for why.
+        if a.llm:
+            raise SystemExit("--llm works on the Python path only: triage reads findings.json, and "
+                             "this path has window-level positions with no call chain or "
+                             "argument source")
+        if mode != "full":
+            raise SystemExit("--codeql-language %s needs CodeQL; mode is offline (not installed, or --no-codeql)"
+                             % a.codeql_language)
+        db = workspace() / "_targets" / "db" / f"{project}-{a.codeql_language}-db"
+        if not build_db(src, db, language=a.codeql_language):
+            raise SystemExit("CodeQL could not build the database. That is not the same as no findings")
+        out = scan_js(src, db, project, rd, a.repo or project)
+        _log("[js] stopped at contract candidates: trace_level=window, no findings.json, no triage")
+        _log(f"[js] to go further: python tools/trace_note.py --root {src} --jsonl {out} --id <candidate_id>")
+        (rd / "meta.json").write_text(json.dumps({
+            "project": project, "source": str(src), "mode": "js-window",
+            "codeql_language": a.codeql_language, "rule": "js-window/sink2",
+            "trace_level": "window", "n_findings": 0,
+            "note": "JS stops at contract candidates; triage did not run (it reads the Python columns)",
+        }, ensure_ascii=False, indent=1), encoding="utf-8")
+        return 0
+
     t0 = time.time()
-    sarif_out = rd / "results.sarif"
+    csv_out = rd / "results.csv"
     findings: list[F.Finding] = []
     db = None
     if mode == "full":
@@ -284,7 +376,7 @@ def main() -> int:
             mode = "offline"
         else:
             try:
-                findings = scan_codeql(src, db, project, sarif_out)
+                findings = scan_codeql(src, db, project, csv_out)
             except SystemExit as e:
                 _log(f"[warn] {e}")
                 _log("[warn] falling back to the AST-only mode")
@@ -304,14 +396,23 @@ def main() -> int:
 
     llm_cost = 0.0
     llm_calls = 0
+    llm_cache_hits = 0
+    llm_review = "not run"
     if a.llm and findings:
         from core import llm_judge as LJ
         _log(f"[llm] triaging {len(findings)} candidates; "
              f"the hard cap is AF_LLM_MAX_CNY={os.environ.get('AF_LLM_MAX_CNY', '30')} CNY")
+        # ★★ Record **this round's increment**, not the process total. Two rounds in one
+        #    process happen when a script drives the batch: copying the running total into
+        #    the second round's meta counts the first round again, and the spend per round is
+        #    then permanently too high with nothing to show for it.
+        before_usage = (LJ.LC.USAGE.calls, LJ.LC.USAGE.hit_cache, LJ.LC.USAGE.cny)
         LJ.judge(findings, on_log=_log, votes=1)
-        llm_calls = LJ.LC.USAGE.calls
-        llm_cost = round(LJ.LC.USAGE.cny, 4)
-        _log(f"[llm] {llm_calls} calls, {llm_cost} CNY")
+        llm_calls = LJ.LC.USAGE.calls - before_usage[0]
+        llm_cache_hits = LJ.LC.USAGE.hit_cache - before_usage[1]
+        llm_cost = round(LJ.LC.USAGE.cny - before_usage[2], 4)
+        llm_review = "AI-assisted, not human-verified"
+        _log(f"[llm] {llm_calls} calls, {llm_cache_hits} cache hits, {llm_cost} CNY")
 
     changed: set[str] = set()
     if a.diff:
@@ -332,11 +433,29 @@ def main() -> int:
             _log(f"[unknown-downgrade] {n_unknown_dg} vuln candidate(s) -> needs_human "
                  "(arg_source unknown)")
 
+    # ★★ Write down which version of the criteria this round used: the rubric hash, the
+    #    value of each switch, the hash of the files that define them. Without it two rounds
+    #    side by side cannot tell you whether the verdicts differ because the code changed or
+    #    because the criteria did. Read-only; it changes no judgement.
+    from core import llm_judge as _LJ
+    try:
+        triage_policy = _LJ.policy_stamp()
+    except Exception as exc:                       # noqa: BLE001
+        triage_policy = {"version": "", "error": f"{type(exc).__name__}: {exc}"}
+
     meta_extra = {
         "scanner": "codeql" if mode == "full" else "ast-only",
         "source_root": str(src),
         "project": project,
         "llm_triage": bool(a.llm),
+        # ★★ This round's increment, plus an explicit statement: `llm_review` is a
+        #    machine-readable qualitative field quoted in the report header, so its value is
+        #    fixed to this one string and may not be softened into something like 'verified'.
+        "llm_calls": llm_calls,
+        "llm_cache_hits": llm_cache_hits,
+        "llm_cost_cny": llm_cost,
+        "llm_review": llm_review,
+        "triage_policy": triage_policy,
         "unknown_downgrade": {
             "enabled": bool(a.llm) and not a.no_unknown_downgrade,
             "n_downgraded": n_unknown_dg,
@@ -346,7 +465,7 @@ def main() -> int:
         meta_extra["diff_ref"] = a.diff
         meta_extra["diff_files"] = sorted(changed)
     ast_scan.write_round(Path(a.out), tag, findings, meta_extra=meta_extra,
-                         keep_sarif=str(sarif_out) if mode == "full" else None)
+                         keep_results=str(csv_out) if mode == "full" else None)
     _log(f"[out] {len(findings)} candidates -> {rd}")
 
     select = "vuln" if a.llm else "all"
@@ -374,8 +493,8 @@ def main() -> int:
     _log(f"  table   {rd / 'findings.tsv'}")
     if (rd / "agentaudit.sarif").exists():
         _log(f"  sarif   {rd / 'agentaudit.sarif'}")
-    if (rd / "results.sarif").exists():
-        _log(f"  raw     {rd / 'results.sarif'}  (the CodeQL frontend's own output)")
+    if (rd / "results.csv").exists():
+        _log(f"  raw     {rd / 'results.csv'}  (the CodeQL frontend's own output)")
     _log("=" * 74)
 
     if a.serve and a.fail_on == "none":

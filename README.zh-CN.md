@@ -310,6 +310,8 @@ agentaudit scan --path ./big-repo --ignore 'vendor/**' --ignore '*/generated/*.p
 | `--llm` | 用 LLM 判断，要花钱，所以默认关 |
 | `--no-unknown-downgrade` | 实参来源不明时也保留 `vuln` 判定 |
 | `--no-codeql` | 强制走离线模式 |
+| `--codeql-language python\|javascript` | 建库语言（默认 `python`）。非 python 只跑到契约候选，`trace_level: window` |
+| `--codeql-language python\|javascript` | 建库语言（默认 `python`）。非 python 只跑到契约候选，`trace_level: window` |
 | `--lang en\|zh` | 报告语言（默认 `en`） |
 | `--diff [REF]` | 只报自 `REF` 以来改动过的文件 |
 | `--fail-on none\|any\|vuln` | 当门禁用，命中就退非零 |

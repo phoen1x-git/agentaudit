@@ -1,6 +1,6 @@
 library: false
 warnOnImplicitThis: false
-name: py-qs-kernel-7eaad9a8
+name: py-qs-kernel-4e62e1de
 version: 0.0.2
 dependencies:
   codeql/python-all: "*"

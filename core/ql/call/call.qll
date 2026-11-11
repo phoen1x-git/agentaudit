@@ -26,13 +26,18 @@ class Source extends PyFunctionObject {
     exists(int k | find_mid(this, callee, mid, depth, k) | result = k)
   }
 
-  string getPathStr() {
-   result = depth + "#" + 
-   concat(FunctionObject mid, int k | 
-       find_mid(this, callee, mid, depth, k) | 
-       mid.getQualifiedName() + "@" + mid.getFunction().getLocation().getFile().getBaseName(), 
-       "->" order by k) + 
-   "->" + get_sink_location(callee)
+  /** 整个调用链 → JSON。guards / constraints 由调用方拼，没有就传 "[]"。 */
+  bindingset[rule, guards, constraints]
+  string getJson(string rule, string guards, string constraints) {
+    result = "{\"rule\":" + jsonStr(rule) +
+      ",\"depth\":" + depth.toString() +
+      ",\"hops\":[" +
+      concat(FunctionObject mid, int k |
+        find_mid(this, callee, mid, depth, k) |
+        locJson(mid.getQualifiedName(), mid.getFunction().getLocation()), "," order by k) +
+      "],\"sink\":" + locJson(sinkName(callee), callee.getLocation()) +
+      ",\"guards\":" + guards +
+      ",\"constraints\":" + constraints + "}"
   }
 
   CallNode getACallNode(FunctionObject mid, FunctionObject next) {
@@ -142,37 +147,45 @@ predicate add_calls(FunctionObject caller, FunctionObject callee, CallNode cn) {
      k > 0 and k < depth and r_functionobject_calls(caller, mid, k) and r_calls(mid, callee, depth-k)
    ) 
  }
- string getlocStr(Location loc) {
-  result =
-    loc.getFile().getAbsolutePath() + "$$" + loc.getStartLine().toString() + ":" +
-      loc.getStartColumn().toString() + "$$" + loc.getEndLine().toString() + ":" +
-      loc.getEndColumn().toString()
+ // ======== 输出的 JSON 组装 ========
+//
+// 以前把调用链拼成 depth#name@file->...->sink@loc$$行:列$$行:列，Python 侧按
+// `->` / `@` / `$$` / `#` 四层分隔符切回来。那套编码是为"跨进程传一个字符串"设计的，
+// 现在两边在同一台机器上跑，直接出 JSON 更省事，也不用担心函数名里恰好含分隔符。
+//
+// ★ 反斜杠必须转义：Windows 的绝对路径满屏 `\`，不转义 Python 侧 json.loads 直接报错。
+
+/** 一个字符串 → JSON 字符串字面量。 */
+bindingset[s]
+string jsonStr(string s) {
+  result = "\"" +
+    s.replaceAll("\\", "\\\\")
+     .replaceAll("\"", "\\\"")
+     .replaceAll("\n", " ") + "\""
 }
 
- string get_sink_location(CallNode callee){
-  if not exists(AttrNode cn| cn = callee.getFunction().(AttrNode) | 1 = 1)
-  then 
-  result = callee.getFunction().getNode().toString() + "@" + getlocStr(callee.getLocation())
-  else
-    if exists(ControlFlowNode cn| cn = callee.getFunction().(AttrNode).getObject() | 1 = 1)
-      then 
-      result = callee.getFunction().(AttrNode).getObject().getNode().toString() + "." + callee.getFunction().(AttrNode).getNode().getName()  + "@" + getlocStr(callee.getLocation())
-    else
-      result = callee.getFunction().(AttrNode).getNode().getName()  + "@" + getlocStr(callee.getLocation())
+/** 一个位置 + 它所在函数名 → JSON 对象。 */
+bindingset[fn]
+string locJson(string fn, Location loc) {
+  result = "{\"function\":" + jsonStr(fn) +
+    ",\"file\":" + jsonStr(loc.getFile().getAbsolutePath()) +
+    ",\"line\":" + loc.getStartLine().toString() +
+    ",\"col\":" + loc.getStartColumn().toString() +
+    ",\"end_line\":" + loc.getEndLine().toString() +
+    ",\"end_col\":" + loc.getEndColumn().toString() + "}"
+}
 
- }
-
-
-
- bindingset[depth]
- string print_callchain(FunctionObject caller, CallNode callee, int depth) {
-  result = depth + "#" + 
-  concat(FunctionObject mid, int k | 
-      find_mid(caller, callee, mid, depth, k) | 
-      mid.getQualifiedName() + "@" + mid.getFunction().getLocation().getFile().getBaseName(), 
-      "->" order by k) + 
-  "->" + get_sink_location(callee)
- }
+/** sink 的书写形式：`obj.name` 优先，其次 `name`，最后退回整个表达式。 */
+string sinkName(CallNode cn) {
+  exists(AttrNode a | a = cn.getFunction() |
+    if exists(a.getObject())
+    then result = a.getObject().getNode().toString() + "." + a.getName()
+    else result = a.getName()
+  )
+  or
+  not cn.getFunction() instanceof AttrNode and
+  result = cn.getFunction().getNode().toString()
+}
 
 string print_function(CallNode cn) {
   exists(AttrNode fan | first_attrnode(cn.getFunction(), fan) |
@@ -210,148 +223,209 @@ predicate first_attrnode(ControlFlowNode cfn, AttrNode an) {
   (fi.getCaller().getFunction() = caller and fi.getFunction() = callee)
 }
 
-predicate is_sink_paper(CallNode cn) {
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "submit" and
-      cn.getArg(0).(AttrNode).getNode().getName() = "run" and 
-      cn.getArg(0).(AttrNode).getNode().getObject().toString() = "subprocess"
-    ) or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "execute_code"
-    ) or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "Popen" and
-      cn.getFunction().(AttrNode).getObject().getNode().toString() = "subprocess"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() in ["request","get"] and
-      (
-      exists(With wi, CallNode cn2, NameNode nn |
-          wi.getScope() = cn.getScope() and
-          nn = wi.getAChildNode().getAFlowNode() and
-          cn2 = wi.getAChildNode().getAFlowNode() |
-          nn.getId() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-          cn2.getFunction().(AttrNode).getNode().getName() in ["AsyncClient", "ClientSession","Session"]
-          // and  cn2.getFunction().(AttrNode).getObject().getNode().toString() in ["aiohttp", "httpx","requests"]
-          )
-        or
-        exists( DefinitionNode dn |
-          definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-          dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-          dn.getValue().(CallNode).getFunction().(AttrNode).getNode().getName() in ["AsyncClient", "ClientSession","Session"]
-          // and dn.getValue().(CallNode).getFunction().(AttrNode).getObject().getNode().toString() in ["aiohttp", "httpx","requests"]
-        )
-      )
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() in ["arun"] and
-      (
-      exists(With wi, CallNode cn2, NameNode nn |
-          wi.getScope() = cn.getScope() and
-          nn = wi.getAChildNode().getAFlowNode() and
-          cn2 = wi.getAChildNode().getAFlowNode() |
-          nn.getId() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-          cn2.getFunction().getNode().toString() in ["AsyncWebCrawler"]
-          )
-        or
-        exists( DefinitionNode dn |
-          definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-          dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-          dn.getValue().(CallNode).getFunction().getNode().toString() in ["AsyncWebCrawler"])
-      )
-    )
-    or 
-    (
-      cn.getFunction().(NameNode).getNode().toString() = "eval"
-    )
-    or 
-    (
-      cn.getFunction().(NameNode).getNode().toString() = "exec"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "run" and
-     exists( DefinitionNode dn |
-       definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-       dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-        dn.getValue().(CallNode).getNode().getFunc().toString() = "ShellTool")
-    )
-    or 
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "execute" and
-     exists( DefinitionNode dn |
-       definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-       dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-       print_function(dn.getValue().(CallNode)).matches("%.cursor") )
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "run" and
-      cn.getFunction().(AttrNode).getObject().getNode().toString() = "subprocess"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() in ["get", "post", "request"] and
-      cn.getFunction().(AttrNode).getObject().getNode().toString() = "requests"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "system" and
-      cn.getFunction().(AttrNode).getObject().getNode().toString() = "os"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "run" and
-      exists( DefinitionNode dn |
-        definition_node(cn.getFunction().(AttrNode).getNode().getScope*().(Function), dn) | 
-        dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-         dn.getValue().(CallNode).getNode().getFunc().toString() = "PythonREPL")
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() = "run_cell" and
-      exists( DefinitionNode dn |
-        definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-        dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-         dn.getValue().(CallNode).getNode().getFunc().toString() = "get_ipython")
-    )
-    or
-    (
-      cn.getFunction().getNode().toString() = "GitLoader"
-    )
-    or
-    (
-      cn.getFunction().(AttrNode).getNode().getName() in ["run", "invoke"] and
-      exists( DefinitionNode dn |
-        definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) | 
-        dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-        dn.getValue().(CallNode).getFunction().(AttrNode).getNode().getName() = "from_llm" and
-        dn.getValue().(CallNode).getFunction().(AttrNode).getObject().getNode().toString() in ["SQLDatabaseChain", "SQLDatabaseSequentialChain"])
-    )
-    or
-    print_function(cn).matches("%session.execute")
-    or
-    print_function(cn).matches("connection.execute")
-    or
-    print_function(cn).matches("jinja.from_string")
-    or
-    (cn.getFunction().(AttrNode).getNode().getName() = "load" and
-      exists( DefinitionNode dn |
-        definition_node(cn.getFunction().(AttrNode).getNode().getScope*().(Function), dn) | 
-        dn.getNode().toString() = cn.getFunction().(AttrNode).getObject().getNode().toString() and
-         dn.getValue().(CallNode).getNode().getFunc().toString() in ["AsyncHtmlLoader", "WebBaseLoader"])
-    )
-    or
-    (
-      exists(ParameterDefinition pd, AttrNode an | pd.getScope() = cn.getScope() and pd.getAnnotation() = an| 
-      cn.getFunction().(AttrNode).getNode().getName() = "request" and
-      pd.getName() =  cn.getFunction().(AttrNode).getObject().getNode().toString() and
-      an.getNode().getName().matches("%Client") and an.getObject().getNode().toString() = "httpx")
-    )
+// ======== sink 判定 ========
+//
+// 这里原来是一段 143 行、19 个 or 分支的布尔链，每一类 sink 各写一段 if。
+// 现在分三层：形状表（只看被调名字）+ 对象来源（要看对象怎么来的）+ 生成的配置项。
+//
+// 为什么不能压成「模块名 + 方法名」两列：其中 9 类要看**这个对象是从哪来的**。
+// `run` 只有对象绑定到 ShellTool / PythonREPL 才算 sink，`execute` 只有对象名以
+// `.cursor` 结尾才算。少了这一维，任意 `client.request(...)` 都会被当成 sink，
+// 候选集会整片爆掉。所以「形状」和「来源」必须分开两层。
+
+/** 被调形状：函数调用给 ("", 函数名)，方法调用给 (接收者, 方法名)。 */
+private predicate calleeShape(CallNode cn, string obj, string name) {
+  exists(AttrNode a | a = cn.getFunction() |
+    obj = a.getObject().getNode().toString() and
+    name = a.getName()
+  )
+  or
+  exists(NameNode n | n = cn.getFunction() |
+    obj = "" and
+    name = n.getNode().toString()
+  )
 }
 
+/** `subprocess.run` 被 submit 转手：参数里第一个就是那个 run。 */
+private predicate submitRunsSubprocess(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "submit" and
+  cn.getArg(0).(AttrNode).getNode().getName() = "run" and
+  cn.getArg(0).(AttrNode).getNode().getObject().toString() = "subprocess"
+}
+
+/** 第一层：只看被调的名字，不管对象是哪来的。 */
+private predicate sinkByShape(CallNode cn) {
+  exists(string obj, string name | calleeShape(cn, obj, name) |
+    (obj = "" and name in ["eval", "exec", "GitLoader"])
+    or
+    name = "execute_code"
+    or
+    (obj = "subprocess" and name in ["run", "Popen"])
+    or
+    (obj = "os" and name = "system")
+    or
+    (obj = "requests" and name in ["get", "post", "request"])
+    or
+    (name = "submit" and submitRunsSubprocess(cn))
+  )
+  or
+  print_function(cn).matches("%session.execute")
+  or
+  print_function(cn) = "connection.execute"
+  or
+  print_function(cn) = "jinja.from_string"
+}
+
+/** 接收者名（`a.b.run()` 里的 `a.b`）。 */
+private string receiver(CallNode cn) {
+  result = cn.getFunction().(AttrNode).getObject().getNode().toString()
+}
+
+/** 接收者在 with 里面被某个构造器造出来。 */
+private predicate boundInWith(CallNode cn, string ctor) {
+  exists(With wi, CallNode made, NameNode nn |
+    wi.getScope() = cn.getScope() and
+    nn = wi.getAChildNode().getAFlowNode() and
+    made = wi.getAChildNode().getAFlowNode() |
+    nn.getId() = receiver(cn) and
+    made.getFunction().(AttrNode).getNode().getName() = ctor
+  )
+}
+
+/** 接收者在赋值语句里由某个构造器产生（只看本函数）。 */
+private predicate boundByAssign(CallNode cn, string ctor) {
+  exists(DefinitionNode dn |
+    definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) |
+    dn.getNode().toString() = receiver(cn) and
+    dn.getValue().(CallNode).getFunction().(AttrNode).getNode().getName() = ctor
+  )
+}
+
+/** 同 `boundByAssign`，但沿作用域向上找（嵌套定义的情况）。 */
+private predicate boundByAssignUpward(CallNode cn, string ctor) {
+  exists(DefinitionNode dn |
+    definition_node(cn.getFunction().(AttrNode).getNode().getScope*().(Function), dn) |
+    dn.getNode().toString() = receiver(cn) and
+    dn.getValue().(CallNode).getNode().getFunc().toString() = ctor
+  )
+}
+
+/** HTTP 会话：`session.get(...)` / `client.request(...)`，对象来自 Session 一族。 */
+private predicate clientSessionBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() in ["request", "get"] and
+  (
+    boundInWith(cn, ["AsyncClient", "ClientSession", "Session"])
+    or
+    boundByAssign(cn, ["AsyncClient", "ClientSession", "Session"])
+  )
+}
+
+/** 爬虫：`crawler.arun(...)`，对象来自 AsyncWebCrawler（with 或赋值）。 */
+private predicate asyncWebCrawlerBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "arun" and
+  (
+    exists(With wi, CallNode made, NameNode nn |
+      wi.getScope() = cn.getScope() and
+      nn = wi.getAChildNode().getAFlowNode() and
+      made = wi.getAChildNode().getAFlowNode() |
+      nn.getId() = receiver(cn) and
+      made.getFunction().getNode().toString() = "AsyncWebCrawler"
+    )
+    or
+    exists(DefinitionNode dn |
+      definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) |
+      dn.getNode().toString() = receiver(cn) and
+      dn.getValue().(CallNode).getFunction().getNode().toString() = "AsyncWebCrawler"
+    )
+  )
+}
+
+/** 工具执行器：`tool.run(...)`，对象来自 ShellTool。 */
+private predicate shellToolBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "run" and
+  exists(DefinitionNode dn |
+    definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) |
+    dn.getNode().toString() = receiver(cn) and
+    dn.getValue().(CallNode).getNode().getFunc().toString() = "ShellTool"
+  )
+}
+
+/** 交互式解释器：`repl.run(...)`，对象来自 PythonREPL（嵌套定义也认）。 */
+private predicate pythonReplBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "run" and
+  boundByAssignUpward(cn, "PythonREPL")
+}
+
+/** 笔记本单元格：`shell.run_cell(...)`，对象来自 get_ipython。 */
+private predicate ipythonBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "run_cell" and
+  boundByAssign(cn, "get_ipython")
+}
+
+/** 文本加载器：`loader.load(...)`，对象来自 AsyncHtmlLoader / WebBaseLoader。 */
+private predicate htmlLoaderBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "load" and
+  (
+    boundByAssignUpward(cn, "AsyncHtmlLoader")
+    or
+    boundByAssignUpward(cn, "WebBaseLoader")
+  )
+}
+
+/** 数据库链：`chain.run(...)` / `chain.invoke(...)`，对象由 `from_llm` 造出来。 */
+private predicate sqlChainBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() in ["run", "invoke"] and
+  exists(DefinitionNode dn |
+    definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) |
+    dn.getNode().toString() = receiver(cn) and
+    dn.getValue().(CallNode).getFunction().(AttrNode).getNode().getName() = "from_llm" and
+    dn.getValue().(CallNode).getFunction().(AttrNode).getObject().getNode().toString()
+      in ["SQLDatabaseChain", "SQLDatabaseSequentialChain"]
+  )
+}
+
+/** 光标：对象名以 `.cursor` 结尾的那次 execute。 */
+private predicate cursorBound(CallNode cn) {
+  cn.getFunction().(AttrNode).getNode().getName() = "execute" and
+  exists(DefinitionNode dn |
+    definition_node(cn.getFunction().(AttrNode).getNode().getScope().(Function), dn) |
+    dn.getNode().toString() = receiver(cn) and
+    print_function(dn.getValue().(CallNode)).matches("%.cursor")
+  )
+}
+
+/** `client.request(...)` 的 client 是个参数，注解写了 httpx 的客户端类型。 */
+private predicate httpxParamClient(CallNode cn) {
+  exists(ParameterDefinition pd, AttrNode an |
+    pd.getScope() = cn.getScope() and
+    pd.getAnnotation() = an |
+    cn.getFunction().(AttrNode).getNode().getName() = "request" and
+    pd.getName() = receiver(cn) and
+    an.getNode().getName().matches("%Client") and
+    an.getObject().getNode().toString() = "httpx"
+  )
+}
+
+/** 第二层：名字对了还不够，得看对象是从哪来的。 */
+private predicate sinkByBoundObject(CallNode cn) {
+  clientSessionBound(cn)
+  or
+  asyncWebCrawlerBound(cn)
+  or
+  shellToolBound(cn)
+  or
+  pythonReplBound(cn)
+  or
+  ipythonBound(cn)
+  or
+  htmlLoaderBound(cn)
+  or
+  sqlChainBound(cn)
+  or
+  cursorBound(cn)
+  or
+  httpxParamClient(cn)
+}
 
 // ======== 以下由 core/gen_ql.py 生成，不要手改 ========
 // 来源：core/config/sinks.yml 里 source=extra 的 1 条
@@ -364,4 +438,6 @@ predicate is_sink_config(CallNode cn) {
   ))
 }
 
-predicate is_sink(CallNode cn) { is_sink_paper(cn) or is_sink_config(cn) }
+predicate is_sink(CallNode cn) {
+  sinkByShape(cn) or sinkByBoundObject(cn) or is_sink_config(cn)
+}

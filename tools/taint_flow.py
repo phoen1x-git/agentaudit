@@ -10,13 +10,13 @@
 
 | 场景 | 变量名 | 真实来源 | 结论 |
 |---|---|---|---|
-| one SDK 真漏洞 | `runtime_params["base_url"]` | `request.headers.get("base_url")` | ★ 是外部输入 |
-| one SDK 误报 | `base_url`（函数形参） | 服务端自己的配置 | ★ 不是 |
+| Adala 真漏洞 | `runtime_params["base_url"]` | `request.headers.get("base_url")` | ★ 是外部输入 |
+| Adala 误报 | `base_url`（函数形参） | 服务端自己的配置 | ★ 不是 |
 | reagent 误报 | `api_key`（函数形参） | 环境变量/配置 | ★ 不是 |
 
 **名字长得一样，来源完全不同。**
 
-★ 这已经是同一个病的第 N 次发作（pexpect 漏词/ samplesdk 漏词 /
+★ 这已经是同一个病的第 N 次发作（pexpect 漏词/ chainlit 漏词 /
   auth_header 漏词 / 形参名误伤 / 中转变量误伤）——
 **根因都是「靠名字判断，而不是靠数据流」**。
 
@@ -42,6 +42,16 @@ import re
 REQUEST_ROOTS = re.compile(
     r"^(req|request|http_request|httprequest|flask_request|ctx|context|"
     r"aiohttp_request|starlette_request|websocket|self\.request)$", re.I)
+
+# 请求对象上取数据的属性（几乎全是外部输入）
+REQUEST_ATTRS = re.compile(
+    r"^(args|query_params|form|json|body|data|headers|cookies|values|"
+    r"get_post|get_json|path_params|path|query_string|raw_body|user)$", re.I)
+
+# 配置类来源（这些是服务端自己配的，**不算**外部输入）
+CONFIG_ATTRS = re.compile(
+    r"^(getenv|environ|env|config|settings|opts|options|kwargs|"
+    r"default|defaults|DEFAULT|_default)$", re.I)
 
 # 本模块的判定结果（三档，不许只有两档）
 CONFIRMED = "confirmed"       # 追到 request.* 了
@@ -172,7 +182,7 @@ def _expr_is_config(node):
        → 改成**按 AST 节点类型判定**，这是结构信息，不靠猜。
 
     ★★ 另一个坑：形参（None 默认值）原本被判成「不是外部输入」，
-       但 one SDK 的 `runtime_params` 恰恰是形参，
+       但 Adala 的 `runtime_params` 恰恰是形参，
        真实来源在**另一个函数**里（那里确实来自 request.headers）。
        → 单函数内追不到，正确结论是 unknown（不确定），不是 not_input（安全）。
        → ★ 与「没检出 ≠ 没有」同源：
@@ -236,6 +246,25 @@ REQUEST_ANNOTATED = re.compile(r"^(request|req|ctx|websocket)$", re.I)
 BUILT_REQUEST_CTORS = re.compile(
     r"(^|\.)(Request|PreparedRequest|RequestObject)$", re.I)
 
+
+def is_framework_request_arg(node):
+    """这个实参是不是「框架的请求对象」（外部输入）？
+
+    ★ 必须看**有没有类型注解** —— 只看名字会把 urllib 的待发送对象也算进来。
+    """
+    if not isinstance(node, ast.Name):
+        return False
+    if not REQUEST_ANNOTATED.match(node.id):
+        return False
+    # 在函数签名里找它有没有 : Request 这样的注解
+    fn = getattr(node, "_owner_fn", None)
+    scope = getattr(node, "_scope", None)
+    if scope is None:
+        return False
+    anns = getattr(scope, "annotated_names", None)
+    if anns is None:
+        return False
+    return node.id in anns
 
 
 def trace(node, name, scope=None, depth=0, seen=None):

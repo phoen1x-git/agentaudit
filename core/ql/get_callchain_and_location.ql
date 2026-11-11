@@ -9,4 +9,4 @@
  import call.call
  import util.util
  from Source source
- select source, "$@", "$@",  source.getPathStr()
+ select source.getCallee(), source.getJson("py-qs/caller", "[]", "[]")
