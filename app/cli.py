@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """One command for the whole tool.
 
+    agentaudit doctor                     what this machine can and cannot do
     agentaudit scan --demo                 scan a target (--demo / --path / --repo)
     agentaudit explain out/round-x         show why a candidate was reported
     agentaudit serve  out/round-x          read the results in a browser
@@ -29,12 +30,16 @@ sys.path.insert(0, str(ROOT))
 
 # name -> (script, one-line description)
 COMMANDS: dict[str, tuple[str, str]] = {
+    "doctor": ("app/doctor.py", "say what this machine can and cannot do, in one screen"),
     "scan": ("app/scan.py", "scan a target: --demo, --path DIR or --repo OWNER/NAME"),
     "explain": ("app/explain.py", "show why a candidate was reported"),
+    "investigate": ("app/investigate.py", "collect bounded source evidence into a new round, offline"),
+    "import-sarif": ("app/import_sarif.py", "import external analyzer candidates and source context"),
     "serve": ("app/serve.py", "serve a round directory on localhost"),
     "report": ("app/make_report.py", "render the report draft for a round"),
     "index": ("app/make_index.py", "render the HTML index for a round"),
     "sarif": ("tools/to_sarif.py", "export a round as SARIF 2.1.0"),
+    "candidates": ("tools/export_candidates.py", "write the contract file (candidates.jsonl) for a round"),
     "round": ("app/run_round.py", "run one scan round over a target table"),
     "all": ("app/run_all.py", "prepare -> scan -> report, resumable"),
     "selftest": ("tools/run_selftests.py", "run the rule self-tests"),

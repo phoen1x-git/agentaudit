@@ -169,7 +169,7 @@ def _stamp() -> dict:
 
 
 def write_round(out_root: Path, tag: str, findings: list[F.Finding],
-                meta_extra: dict | None = None, keep_sarif: str | None = None) -> Path:
+                meta_extra: dict | None = None, keep_results: str | None = None) -> Path:
     """Write a round directory in the same layout app/run_round.py produces."""
     from datetime import datetime
     rd = out_root / f"round-{tag}"
@@ -188,9 +188,11 @@ def write_round(out_root: Path, tag: str, findings: list[F.Finding],
         "llm_cost_cny": 0.0,
         "llm_review": "not run",
     }
-    if keep_sarif and Path(keep_sarif).exists():
-        (rd / "results.sarif").write_text(Path(keep_sarif).read_text(encoding="utf-8"), encoding="utf-8")
-        meta["sarif"] = "results.sarif"
+    # The query output is CSV, not SARIF: the message holds JSON, which SARIF escapes twice.
+    # 对外的 SARIF 由 tools/to_sarif.py 从 findings 重新生成，不在这里留。
+    if keep_results and Path(keep_results).exists():
+        (rd / "results.csv").write_text(Path(keep_results).read_text(encoding="utf-8"), encoding="utf-8")
+        meta["raw_results"] = "results.csv"
     if meta_extra:
         meta.update(meta_extra)
     R.write_meta(rd / "meta.json", meta)

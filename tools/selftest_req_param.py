@@ -62,11 +62,11 @@ def main():
               % ("OK  " if ok else "FAIL", arglist, exp, got, why))
     print()
     if bad:
-        print("★ %d / %d 档不通过 —— ★ 别拿去改规则：收紧过头会造成**假阴性**"
+        print("★ %d / %d cases failed - ★ do not tune the rule off this: tightening too far creates false negatives"
               % (len(bad), len(CASES)))
-        print("  假阴性 = 真洞被藏起来，比假阳性危险得多。")
+        print("  a false negative hides a real hole, which is worse than a false positive.")
         return 1
-    print("全部 %d 档通过 ✓（含 1 档专门防「收紧过头」）" % len(CASES))
+    print("all %d cases passed (one of them exists to catch over-tightening)" % len(CASES))
     return 0
 
 

@@ -324,7 +324,7 @@ def scan_dir(src_root, project: str, on_log=None) -> list[F.Finding]:
     root = Path(src_root)
     if not root.exists():
         if on_log:
-            on_log(f"[duality] {project}: 源码目录不存在 {root}")
+            on_log(f"[duality] {project}: source directory does not exist: {root}")
         return []
     kept, filtered, n_files, n_raw = [], 0, 0, 0
     for p in sorted(root.rglob("*.py")):
@@ -353,8 +353,8 @@ def scan_dir(src_root, project: str, on_log=None) -> list[F.Finding]:
                 snippet=snippet, chain=chain, src_root=str(root),
             ))
     if on_log:
-        on_log(f"[duality] {project}: {n_files} 文件 → 原始 {n_raw} 处，"
-               f"保留 {len(kept)} 条，按「常量/已净化」滤掉 {filtered} 条")
+        on_log(f"[duality] {project}: {n_files} files -> {n_raw} raw sites, "
+               f"{len(kept)} kept, {filtered} dropped as constant or already sanitised")
     return kept
 
 

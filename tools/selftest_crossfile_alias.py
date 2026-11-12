@@ -97,7 +97,7 @@ def routes_hit(res):
 
 
 # ---------------------------------------------------------------- 1
-print("\n=== 1. 经典 Annotated 别名（sampleagent 形态）===")
+print("\n=== 1. the classic Annotated alias (sampleagent shape)===")
 res = run({"dependencies.py": DEPS, "routers/agents.py": ROUTES})
 got = routes_hit(res)
 check("1.1 用 CurrentUser 的 /secure 不报", "/secure" not in got, "报了")
@@ -109,7 +109,7 @@ check("1.4 只报1 处", res["unauth_endpoint"]["n_hits"] == 1,
       "报了 %d 处" % res["unauth_endpoint"]["n_hits"])
 
 # ---------------------------------------------------------------- 2
-print("\n=== 2. PEP 695 `type X = ...`（sample-toolkit 形态）===")
+print("\n=== 2. PEP 695 `type X = ...` (sample-toolkit shape)===")
 res2 = run({"auth/dependencies.py": DEP695,
             "api/routes.py": ROUTES.replace("from dependencies import",
                                              "from auth.dependencies import")})
@@ -141,7 +141,7 @@ check("2.4 不含鉴权词根的别名 SessionCtx 也能认出来（真靠别名
       "报了 → 说明只靠 AUTH_HINT 认 Alias 名字里的词根")
 
 # ---------------------------------------------------------------- 3
-print("\n=== 3. ★ 两条规则必须同步（不自相矛盾）===")
+print("\n=== 3. ★ the two rules must agree with each other===")
 # 同一个项目里：别名端点 + 无别名端点
 res3 = run({"dependencies.py": DEPS, "routers/agents.py": ROUTES})
 ua = res3["unauth_endpoint"]["n_hits"]
@@ -153,7 +153,7 @@ check("3.2 inconsistent_auth 能认出别名端点（不把它们全当无鉴权
       ia >= 1, "inconsistent_auth=%d，一处都没报反而可疑" % ia)
 
 # ---------------------------------------------------------------- 4
-print("\n=== 4. 反向：不能因为接了别名而吃掉真阳性 ===")
+print("\n=== 4. reverse: accepting an alias must not swallow a true positive ===")
 # 别名名出现在**函数体或无关处**，签名里没有 → 仍应报
 res4 = run({
     "dependencies.py": DEPS,
@@ -170,7 +170,7 @@ check("4.1 签名里没用别名、只在函数体提到 → 仍然要报",
       "/nope" in routes_hit(res4), "被误当成有鉴权")
 
 # ---------------------------------------------------------------- 5
-print("\n=== 5. 反向：普通变量不能被当成别名 ===")
+print("\n=== 5. reverse: an ordinary variable is not an alias ===")
 res5 = run({
     "dependencies.py": DEPS,
     "routers/y.py":
@@ -187,10 +187,10 @@ check("5.1 小写普通变量不算别名（CurrentUser 这类大驼峰才算）
 
 # ---------------------------------------------------------------- 汇总
 print("\n" + "=" * 70)
-print("通过 %d / %d" % (len(PASS), len(PASS) + len(FAIL)))
+print("%d of %d passed" % (len(PASS), len(PASS) + len(FAIL)))
 if FAIL:
-    print("失败：")
+    print("failed:")
     for f in FAIL:
         print("  - " + f)
     sys.exit(1)
-print("全部通过 ✓")
+print("all passed")

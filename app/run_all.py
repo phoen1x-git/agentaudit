@@ -128,6 +128,7 @@ def prepare_missing(targets: list[dict]) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
+        prog="agentaudit all",
         description="one-shot driver: prepare -> scan -> report (resumable)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

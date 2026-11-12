@@ -39,6 +39,9 @@ core/config/targets.yml
 # local assistant workspace
 .workbuddy/
 
+# the CodeQL CLI, installed by scripts/setup.sh. Hundreds of megabytes and not ours to ship.
+_tools/
+
 # editor / OS
 .vscode/
 .idea/

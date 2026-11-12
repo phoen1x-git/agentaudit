@@ -72,9 +72,9 @@ def main():
               % ("OK  " if ok else "FAIL", repr(path)[:54], exp, got, why))
     print()
     if bad:
-        print("★ %d / %d 档不通过 —— 规则坏了，别拿去过滤数据" % (len(bad), len(CASES)))
+        print("★ %d / %d cases failed - the rule is broken, do not use it to filter data" % (len(bad), len(CASES)))
         return 1
-    print("全部 %d 档通过" % len(CASES))
+    print("all %d cases passed" % len(CASES))
     return 0
 
 

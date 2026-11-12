@@ -1,36 +1,38 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-目标筛选器（target screener）
-============================
+Find and screen GitHub projects worth pointing the scanner at.
+================================================================
 
-目的：把「选样」从经验判断变成一条可自动跑的规则，产出一份候选目标清单。
+The point is to turn "which project next" from a judgement call into a rule that runs, and
+to produce a list you can argue with. Measured on five projects we picked by hand, four had
+already been fixed or archived: the well-known ones were mined out. So selection has to
+exclude two things on purpose, the very well known (already audited) and the well run
+(has a SECURITY.md or advisories, so reports get fixed before they are interesting).
 
-为什么需要它
-------------
-实测 5 个目标，4 个已修或已归档 —— 头部项目的洞早被挖完了。
-所以选样必须额外排除两个维度：
-    1) 头部（已被深度审计）
-    2) 已在管安全（有 SECURITY.md / 有安全公告 → 洞会被更快修掉）
+★ Every rule here is decided from data, with no human reading the repository.
+  The layers exist because an unauthenticated GitHub search is 60 core requests per hour:
 
-★ 本脚本的规则全部可自动判定，不需要人工看仓库。
-  规则设计刻意分三层，因为 GitHub 未认证只有 60 次/小时的核心额度：
+    layer 0  collect a pool       search API, one request per query
+    layer 1  hard filters         fields the search response already carries, no request
+    layer 2  installable          PyPI API, not rate limited
+    layer 3  probe                GitHub core API, expensive, survivors only
 
-    Layer 0  拉候选池        search API，每个 query 1 次请求
-    Layer 1  硬性过滤        search 结果自带字段，0 次额外请求
-    Layer 2  能否装上        PyPI API，无额度限制
-    Layer 3  深查            GitHub core API，昂贵，只对入围者跑
+What you are looking for is a profile, not a constant: `screen --profile your.yml`. See
+core/config/screen_profile.example.yml. Without one, every user gets the same list, which is
+the one thing this tool should not do.
 
-用法
-----
-    python target_screener.py fetch      # 拉候选池（Layer 0）
-    python target_screener.py screen     # 跑筛选（Layer 1+2，便宜）
-    python target_screener.py deep       # 深查入围者（Layer 3，昂贵）
-    python target_screener.py report     # 出候选清单 Markdown
-    python target_screener.py selftest   # ★ 先跑这个：验规则本身对不对
+Usage
+-----
+    agentaudit targets fetch      # layer 0
+    agentaudit targets screen     # layer 1+2, cheap; --profile to say what you want
+    agentaudit targets deep       # layer 3, costs quota
+    agentaudit targets report     # the list; --excluded says what was dropped and why
+    agentaudit targets selftest   # ★ run this first: it checks the rules themselves
 
-★ 断点续跑：所有 API 结果落盘缓存到 _cache/，重跑不重复花额度。
-★ 限流：未认证 60 次/小时。脚本会读 rate_limit 自动退避；设 GH_TOKEN 可提到 5000。
+★ Resumable: every API response is cached under _cache/, so a rerun costs nothing.
+★ Rate limit: 60/hour unauthenticated. The script reads rate_limit and backs off; set
+  GH_TOKEN to raise it to 5000.
 """
 
 import json
@@ -131,7 +133,7 @@ def http_json(url, use_cache=True, cache_key=None):
             if e.code in (403, 429):
                 reset = _reset_seconds(e)
                 if reset is not None and reset < 3700 and attempt < 2:
-                    print("    [限流] 等待 %d 秒 ..." % (reset + 5), flush=True)
+                    print("    [rate limit] waiting %d s ..." % (reset + 5), flush=True)
                     time.sleep(reset + 5)
                     continue
             return {"_error": last_err, "_status": e.code}
@@ -237,11 +239,96 @@ ACTION_WORDS = re.compile(
     r"\b(tool|tools|function call|plugin|plugins|skill|skills|workflow|"
     r"mcp|action|execute|executor|toolkit|automat)", re.I)
 
-# star 区间：太高=已被审计，太低=可能不维护
-STAR_MIN = 200
-STAR_MAX = 5000
-# 半年内有提交（交接档案建议）
-MAX_DAYS_SINCE_PUSH = 183
+# Defaults. A profile file overrides any of them; see core/config/screen_profile.example.yml.
+DEFAULT_PROFILE = {
+    "stars": [200, 5000],
+    "max_days_since_push": 183,
+    "languages": ["python"],
+    # Empty means "any form". Otherwise keep only projects that match one of these.
+    "forms": [],
+    # report | fix | study. It changes the thresholds below, nothing else.
+    "intent": "report",
+    "skip_archived": True,
+    "skip_fork": True,
+    "skip_known": True,
+}
+
+# Named aliases for the defaults. The self-test asserts against these, and the fetch message
+# quotes them; keeping them as names means the default lives in exactly one place.
+STAR_MIN = DEFAULT_PROFILE["stars"][0]
+STAR_MAX = DEFAULT_PROFILE["stars"][1]
+MAX_DAYS_SINCE_PUSH = DEFAULT_PROFILE["max_days_since_push"]
+
+# What a project *is*, judged from topics and the description alone: no extra request.
+# Coarse on purpose. It answers "is this the kind of thing I want to read", not "what shape
+# is its attack surface" -- that is the probes' job, later and far more expensive.
+FORM_PATTERNS = {
+    "mcp": re.compile(r"\bmcp\b|model context protocol", re.I),
+    "web": re.compile(
+        r"\b(web|http|rest|api|server|service|flask|fastapi|django|endpoint)s?\b", re.I),
+    "cli": re.compile(r"\b(cli|command[- ]line|terminal|shell|console)\b", re.I),
+    "library": re.compile(
+        r"\b(library|sdk|framework|toolkit|package|wrapper|plugin)\b", re.I),
+}
+
+
+def infer_forms(it) -> set:
+    text = " ".join([
+        str(it.get("name") or ""),
+        str(it.get("description") or ""),
+        " ".join(str(t) for t in (it.get("topics") or [])),
+    ])
+    return {k for k, rx in FORM_PATTERNS.items() if rx.search(text)}
+
+
+def load_profile(path) -> dict:
+    """Read a profile file over the defaults. Unknown keys are an error, not a shrug.
+
+    A misspelled key in a config file is the quiet kind of bug: the tool runs, ignores what
+    you meant, and the output looks like an answer. So this refuses to guess.
+    """
+    cfg = {k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULT_PROFILE.items()}
+    if not path:
+        return _apply_intent(cfg)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    unknown = sorted(set(raw) - set(cfg))
+    if unknown:
+        raise SystemExit(
+            "unknown key(s) in profile %s: %s\nknown keys: %s"
+            % (path, ", ".join(unknown), ", ".join(sorted(cfg))))
+    for k, v in raw.items():
+        if k == "forms":
+            bad = sorted(set(v or []) - set(FORM_PATTERNS))
+            if bad:
+                raise SystemExit(
+                    "unknown form(s) in profile: %s\nknown forms: %s"
+                    % (", ".join(bad), ", ".join(sorted(FORM_PATTERNS))))
+        if k in ("stars",) and (not isinstance(v, list) or len(v) != 2):
+            raise SystemExit("profile key 'stars' must be [min, max]")
+        cfg[k] = list(v) if isinstance(v, list) else v
+    return _apply_intent(cfg)
+
+
+def _apply_intent(cfg: dict) -> dict:
+    """Intent narrows the thresholds. It is stated once, so it cannot be half-applied."""
+    intent = cfg.get("intent") or "report"
+    if intent == "report":
+        # A project nobody maintains will not fix what you report.
+        cfg["skip_archived"] = True
+        cfg["max_days_since_push"] = min(cfg["max_days_since_push"], 183)
+    elif intent == "fix":
+        # You are going to patch it yourself, so it has to be alive.
+        cfg["max_days_since_push"] = min(cfg["max_days_since_push"], 90)
+    elif intent == "study":
+        # Reading someone else's design does not require the project to be maintained, and a
+        # well-known one is often the better read.
+        cfg["skip_archived"] = False
+        cfg["stars"] = [max(cfg["stars"][0], 0), 10 ** 9]
+    else:
+        raise SystemExit(
+            "unknown intent '%s' in profile; use report, fix or study" % intent)
+    return cfg
 
 
 def looks_like_agent(name, desc, topics):
@@ -310,54 +397,68 @@ def looks_like_agent(name, desc, topics):
     return verdict, score, reasons
 
 
-def screen_item(it):
-    """对单个候选跑 Layer 1 硬性过滤。返回 (通过?, 原因列表)。
+def screen_item(it, cfg=None):
+    """Run the hard filters over one candidate. Returns (passed?, reasons).
 
-    ★ 只用 search 结果自带字段 —— 0 次额外 API 请求。
+    ★ Reads only fields that the search response already carries: no extra request.
+    Every reason is recorded whether the item passes or not, so a later report can say why
+    something was left out. A filter whose exclusions are invisible cannot be argued with.
     """
+    cfg = cfg or _apply_intent(dict(DEFAULT_PROFILE))
     full = (it.get("full_name") or "").lower()
     reasons = []
 
-    # 1) AgentFuzz测过 / 已实测过（★ 新旧名都认，避免改名后漏排除）
-    if is_paper_target(full):
-        return False, ["AgentFuzz已测过或本项目已实测过"]
+    # 1) already measured, by us or by the paper this pipeline came from. Both the old and
+    #    the new name count, because a rename would otherwise walk straight past this.
+    if cfg.get("skip_known", True) and is_paper_target(full):
+        return False, ["already measured (this project, or the paper)"]
 
-    # 2) 归档 —— 已归档的仓库不会有新洞可挖
-    if it.get("archived"):
-        reasons.append("仓库已归档")
+    # 2) archived: nobody will fix what you report
+    if it.get("archived") and cfg.get("skip_archived", True):
+        reasons.append("archived")
 
-    # 3) fork —— 上游不认 fork 的漏洞，且 fork 的修复不回传
-    if it.get("fork"):
-        reasons.append("是fork")
+    # 3) fork: upstream does not accept reports about forks, and fixes do not travel back
+    if it.get("fork") and cfg.get("skip_fork", True):
+        reasons.append("fork")
 
-    # 4) 语言 —— 流水线是 Python 静态分析，非 Python 直接出局
-    if (it.get("language") or "").lower() != "python":
-        reasons.append("非Python(%s)" % (it.get("language") or "?"))
+    # 4) language: the pipeline's static frontend reads specific languages only
+    lang = (it.get("language") or "").lower()
+    wanted = [str(x).lower() for x in (cfg.get("languages") or [])]
+    if wanted and lang not in wanted:
+        reasons.append("language %s (wanted %s)" % (lang or "?", "/".join(wanted)))
 
-    # 5) 活跃度
+    # 5) form: what kind of thing it is, from topics and description only
+    if cfg.get("forms"):
+        forms = infer_forms(it)
+        if not (forms & set(cfg["forms"])):
+            reasons.append("form none of %s (looks like %s)"
+                           % ("/".join(cfg["forms"]), "/".join(sorted(forms)) or "unknown"))
+
+    # 6) activity
     d = days_since(it.get("pushed_at"))
     if d is None:
-        reasons.append("拿不到pushed_at")
-    elif d > MAX_DAYS_SINCE_PUSH:
-        reasons.append("已停更%d天" % d)
+        reasons.append("no pushed_at")
+    elif d > cfg["max_days_since_push"]:
+        reasons.append("idle %d days (limit %d)" % (d, cfg["max_days_since_push"]))
 
-    # 6) star 区间
+    # 7) star band
     st = it.get("stargazers_count") or 0
-    if st > STAR_MAX:
-        reasons.append("star过高%d(已被审计)" % st)
-    elif st < STAR_MIN:
-        reasons.append("star过低%d" % st)
+    lo, hi = cfg["stars"][0], cfg["stars"][1]
+    if st > hi:
+        reasons.append("stars %d above %d (heavily audited)" % (st, hi))
+    elif st < lo:
+        reasons.append("stars %d below %d" % (st, lo))
 
-    # 7) 是否像 Agent 项目
+    # 8) does it look like an agent project at all
     verdict, score, rs = looks_like_agent(
         it.get("name"), it.get("description"), it.get("topics"))
     if verdict == "no":
-        reasons.append("不像Agent项目")
+        reasons.append("not agent-like")
     else:
-        reasons.append("agent信号[%s]%s" % (verdict, "+".join(rs) or "-"))
+        reasons.append("agent signal [%s] %s" % (verdict, "+".join(rs) or "-"))
 
     return (len(reasons) == 0 or
-            (reasons and reasons[0].startswith("agent信号"))), reasons
+            (reasons and reasons[0].startswith("agent signal"))), reasons
 
 
 # ---------------------------------------------------------------- Layer 2: PyPI
@@ -558,7 +659,7 @@ def cmd_resolve(args):
     covered, tried = load_known()
     names = sorted(covered | tried)
     cm = canon_map()
-    print("解析 %d 个仓库的规范名...\n" % len(names))
+    print("resolving the canonical name of %d repositories...\n" % len(names))
     changed = []
     for i, n in enumerate(names, 1):
         d = http_json("https://api.github.com/repos/%s" % n)
@@ -566,7 +667,8 @@ def cmd_resolve(args):
         if isinstance(d, dict) and d.get("full_name"):
             real = d["full_name"]
         elif isinstance(d, dict) and d.get("message") == "Not Found":
-            print("[%2d/%d] %-38s !! 404，可能已删除或转移组织" % (i, len(names), n))
+            print("[%2d/%d] %-38s !! 404: deleted, or moved to another owner"
+              % (i, len(names), n))
         else:
             print("[%2d/%d] %-38s ?? %s" % (
                 i, len(names), n, str(d.get("message") or d.get("_error"))[:50]))
@@ -575,20 +677,21 @@ def cmd_resolve(args):
             cm[n.lower()] = real.lower()
             if real.lower() != n.lower():
                 changed.append((n, real))
-                print("[%2d/%d] %-38s -> %s  ★已改名" % (i, len(names), n, real))
+                print("[%2d/%d] %-38s -> %s  ★renamed" % (i, len(names), n, real))
             else:
-                print("[%2d/%d] %-38s    规范名一致" % (i, len(names), n))
+                print("[%2d/%d] %-38s    name unchanged" % (i, len(names), n))
         time.sleep(1.0)
 
     _CANON_MEM.clear()
     _CANON_MEM.update(cm)
     _save(CANON_FILE, cm)
-    print("\n改名/转移的：%d 个" % len(changed))
+    print("\nrenamed or moved: %d" % len(changed))
     for a, b in changed:
         print("  %s  ->  %s" % (a, b))
     print("\n-> %s" % CANON_FILE)
     if changed:
-        print("\n★ 排除表已自动包含新旧两个名，不会漏排除。")
+        print("\n★ the exclusion list now holds both the old and the new name, so a "
+          "rename cannot slip past it.")
     return 0
 
 
@@ -630,7 +733,7 @@ def cmd_fetch(args):
         print("[fetch] %s" % q, flush=True)
         d = http_json(url)
         items = d.get("items") or []
-        print("        total=%s  取回=%d" % (d.get("total_count"), len(items)))
+        print("        total=%s  fetched=%d" % (d.get("total_count"), len(items)))
         for it in items:
             fn = it.get("full_name")
             if fn:
@@ -640,7 +743,7 @@ def cmd_fetch(args):
     pool["queries"] = queries
     pool["fetched_at"] = now_utc()
     _save(POOL_FILE, pool)
-    print("\n候选池合计 %d 个 -> %s" % (len(pool["repos"]), POOL_FILE))
+    print("\npool holds %d repositories -> %s" % (len(pool["repos"]), POOL_FILE))
 
 
 def _date_ago(days):
@@ -650,15 +753,16 @@ def _date_ago(days):
 
 def cmd_screen(args):
     """Layer 1+2：硬性过滤 + PyPI 可装性。便宜，全量跑。"""
+    cfg = load_profile(getattr(args, "profile", None))
     pool = load_pool()
     repos = pool.get("repos") or {}
     if not repos:
-        print("候选池是空的，先跑 fetch", file=sys.stderr)
+        print("the pool is empty: run `fetch` first", file=sys.stderr)
         return 1
 
     out = []
     for full, it in sorted(repos.items()):
-        ok, reasons = screen_item(it)
+        ok, reasons = screen_item(it, cfg)
         verdict, score, rs = looks_like_agent(
             it.get("name"), it.get("description"), it.get("topics"))
         rec = {
@@ -688,14 +792,15 @@ def cmd_screen(args):
             rec["passed_L2"] = bool(pi and pi.get("found"))
         out.append(rec)
 
-    _save(SCREEN_FILE, {"screened_at": now_utc(), "items": out,
-                        "thresholds": {
-                            "star": [STAR_MIN, STAR_MAX],
-                            "max_days_since_push": MAX_DAYS_SINCE_PUSH}})
+    _save(SCREEN_FILE, {"screened_at": now_utc(), "items": out, "profile": cfg})
 
     n1 = sum(1 for r in out if r["passed_L1"])
     n2 = sum(1 for r in out if r.get("passed_L2"))
-    print("候选 %d -> 过 L1 %d -> 过 L2(PyPI可装) %d" % (len(out), n1, n2))
+    print("candidates %d -> passed filters %d -> installable via PyPI %d"
+          % (len(out), n1, n2))
+    print("profile: intent=%s stars=%s idle<=%dd forms=%s" % (
+        cfg.get("intent"), cfg["stars"], cfg["max_days_since_push"],
+        "/".join(cfg.get("forms") or []) or "any"))
     print("-> %s" % SCREEN_FILE)
     return 0
 
@@ -703,7 +808,7 @@ def cmd_screen(args):
 def cmd_deep(args):
     """Layer 3：对入围者深查。★ 花 core 额度，注意限流。"""
     if not os.path.exists(SCREEN_FILE):
-        print("先跑 screen", file=sys.stderr)
+        print("nothing screened yet: run `screen` first", file=sys.stderr)
         return 1
     with open(SCREEN_FILE, "r", encoding="utf-8") as f:
         scr = json.load(f)
@@ -718,13 +823,13 @@ def cmd_deep(args):
             prev = json.load(f).get("items") or {}
     byname = {k.lower(): v for k, v in prev.items()}
 
-    print("额度：%s" % rate_limit())
+    print("quota: %s" % rate_limit())
     results = {}
     for i, t in enumerate(targets, 1):
         fn = t["full_name"]
         key = fn.lower()
         if key in byname and byname[key].get("tree_ok"):
-            print("[%d/%d] %s  (已缓存)" % (i, len(targets), fn))
+            print("[%d/%d] %s  (cached)" % (i, len(targets), fn))
             results[key] = byname[key]
             continue
         print("[%d/%d] %s" % (i, len(targets), fn), flush=True)
@@ -735,14 +840,20 @@ def cmd_deep(args):
         time.sleep(1.0)
 
     _save(DEEP_FILE, {"deep_at": now_utc(), "items": results})
-    print("完成 %d 个 -> %s" % (len(results), DEEP_FILE))
+    print("probed %d -> %s" % (len(results), DEEP_FILE))
     return 0
 
 
 def cmd_report(args):
-    """出候选清单 Markdown + 控制台摘要。"""
+    """Write the candidate list as Markdown, plus a short console summary.
+
+    Two lists, not one. The candidates are what you would open next; the exclusions are what
+    the filters rejected and why. Without the second list a reader cannot tell "nothing else
+    was found" from "everything else was thrown away for a reason I would disagree with",
+    and a filter nobody can inspect is a filter nobody can correct.
+    """
     if not os.path.exists(SCREEN_FILE):
-        print("先跑 screen", file=sys.stderr)
+        print("nothing screened yet: run `screen` first", file=sys.stderr)
         return 1
     with open(SCREEN_FILE, "r", encoding="utf-8") as f:
         scr = json.load(f)
@@ -753,8 +864,10 @@ def cmd_report(args):
                     (json.load(f).get("items") or {}).items()}
 
     rows = []
+    dropped = []
     for r in scr["items"]:
         if not r.get("passed_L1"):
+            dropped.append(r)
             continue
         d = deep.get(r["full_name"].lower()) or {}
         score, why = score_target(r, d)
@@ -763,35 +876,42 @@ def cmd_report(args):
     rows.sort(key=lambda x: -x[0])
     top = rows[:args.top] if args.top else rows
 
+    prof = scr.get("profile") or {}
+    stars = prof.get("stars") or [200, 5000]
+
     lines = []
-    lines.append("# 候选目标池（自动筛选产出）\n")
-    lines.append("生成时间：%s\n" % scr.get("screened_at"))
-    lines.append("筛选条件：star %d–%d、半年内有提交、未归档、非 fork、"
-                 "非AgentFuzz已测、语言 Python、像 Agent 项目\n"
-                 % (STAR_MIN, STAR_MAX))
-    lines.append("## 规则约定（★ 必读，别把这些数字读成结论）\n")
-    lines.append("| 显示 | 含义 |")
+    lines.append("# Candidate targets\n")
+    lines.append("Generated: %s\n" % scr.get("screened_at"))
+    lines.append(
+        "Filter: intent `%s`, stars %s-%s, idle at most %s days, forms %s, languages %s\n"
+        % (prof.get("intent", "report"), stars[0], stars[1],
+           prof.get("max_days_since_push", "?"),
+           "/".join(prof.get("forms") or []) or "any",
+           "/".join(prof.get("languages") or []) or "any"))
+    lines.append("## Read this before you trust the numbers\n")
+    lines.append("| Marker | Meaning |")
     lines.append("|---|---|")
-    lines.append("| `—` | **没查过**（不是「没有」）|")
-    lines.append("| `无` | 查过了，确实没有 |")
+    lines.append("| `—` | **not checked** (which is not the same as \"none\") |")
+    lines.append("| `none` | checked, and there is none |")
     lines.append("")
-    lines.append("- `agent_verdict` 是**启发式**（topics/描述信号投票），"
-                 "**不是硬规则**，不参与事实分。")
-    lines.append("- `PyPI ✗` 只说明**猜的包名**没命中，不代表装不上 —— "
-                 "包名猜错是常态。")
-    lines.append("- 「未跑源码探针」的项目，**攻击面是未知的**，"
-                 "分数低只反映『没数据』，不代表它差。"
-                 "★ 所以**不要按分数排名直接开坑**，要先补探针数据。")
-    lines.append("- 分数里的**事实分**（star/活跃度/SECURITY.md/源码信号）"
-                 "与**启发式分**（像不像Agent/PyPI）是分开的，见每条的 "
-                 "`score_parts`。")
+    lines.append("- `agent_verdict` is a **heuristic** (a vote over topics and description "
+                 "words). It is not a hard rule and it is excluded from the fact score.")
+    lines.append("- `PyPI no` only means the **guessed** package name was not found. "
+                 "Guessing the name wrong is common; it does not mean the project "
+                 "cannot be installed.")
+    lines.append("- A project with **no probe data** has an **unknown** attack surface. "
+                 "A low score there reflects missing data, not a bad project. "
+                 "**Do not pick work off the ranking alone**; fill in the probe data first.")
+    lines.append("- The **fact score** (stars, activity, SECURITY.md, source signals) and "
+                 "the **heuristic score** (agent-likeness, PyPI) are kept apart; see "
+                 "`score_parts` on each entry.")
     lines.append("")
 
-    lines.append("## 入选清单\n")
-    lines.append("| 分数 | 其中事实分 | 项目 | star | 最近提交 | SECURITY.md | 探针 |")
+    lines.append("## Selected\n")
+    lines.append("| Score | of which facts | Project | stars | last push | SECURITY.md | probe |")
     lines.append("|---|---|---|---|---|---|---|")
     for score, r, d, why in top:
-        sec = {True: "有", False: "无", None: "—"}.get(d.get("security_md"), "—")
+        sec = {True: "yes", False: "no", None: "—"}.get(d.get("security_md"), "—")
         if d.get("ok"):
             vd = d.get("verdict") or {}
             marks = []
@@ -800,125 +920,146 @@ def cmd_report(args):
             if vd.get("has_mcp_server"):
                 marks.append("MCP")
             if vd.get("has_tool_registration"):
-                marks.append("工具")
+                marks.append("tools")
             if vd.get("has_dangerous_exec"):
-                marks.append("执行点")
-            probe_s = "+".join(marks) if marks else "无命中"
+                marks.append("exec")
+            probe_s = "+".join(marks) if marks else "no hits"
         else:
-            probe_s = "—未跑"
+            probe_s = "—not run"
         sp = r.get("score_parts") or {}
-        lines.append("| %d | %s | [%s](%s) | %s | %s天前 | %s | %s |" % (
+        lines.append("| %d | %s | [%s](%s) | %s | %s days ago | %s | %s |" % (
             score, sp.get("facts", "—"), r["full_name"], r.get("html_url") or "",
             r.get("stars"), r.get("days_since_push"), sec, probe_s))
     lines.append("")
 
-    lines.append("## 逐条规则依据\n")
+    lines.append("## Why each score\n")
     for score, r, d, why in top:
-        lines.append("### %s（分数 %d）\n" % (r["full_name"], score))
-        lines.append("- 描述：%s" % (r.get("desc") or "（无）"))
-        lines.append("- Agent 信号：%s（score=%s）" % (r.get("agent_verdict"),
-                                                    r.get("agent_score")))
-        lines.append("- 过滤依据：%s" % "；".join(r.get("reasons") or []))
+        lines.append("### %s (score %d)\n" % (r["full_name"], score))
+        lines.append("- description: %s" % (r.get("desc") or "(none)"))
+        lines.append("- agent signal: %s (score=%s)" % (r.get("agent_verdict"),
+                                                       r.get("agent_score")))
+        lines.append("- filter reasons: %s" % "; ".join(r.get("reasons") or []))
         py = r.get("pypi") or {}
         if py:
-            lines.append("- PyPI：%s" % (
-                "%s %s（%s 发布，requires_python=%s）" % (
+            lines.append("- PyPI: %s" % (
+                "%s %s (released %s, requires_python=%s)" % (
                     py.get("name"), py.get("version"), py.get("uploaded"),
                     py.get("requires_python")) if py.get("found")
-                else "猜的包名 %s 未命中PyPI（不等于装不上）" % r.get("pypi_guess")))
+                else "guessed name %s not on PyPI (which does not mean it cannot be "
+                     "installed)" % r.get("pypi_guess")))
         if d:
-            # ★ 只在**确实有数据**时展示，不把「没查」写成「没有」
+            # ★ Only show what was actually measured. "Not checked" never becomes "none".
             bits = []
             if d.get("ok"):
                 vd = d.get("verdict") or {}
                 cbf = d.get("counts_by_file") or {}
-                bits.append("抽样覆盖 %s/%s 个 py 文件%s" % (
+                bits.append("sampled %s/%s py files%s" % (
                     d.get("sampled_files"), d.get("total_py_files"),
-                    "（★抽样非全量）" if d.get("sampled_files") else ""))
-                for k, lab in [("has_http_endpoint", "对外HTTP端点"),
-                               ("has_mcp_server", "MCP服务"),
-                               ("has_tool_registration", "工具注册"),
-                               ("has_dangerous_exec", "危险执行点"),
-                               ("has_auth_surface", "认证鉴权")]:
-                    bits.append("%s:%s" % (lab, "有" if vd.get(k) else "无"))
+                    " (★sample, not full)" if d.get("sampled_files") else ""))
+                for k, lab in [("has_http_endpoint", "HTTP endpoint"),
+                               ("has_mcp_server", "MCP server"),
+                               ("has_tool_registration", "tool registration"),
+                               ("has_dangerous_exec", "dangerous exec"),
+                               ("has_auth_surface", "auth surface")]:
+                    bits.append("%s:%s" % (lab, "yes" if vd.get(k) else "no"))
                 if cbf.get("dangerous_exec"):
-                    bits.append("危险执行点分布在 %d 个文件"
+                    bits.append("dangerous exec in %d files"
                                 % cbf["dangerous_exec"])
                 colo = vd.get("colocated_files") or []
                 if colo:
-                    bits.append("★★危险点与对外输入共现于 " + ", ".join(colo[:3]))
+                    bits.append("★★dangerous call next to external input in "
+                                + ", ".join(colo[:3]))
             sec = d.get("security_md")
             if sec is not None:
-                bits.append("SECURITY.md:%s" % ("有" if sec else "无"))
+                bits.append("SECURITY.md:%s" % ("yes" if sec else "no"))
             else:
-                bits.append("SECURITY.md:未查")
+                bits.append("SECURITY.md:not checked")
             if bits:
-                lines.append("- 源码/深查：" + "；".join(bits))
-            lines.append("- 打分拆分：%s" % json.dumps(
+                lines.append("- source/probe: " + "; ".join(bits))
+            lines.append("- score split: %s" % json.dumps(
                 r.get("score_parts") or {}, ensure_ascii=False))
         else:
-            lines.append("- 源码/深查：★**未跑**（GitHub core 额度每60 分钟重置，"
-                         "本轮用完）—— 攻击面未知，不是「没有攻击面」")
-        lines.append("- **打分理由**：%s\n" % "；".join(why))
+            lines.append("- source/probe: ★**not run** (the GitHub core quota resets "
+                         "hourly and was spent). The attack surface is unknown, which is "
+                         "not the same as absent.")
+        lines.append("- **why this score**: %s\n" % "; ".join(why))
 
-    md = os.path.join(OUT, "候选目标池.md")
+    if args.excluded and dropped:
+        lines.append("## Filtered out\n")
+        lines.append("| Project | stars | why it was dropped |")
+        lines.append("|---|---|---|")
+        for r in sorted(dropped, key=lambda x: -(x.get("stars") or 0)):
+            lines.append("| [%s](%s) | %s | %s |" % (
+                r["full_name"], r.get("html_url") or "", r.get("stars"),
+                "; ".join(r.get("reasons") or []) or "—"))
+        lines.append("")
+        lines.append("A reason in this table is the filter speaking, not a finding about "
+                     "the project. Several of them are about your own profile: change "
+                     "the profile and the same project can move to the list above.\n")
+
+    md = os.path.join(OUT, "candidates.md")
     with open(md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print("-> %s" % md)
 
-    print("\n===== 前 15 名（控制台速览）=====")
+    print("\n===== top 15 (console view) =====")
     for score, r, d, why in rows[:15]:
-        print("%3d  %-42s star=%-6s 提交=%s天前  %s" % (
+        print("%3d  %-42s star=%-6s push=%s days ago  %s" % (
             score, r["full_name"], r.get("stars"), r.get("days_since_push"),
-            "；".join(why)[:70]))
+            "; ".join(why)[:70]))
+    if dropped:
+        print("\n%d project(s) filtered out; `--excluded` lists them with the reason."
+              % len(dropped))
     return 0
 
 
 def score_target(r, d):
-    """给目标打分（0–100）。★ 每条分数都要给得出来的理由。
+    """Score a target 0-100. Every point has to come with a reason you can check.
 
-    ★ 打分只信**可验证的事实**：
-      - star / pushed_at / 归档 → 来自 GitHub API 字段（事实）
-      - SECURITY.md → 来自树里按文件名查（事实）
-      - HTTP端点 / 工具注册 / 危险执行点 → 来自源码探针（事实）
-      - 「像不像 Agent」 → 启发式，单独标注，不混进事实分
+    ★ Only verifiable facts count as facts:
+      - stars / pushed_at / archived come from the GitHub API
+      - SECURITY.md is looked up by filename in the tree
+      - HTTP endpoint / tool registration / dangerous exec come from the source probe
+      - "does it look like an agent" is a heuristic, labelled as one and kept out of
+        the fact score
     """
     score = 0
     why = []
-    facts = 0          # 事实分上限
-    soft = 0           # 启发式分
+    facts = 0          # the verifiable part
+    soft = 0           # the heuristic part
 
     # ---- 事实类（满分 75）
     # 中腰部最优：太低不可信，太高被审计
     st = r.get("stars") or 0
     if 300 <= st <= 2000:
         score += 25; facts += 25
-        why.append("star处于中腰部(%d)，审计压力小" % st)
+        why.append("mid-band stars (%d): audited less than the leaders" % st)
     elif 200 <= st <= 3000:
         score += 15; facts += 15
-        why.append("star适中(%d)" % st)
+        why.append("moderate stars (%d)" % st)
     else:
-        why.append("star偏离中腰部(%d)，减分" % st)
+        why.append("stars outside the mid band (%d)" % st)
 
     # 近期活跃
     dd = r.get("days_since_push")
     if dd is not None:
         if dd <= 30:
             score += 20; facts += 20
-            why.append("%d天前有提交，很活跃" % dd)
+            why.append("pushed %d days ago, active" % dd)
         elif dd <= 90:
             score += 12; facts += 12
-            why.append("%d天前有提交" % dd)
+            why.append("pushed %d days ago" % dd)
         else:
-            why.append("%d天前有提交，偏冷，减分" % dd)
+            why.append("pushed %d days ago, going cold" % dd)
 
     # ★ 反直觉规则：没有 SECURITY.md = 没人管安全 = 洞不会被快速修掉
     #   （sample-toolkit 有3条安全公告、sampledelegate 有2条，印证「有人在管」的都被审过）
     if d.get("security_md") is False:
         score += 20; facts += 20
-        why.append("无SECURITY.md，安全响应不可靠（★反直觉规则）")
+        why.append("no SECURITY.md: reports will not be handled quickly "
+                   "(★counter-intuitive rule)")
     elif d.get("security_md") is True:
-        why.append("有SECURITY.md，安全流程完善（洞会被快速修），减分")
+        why.append("has SECURITY.md: reports get fixed fast, so this scores lower")
 
     # ---- 源码事实（最多 30，来自 probe）
     vd = d.get("verdict") or {}
@@ -926,52 +1067,55 @@ def score_target(r, d):
     if d.get("ok"):
         if vd.get("has_http_endpoint"):
             score += 12; facts += 12
-            why.append("源码确认对外提供HTTP端点（攻击面）")
+            why.append("source confirms an HTTP endpoint (attack surface)")
         if vd.get("has_tool_registration"):
             score += 10; facts += 10
-            why.append("有工具注册机制，二阶污点有落点")
+            why.append("has tool registration: second-order taint has somewhere to land")
         if vd.get("has_mcp_server"):
             score += 8; facts += 8
-            why.append("提供MCP服务（Agent特有攻击面）")
+            why.append("runs an MCP server (an attack surface specific to agents)")
         # 危险执行点：只作为「值得看」，不作为「有洞」
         nd = cbf.get("dangerous_exec", 0)
         if nd >= 20:
             score += 6; facts += 6
-            why.append("危险执行点分布在%d个文件，值得细看" % nd)
+            why.append("dangerous calls spread over %d files: worth reading" % nd)
         elif nd > 0:
             score += 3; facts += 3
-            why.append("有危险执行点（%d个文件）" % nd)
+            why.append("has dangerous calls (%d files)" % nd)
         # 代码规模（排除测试/示例后的业务代码）
         nb = d.get("total_py_files")
         if nb is not None and nb >= 100:
             score += 4; facts += 4
-            why.append("业务py文件%d个，规模够分析" % nb)
+            why.append("%d non-test py files: enough code to analyse" % nb)
         elif nb is not None and nb < 20:
-            why.append("业务py文件仅%d个，可能是玩具，减分" % nb)
+            why.append("only %d non-test py files: possibly a toy" % nb)
     else:
-        why.append("★未跑源码探针（API额度未恢复），攻击面未知 —— 分数偏低是应该的")
+        why.append("★source probe not run (API quota not recovered): the attack "
+                   "surface is unknown, so a low score here is expected")
 
     # ---- 启发式类（最多 25，明确标注）
     if r.get("agent_verdict") == "yes":
         soft += 5
-        why.append("多维信号确认是Agent项目（启发式+5）")
+        why.append("several independent signals say agent project (heuristic +5)")
     elif r.get("agent_verdict") == "maybe":
         soft += 2
-        why.append("部分信号像Agent项目，需人工确认（启发式+2）")
+        why.append("some signals look agent-like, needs a human (heuristic +2)")
     else:
-        why.append("不像Agent项目")
+        why.append("does not look like an agent project")
 
     py = r.get("pypi") or {}
     if py.get("found"):
         soft += 8
-        why.append("PyPI可装 %s（%s发布）" % (py.get("version"), py.get("uploaded")))
+        why.append("installable from PyPI %s (released %s)"
+                   % (py.get("version"), py.get("uploaded")))
     elif py.get("found") is False:
-        why.append("PyPI未命中猜的包名（不等于装不上），需人工确认")
+        why.append("guessed package name not on PyPI (not the same as "
+                   "uninstallable), needs a human")
 
     # watcher 关注度过高 = 可能已被审计
     w = r.get("watchers") or 0
     if w and st and w / float(st) > 0.08:
-        why.append("watcher/star比%.2f偏高，受关注度高" % (w / float(st)))
+        why.append("watcher/star ratio %.2f is high: well watched" % (w / float(st)))
 
     score += soft
     r["score_parts"] = {"facts": facts, "soft": soft, "total": score}
@@ -1071,19 +1215,34 @@ def _save(path, obj):
 
 def main():
     import argparse
-    p = argparse.ArgumentParser(description="Agent 漏洞目标筛选器")
+    p = argparse.ArgumentParser(
+        prog="agentaudit targets",
+        description="Find and screen GitHub projects that are worth pointing the scanner at.",
+        epilog="Run `selftest` first: it checks the rules themselves against synthetic cases.")
     sub = p.add_subparsers(dest="cmd")
 
-    pf = sub.add_parser("fetch", help="Layer 0 拉候选池")
-    pf.add_argument("--query", action="append", help="自定义 search query（可多次）")
+    pf = sub.add_parser("fetch", help="layer 0: collect a candidate pool from search")
+    pf.add_argument("--query", action="append",
+                    help="extra search query, repeatable (default: a built-in set)")
 
-    ps = sub.add_parser("screen", help="Layer 1+2 硬性过滤 + PyPI")
-    sub.add_parser("deep", help="Layer 3 深查（花额度）").add_argument(
-        "--limit", type=int, default=0, help="只查前 N 个")
-    pr = sub.add_parser("report", help="出候选清单")
-    pr.add_argument("--top", type=int, default=0, help="只写前 N 个")
-    sub.add_parser("selftest", help="验规则本身")
-    sub.add_parser("resolve", help="把AgentFuzz目标解析成规范名（防改名漏排除）")
+    ps = sub.add_parser(
+        "screen", help="layer 1+2: apply the hard filters, then check PyPI")
+    ps.add_argument("--profile", metavar="FILE",
+                    help="YAML profile of what you are looking for "
+                         "(see core/config/screen_profile.example.yml)")
+
+    pd = sub.add_parser("deep", help="layer 3: probe the survivors (costs API quota)")
+    pd.add_argument("--limit", type=int, default=0, help="probe only the first N")
+
+    pr = sub.add_parser("report", help="write the candidate list as Markdown")
+    pr.add_argument("--top", type=int, default=0, help="write only the top N")
+    pr.add_argument("--excluded", action="store_true",
+                    help="also list what was filtered out, with the reason for each")
+
+    sub.add_parser("selftest", help="check the screening rules themselves")
+    sub.add_parser(
+        "resolve", help="resolve known target names to their current canonical name, "
+                        "so a rename does not slip past the exclusion list")
 
     a = p.parse_args()
     if a.cmd == "fetch":

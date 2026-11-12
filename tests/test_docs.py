@@ -234,3 +234,55 @@ def test_the_anchor_targets_are_ascii_too():
         ids = re.findall(r'<a id="([^"]+)"></a>', readme.read_text(encoding="utf-8"))
         for i in ids:
             assert ASCII_ANCHOR.match(i), f"{readme.name} declares a non-ASCII anchor id: {i!r}"
+
+
+def _repeated_entries(text: str) -> list[str]:
+    entries = re.findall(r"^- (\*\*.+)$", text, re.M)
+    return sorted({e for e in entries if entries.count(e) > 1})
+
+
+def _repeated_table_rows(text: str) -> list[str]:
+    """A row that appears twice inside one table block.
+
+    The first version of this check only looked at headings and list entries, and a
+    duplicated `--codeql-language` row sat in both option tables unnoticed: every heading
+    was unique, every entry was unique, and the table still said the same thing twice.
+    """
+    out: list[str] = []
+    block: list[str] = []
+    for line in text.splitlines() + [""]:
+        s = line.strip()
+        if s.startswith("|") and s.endswith("|"):
+            block.append(s)
+            continue
+        rows = [r for r in block if not re.fullmatch(r"[|\-: ]+", r)]
+        for r in set(rows):
+            if rows.count(r) > 1:
+                out.append(r[:80])
+        block = []
+    return sorted(set(out))
+
+
+def test_no_document_repeats_a_heading_or_an_entry():
+    """A block pasted twice is invisible to every other check in this file.
+
+    It happened three times: four changelog entries, one changelog change, one changelog fix,
+    and a whole section of both READMEs were duplicated exactly. The text was correct and
+    every existing test passed, because none of them compared a document with itself. A
+    repeated heading is never intentional, and a repeated entry means an edit ran twice.
+    """
+    for path in (EN, ZH):
+        text = path.read_text(encoding="utf-8")
+        headings = re.findall(r"^#{2,3}\s+(.+)$", text, re.M)
+        dup = sorted({h for h in headings if headings.count(h) > 1})
+        assert not dup, f"{path.name} has the same heading twice: {dup}"
+        assert not _repeated_entries(text), (
+            f"{path.name} repeats an entry: {_repeated_entries(text)}")
+        assert not _repeated_table_rows(text), (
+            f"{path.name} repeats a table row: {_repeated_table_rows(text)}")
+
+    # In the changelog "### Added" legitimately appears once per version, so the entry check
+    # runs per version section rather than over the whole file.
+    for block in re.split(r"^## ", CHANGELOG.read_text(encoding="utf-8"), flags=re.M)[1:]:
+        assert not _repeated_entries(block), (
+            f"CHANGELOG.md repeats an entry: {_repeated_entries(block)}")

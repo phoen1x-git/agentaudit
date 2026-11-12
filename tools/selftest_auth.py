@@ -231,7 +231,7 @@ CurrentUser       = Annotated[str, Depends(get_current_user)]
 
 def main():
     print("=" * 66)
-    print("inconsistent_auth 规则 ·%d 档标准答案" % len(CASES))
+    print("inconsistent_auth rule: %d cases with a known answer" % len(CASES))
     print("=" * 66)
     ok = True
     for idx, case in enumerate(CASES):
@@ -256,15 +256,15 @@ def main():
         good = (got == exp)
         if not good:
             ok = False
-        print("  %s %-32s 期望 %d 实得 %s" %
+        print("  %s %-32s expected %d got %s" %
               ("OK  " if good else "FAIL", name, exp, got))
         print("       %s" % why)
     print()
     print("=" * 66)
     if ok:
-        print("全部 %d 档通过 ✓  可以出结论了" % len(CASES))
+        print("all %d cases passed - a conclusion is safe to draw" % len(CASES))
         return 0
-    print("★ 有失败 —— 不要据此出结论，先修规则")
+    print("★ there are failures: do not draw a conclusion, fix the rule first")
     return 1
 
 

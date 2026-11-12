@@ -74,7 +74,9 @@ q.addEventListener('input',()=>{{const v=q.value.toLowerCase();
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        prog="agentaudit index",
+        description="render the HTML index for a round")
     ap.add_argument("round_dir", nargs="?", help="a round directory, e.g. out/round-my-round")
     ap.add_argument("--lang", default="en", choices=["en", "zh"], help="page language (default: en)")
     a = ap.parse_args()

@@ -94,6 +94,29 @@ def test_index_renders_and_declares_its_language(round_dir):
     assert '<html lang="zh-CN">' in html
 
 
+def test_explain_opens_with_one_candidate_and_says_how_to_see_the_rest(round_dir):
+    """Thirteen candidates used to arrive as thirteen screens, with nothing at the end."""
+    p = _run("explain.py", str(round_dir))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "[1/" in p.stdout
+    assert "[2/" not in p.stdout
+    assert "showing 1 of" in p.stdout
+    assert "not a finding" in p.stdout
+
+
+def test_explain_tells_a_missing_round_apart_from_an_empty_one(tmp_path):
+    """A typo in the path must not read as "this round has no candidates"."""
+    p = _run("explain.py", str(tmp_path / "definitely-not-here"))
+    assert p.returncode == 1
+    assert "no such round directory" in p.stdout
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    p = _run("explain.py", str(empty))
+    assert p.returncode == 1
+    assert "no findings.json" in p.stdout
+
+
 def test_explain_works_from_the_table_alone(round_dir, tmp_path):
     """`--explain` must still work when only findings.tsv is present."""
     bare = tmp_path / "bare"

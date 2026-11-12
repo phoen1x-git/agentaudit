@@ -13,13 +13,19 @@
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
+import math
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import srcctx as SC
 from . import finding as F
+from . import judge_evidence as E
+from . import triage_contract as T
 
 # 复用现有客户端（零依赖、带缓存与记账）
 _TOOLS = Path(__file__).resolve().parent.parent / "tools"
@@ -35,7 +41,27 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
 
 你的任务：判断这个危险调用的**实参**，是否可能来自不可信来源，以及守卫是否算真实防护。
 
-★★ 先答【第四层】——它最容易被跳过，但决定前面三层算不算数：
+★★ 先看【第零层】—— 它决定"谁能碰到这段代码"，而这一步决定前面所有层算不算数：
+
+第零层 · 谁能碰到它？（**以候选里的 `entry_profile.kind` 为准，不要用仓库名字猜**）
+  · `http` —— 服务在监听。看 `params.listen_host`：
+    `0.0.0.0` / `::` ⇒ 网络上的任何人都能碰到；`127.0.0.1` / `localhost` ⇒ 只有本机；
+    地址不在给定代码里 ⇒ unknown，**不要猜**。再看路由挂没挂鉴权（`Depends` / 中间件）：
+    没挂 ⇒ 未鉴权，此时**请求体里的值就是外部不可信输入**。
+  · `cli` —— 只有能在那台机器上敲这条命令的人。**操作者自己给的命令行参数不是不可信输入**；
+    但如果这个 CLI 是被别的服务/定时任务调起来的，那要看调用它的那一侧是谁。
+  · `mcp` —— 接入这个 server 的模型可以自主调用它。有没有人工确认（确认门）决定它算不算外部触发；
+    没有确认门时，**能影响模型输出的人就等于能调到这里**。
+  · `library` —— 只有在别处 import 它的调用方。仓库内找不到调用方时，这条通常判不了：
+    **不要因为"没人调用"就当成安全，也不要当成漏洞**，如实标不确定。
+  · `unknown` —— 形态判失败。**按 unknown 处理，不许默认成 library 或 http。**
+
+  ★★ 同一个仓库里不同文件可以是不同形态：`server.py` 是 http，`update_checker.py` 是 library。
+    「这个项目是个 Web 服务」这种一句话概括是**错的**，以候选自己的 `entry_profile` 为准。
+  ★ 形态**不改变**危险调用本身的性质，它只回答"谁能把这个值送进来"。
+    实参来源（第二层）、防护（第三层）、设计用途（第四层）照旧各自判断，不许用形态替代它们。
+
+★★ 然后答【第四层】——它最容易被跳过，但决定前面三层算不算数：
 
 第四层 · 这到底是不是「设计功能」？
   这个危险调用，是不是这个项目**本来就应该做**的事？
@@ -50,10 +76,10 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
     一个数据清洗模块里冒出来的 exec），那它是真问题，按前三层判。
   → by_design：yes（是设计功能）/ no（不是）/ unclear
 
-★★ scope_exceeds 的判定约定（★ 写死，按此执行，**不要每次自己重新权衡**）
-   ★★ 改。改的原因：原措辞是"拿不到超出范围的证据时，判 not_vuln 或 needs_human"
+★★ scope_exceeds 的判定口径（★ 写死，按此执行，**不要每次自己重新权衡**）
+   ★★ 这里改过。原因：原措辞是"拿不到超出范围的证据时，判 not_vuln 或 needs_human"
       —— 给了**两个**选项、又没定义"什么算证据"，实测导致同一条 finding 重复判会翻
-      。现在收敛成唯一答案。
+      （实测：8 条里 4 条不稳，`scope_exceeds` 稳定率仅 0.50）。现在收敛成唯一答案。
 
    **只看本调用点所在函数的代码**（不看别的文件、不看运行环境、不猜调用方）：
    - `yes`  ← 在本函数体内**直接看到**：不可信内容被原样交给危险动作，
@@ -95,7 +121,7 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
      · 看到的是在拦别的东西（判空 / 判环境 / 打日志）→ 不算防护
      · 确实一行针对本值的校验都没有 → guards_real 填 no
      · 它只是把值继续往下传（本函数内既无校验、也无危险动作）→ 才判 unclear
-     ★ 这段源码**不是新规则**，是把原本就在代码里的证据补给你；该判什么仍按上面的尺度。
+     ★ 这段源码**不是新判据**，是把原本就在代码里的证据补给你；该判什么仍按上面的尺度。
 
 第三层 · 守卫算不算真防护
   调用链上压着的 if：
@@ -103,21 +129,49 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
   - 在**做别的事**（判空/判环境/判偏好）→ 不算
   ★ 「有 if」≠「有防护」。
 
-只输出一个 JSON：
+只输出一个 JSON（枚举严格用下面的英文，其余文字字段一律用中文）：
 {
   "by_design": "yes|no|unclear",
   "scope_exceeds": "yes|no|unclear",
-  "by_design_evidence": "一句话",
+  "by_design_evidence": "用途依据",
+  "scope_exceeds_evidence": "边界依据或缺口",
   "sink_action": "exec_code|exec_sql|http|subprocess|file|other",
   "danger_arg": "危险实参的变量名",
   "arg_source": "llm_output|user_input|tool_arg|memory|config|constant|unknown",
-  "arg_source_evidence": "一句话，引用你看到的具体代码",
+  "arg_source_evidence": "来源依据，引用你看到的具体代码",
+  "source_trust": "trusted|untrusted|unknown",
+  "source_trust_evidence": "控制者及信任边界依据",
   "guards_real": "yes|no|unclear",
-  "guards_evidence": "一句话",
+  "guards_evidence": "对当前风险有效或无效的原因",
+  "evidence": {"source": [], "guard": [], "scope": [], "trust": []},
+  "missing_evidence": [],
   "ai_verdict": "vuln|not_vuln|needs_human",
   "confidence": 0.0,
   "one_line": "一句话结论"
 }
+
+★★ 引用怎么填（`evidence` 这四个列表）—— 这是本条回答会不会被采用的关键：
+  引用对象格式：{"file": "相对路径.py", "line": 12, "quote": "那一行的整行原文"}
+  · `quote` 必须是上下文里 <source_evidence> 中**原样出现的那一整行**（去掉首尾空白后逐字相等）。
+  · **不许**只截半句、**不许**把两行拼起来、**不许**填没显示给你的行号。
+  · 配对错了不会报错，但会在证据检查时把结论降成 needs_human —— 等于白判。
+  · 分工：`source` 支撑实参来源；`guard` 支撑有效防护；`scope` 支撑范围判断；
+    `trust` 支撑「这个配置由谁控制」。某一类没有可引用的证据就留 `[]`，**不要编**。
+  · 引用能对上，只说明那一行确实存在；**它仍然不替你解释这行怎样支撑结论**。
+
+★★ `source_trust` 是与 `arg_source` 并列的独立判断，别混：
+  · `arg_source` 答「值从哪种通道来」（参数 / 模型输出 / 配置 / 常量 …）；
+  · `source_trust` 答「**谁**能控制这个值」（操作者自己 = trusted；别人 = untrusted；说不清 = unknown）。
+  · 两者都是 unknown 时不许给 vuln / not_vuln —— 自动判为 needs_human。
+
+★ `missing_evidence` 列出对结论有影响的缺口，没有就 `[]`。
+  不要把推测写进来，也不要把「我试了没打中」当成证明。
+★ 下面任何一个字段缺失或为空，这条回答**直接判为无效**（记 error，不给结论）：
+  by_design_evidence、scope_exceeds_evidence、arg_source_evidence、source_trust_evidence、
+  guards_evidence、one_line、evidence、missing_evidence。
+★ 上下文里 <candidate> 的 `arg_sources` 就是【静态数据流给出的实参来源】：
+  `kind` 为 param / web-request / stdin / argv / llm-client 时分别对应下面的规则；
+  `kind` 为 `local` 表示**没追到来源**，不能据此推成 constant 或 config。
 
 尺度（照此，不放宽也不收紧）：
 - ai_verdict=vuln       ：(by_design=no 且 arg_source 不可信 且 guards_real=no)
@@ -135,23 +189,30 @@ RUBRIC = """你是 Agent 项目漏洞判定的**复核员**（AI 复核，不是
 #   背景：给 2000 时约 4.5% 的条目输出被截断（判定变 `error`，甚至会**假性抹掉 vuln**）；
 #        但全局拉到 5000 的代价是 **耗时 ×3.4（13→44 s）、成本 ×2.1** ——
 #        因为推理模型拿到大额度就写更长的思考，是**输出 token 变多**，不是输入变多。
-#   做法：默认 2000（`ask_json` 内部失败还会加成到 4000）；**只有确实失败时**才升配到 8000 重试。
+#   做法：默认值 → `ask_json` 内部失败还会加成；**只有确实失败时**才升配到 8000 重试。
+#   ★★ 实测后从 2000 提到 4000（依据：30 条真判定的 token 分布）
+#      合并「判定留痕」后 rubric 要求逐行原文引用 + 6 个证据文字字段，输出变长：
+#        · 被截断的 46 次调用，completion_tokens 中位数**正好 2000**（撞上限被切）
+#        · 正常完成的 30 次，中位数 **2866**、最大 7808
+#      ⇒ 2000 比"正常输出中位数"低 43%，截断率 **61%**（46/76），每条平均要重试 2.5 次。
+#      抬到 4000 覆盖中位数的 1.4 倍，极端情况仍由 MT_BIG=8000 升配兜底。
+#      **净成本是下降的**：截断重试要整条重发（输入也重算），省下的比多给的输出 token 多。
 #   ★★ 不做"热条目记忆"：实测截断**有随机性** —— 同一条 `verify_watchman...:547`
 #      在 v1 的 A/B 两轮都截断，隔一会儿单独跑却用 2000 就过了。
 #      记下来会让这条以后**每次都**用大额度，反而更贵更慢（过拟合到一个随机现象上）。
-MT_DEFAULT = 2000
+MT_DEFAULT = 4000
 MT_BIG = 8000
 
-# ★★ 可选规则补丁（开关 AF_JUDGE_OPARG=1，**默认关**）——  §四②
+# ★★ 可选判据补丁（开关 AF_JUDGE_OPARG=1，**默认关**）
 #   背景：batch3 里那条唯一的 `vuln` 是误报 —— `get_document_content.py` 的
 #   `requests.get(url)`，而 `url` 来自**CLI 参数** `-u/--api-url`。跑这个 CLI 的人
 #   自己就是操作者，他本来就能访问自己的网络 —— 这不是 SSRF。
 #   根因：判定层把"程序自己的 CLI 参数"当成了不可信输入。
-#   ★ 做成**可开关**而不是直接改：改规则会同时动"稳定性"和"刻度"，
+#   ★ 做成**可开关**而不是直接改：改判据会同时动"稳定性"和"刻度"，
 #     必须能 A/B 对照，所以默认行为一字不改。
 OPARG_BLOCK = """
 
-★★ 补充规则（本条已启用）：什么叫「不可信输入」
+★★ 补充判据（本条已启用）：什么叫「不可信输入」
   **同一个进程的操作者自己提供的输入，不算不可信输入** —— 跑这个程序的人本来就是操作者：
     · 命令行参数（sys.argv / argparse / click / typer 的选项）
     · 本进程自己的环境变量（os.environ 里项目定义的）
@@ -162,26 +223,26 @@ OPARG_BLOCK = """
   ★ 自检一句："**是谁在控制这个值？**" —— 若答案是"运行这个程序的人自己"，就不是漏洞。
 """
 
-# ★★ 可选规则补丁（开关 AF_JUDGE_REPOCFG=1，**默认关**）——  / 
-#   背景：upstream issue（**外部人报的真洞**）在现有 rubric 下被判 `not_vuln`，理由是
+# ★★ 可选判据补丁（开关 AF_JUDGE_REPOCFG=1，**默认关**）
+#   背景：chunkhound #388（**外部人报的真洞**）在现有 rubric 下被判 `not_vuln`，理由是
 #   "base_url 来自本地 provider 配置（非 LLM/外部不可信输入）" ——
 #   ★ 判定层没错，是「配置」这个词把**两种性质相反**的东西混成了一种：
 #     · 操作者自己的配置（~/.config、自己的 CLI 参数）→ 不算不可信输入；
-#     · **随仓库一起 clone 下来的项目内配置文件**（`.sampleproj.json` 等）→
+#     · **随仓库一起 clone 下来的项目内配置文件**（`.chunkhound.json` 等）→
 #       控制它的是**仓库作者**，运行者只是"打开了别人的项目" → **算不可信输入**。
 #   实测：加上这段后，同一条从 `not_vuln` 变成 `needs_human`，且理由变成
 #   正确的问题（"取决于该 config 来自运行者自身配置还是仓库内配置文件"）。
-#   ★ 仍做成**可开关**：改规则会同时动"刻度 + 稳定性"，必须能 A/B。
+#   ★ 仍做成**可开关**：改判据会同时动"刻度 + 稳定性"，必须能 A/B。
 REPOCFG_BLOCK = """
 
-★★ 补充规则（本条已启用）：什么叫「来自配置」—— 分两种，可信度正好相反
+★★ 补充判据（本条已启用）：什么叫「来自配置」—— 分两种，可信度正好相反
 
   「配置」**不是一种来源**，判定时必须先分清是哪一种：
   - `operator_config`（**操作者自己的**）：`~/.config/…`、操作者自己的环境变量、
     他自己在命令行上敲的选项。
     → 控制它的人 = **运行这个程序的人** → **不算不可信输入** → arg_source 填 `config`。
   - `repo_config`（★ **随被处理的那个项目一起拿到的文件**）：项目目录内部的
-    `*.json` / `*.toml` / `*.yaml` / `.env`，例如 `.sampleproj.json`、`.mcp.json`、
+    `*.json` / `*.toml` / `*.yaml` / `.env`，例如 `.chunkhound.json`、`.mcp.json`、
     `pyproject.toml` 里的配置节、仓库自带的 `config.yaml`。
     → ★ 控制它的人 = **那个仓库的作者**，而运行者只是"clone 了别人的项目 / 打开了别人的目录"，
       他**并不知道里面写了什么** → **算不可信输入** → arg_source 填 **`user_input`**。
@@ -200,15 +261,16 @@ REPOCFG_BLOCK = """
 """
 
 
-# ★★ 可选规则补丁（开关 AF_JUDGE_SCOPE2=1，**默认关**）—— 
-#    为什么加： 实测 37 条里 9 条结论翻转，**逐轮打标后 9/9 都由
+# ★★ 可选判据补丁（开关 AF_JUDGE_SCOPE2=1，**默认关**）
+#    为什么加：实测 37 条里 9 条结论翻转，**逐轮打标后 9/9 都由
 #    「scope_exceeds 的语义边界没被定义」引起**；维度佐证 by_design 0.973（最稳）
 #    vs scope_exceeds 0.757（明显更不稳）。
 #    本 block 只做**一件事**：定义「预期范围」这个词，并禁掉三条实测摇摆的退路。
-#    ★ 单独开关的理由：**改规则会同时动「稳定性」和「刻度」**⇒ 必须能单独 A/B（单变量原则）。
+#    ★ 单独开关的理由：**改判据会同时动「稳定性」和「刻度」**（判据写死让不稳
+#      从 4/8 降到 3/8，但 vuln 计数从 3 涨到 5）⇒ 必须能单独 A/B（单变量原则）。
 #
-#  ★★★ **。
-#      依据是  的 A/B 实测（两臂各 37 条 × 3 轮，同批样本）：
+#  ★★★ 默认开启（默认值由 "0" 改为 "1"）。
+#      依据是一组 A/B 实测（两臂各 37 条 × 3 轮，同批样本）：
 #        · 结论翻转率 **0.243 → 0.135**（近乎腰斩）
 #        · 目标维度 scope_exceeds **0.757 → 0.865**
 #        · by_design 0.973 → **1.000**
@@ -239,12 +301,12 @@ SCOPE2_BLOCK = """
 """
 
 
-# ★★ 可选规则补丁（开关 AF_JUDGE_ARGSRC=1，**默认开**）——  §二 /  §三之二
-#    为什么加： 实测 —— 37 条里 9 条结论翻转，**9/9 由语义歧义引起**，
+# ★★ 可选判据补丁（开关 AF_JUDGE_ARGSRC=1，**默认开**）
+#    为什么加：实测 —— 37 条里 9 条结论翻转，**9/9 由语义歧义引起**，
 #    其中**有 4 条**是 `arg_source` 在 `tool_arg` ⇄ `llm_output` 之间跳（它是五个维度里最不稳的，0.622）。
 #    开 SCOPE2 后它进一步掉到 **0.514**（成了最差的一维）⇒ **必须单独收一次**。
 #    本 block 只做两件事：① 把五个取值的边界写死；② **给"看不出"一个明确去处（unknown）**。
-#    ★ 单独开关的理由：它改的是「实参来源」这一维的约定，与 SCOPE2（范围这一维）**不是一回事**，
+#    ★ 单独开关的理由：它改的是「实参来源」这一维的口径，与 SCOPE2（范围这一维）**不是一回事**，
 #      必须能分别 A/B / 分别回退（单变量原则）。
 ARGSRC_BLOCK = """
 
@@ -260,7 +322,7 @@ ARGSRC_BLOCK = """
   当数据流**只说到 `param`**、而你看不出它究竟是"工具入参"还是"人类输入"时
   ⇒ **一律填 `unknown`**。
   ★ 不许为了"看起来更具体"而在 user_input / llm_output / tool_arg 里挑一个 ——
-     实测：9 条翻转里**有 4 条**是这一维在 `tool_arg` ⇄ `llm_output` 之间跳。
+    实测：9 条翻转里**有 4 条**是这一维在 `tool_arg` ⇄ `llm_output` 之间跳。
   ★ **`unknown` 是正确答案，不是失败。**
 """
 
@@ -275,7 +337,7 @@ def rubric_text() -> str:
         rt += OPARG_BLOCK
     if os.environ.get("AF_JUDGE_REPOCFG", "0") == "1":
         rt += REPOCFG_BLOCK
-    # ★★ 默认 **"1" = 开启**。
+    # ★★ 默认 **"1" = 开启**（依据一组 A/B 实测）。
     #    要回到旧尺子：`AF_JUDGE_SCOPE2=0`（单变量、可逆）。
     if os.environ.get("AF_JUDGE_SCOPE2", "1") == "1":
         rt += SCOPE2_BLOCK
@@ -284,7 +346,28 @@ def rubric_text() -> str:
 
 
 def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
-    """组装这条 Finding 的上下文（带文件级缓存，避免重复读盘）。"""
+    """组装这条 Finding 的上下文 + 证据快照，返回 `(user_prompt, snapshot)`。
+
+    ★★ 引入「判定留痕」之后，组装工作交给
+      `core/judge_evidence.build()`。它不是另一套逻辑，是同一件事的升级版：
+      · 同样受 `AF_JUDGE_ARGCTX` / `AF_JUDGE_CFGSRC` 两个开关控制（默认值与原来一致）；
+      · 但**返回结构化 snapshot** —— 读过哪些文件、每个文件的 sha256、逐行原文、
+        以及「哪些证据缺口让这条不该自动下结论」（`blocking_gaps`）；
+      · 而且更严：basename 不唯一时**明确报缺口**，不再"挑一个最像的"。
+    这一层是 `triage_contract.apply_policy` 的输入：没有 snapshot，引用就无处可对。
+
+    ★ 旧的「中文分块」组装保留在 `_build_user_legacy()`，用 `AF_JUDGE_PROMPT=legacy`
+      启用。**它不是免费的退路**：那套 prompt 不要求模型填 `evidence` 引用，回来
+      过不了证据检查，会被降级成 needs_human。留着只为做 prompt 层面的对照。
+    """
+    if os.environ.get("AF_JUDGE_PROMPT", "contract") == "legacy":
+        text, _ctx = _build_user_legacy(fd, cache)
+        return text, E.build(fd)[1]
+    return E.build(fd)
+
+
+def _build_user_legacy(fd: F.Finding, cache: dict) -> tuple[str, dict]:
+    """旧版中文分块组装（带文件级缓存，避免重复读盘）。仅 `AF_JUDGE_PROMPT=legacy` 用。"""
     root = fd.src_root
     path = os.path.join(root, fd.sink_uri) if root else ""
     # ★ 缓存键必须带上 行号 + 守卫 + 数据流证据（都逐条不同），否则同文件会串
@@ -294,7 +377,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
     if key not in cache:
         qual, body = SC.enclosing_function(path, fd.sink_line) if path else ("", "")
         entry_body = SC.function_named(path, fd.entry) if (path and fd.entry) else ""
-        # guard looks like "file.py:line:col" -> strip the column
+        # guard 形如 "app.py#1362:8" → 取 "1362:8" 再去掉列号
         gl_nums = []
         for g in fd.guards:
             if "#" not in g:
@@ -330,7 +413,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
     gl = "\n".join("  " + x for x in c["guard_lines"]) or "  （未能取到守卫行）"
 
     # ★ 跨过程数据流给出的「实参来源」（开关 dataflow-argsource）。
-    #   目的：把"实参从哪来"从**要模型猜**变成**可引用的证据**。
+    #   目的：把"实参从哪来"从**要模型猜**变成**可引用的证据**（这是最不稳的字段）。
     ds_lines = []
     for a in (getattr(fd, "arg_sources", None) or []):
         at = (a.get("arg_text") or "").replace("ControlFlowNode for ", "").strip()
@@ -355,7 +438,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
         af_block = ("【实参来源所在函数的源码（★ 值在这里被接住）】\n"
                     + "\n".join(chunks) + "\n\n")
 
-    # ★★ 配置来源证据
+    # ★★ 配置来源证据（开关 AF_JUDGE_CFGSRC，默认关）
     #   为什么需要：`base_url = config.get("base_url")` 这类代码，判定层判不出
     #   "这是操作者自己配的，还是随仓库 clone 下来的" —— 两者可信度正好相反。
     #   ★ 这里**只贴证据原文**（哪一行在加载项目内配置 / 哪一行在做分层合并），
@@ -372,7 +455,7 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
             cfg_block = ("【配置来源证据（★ 原文，供你判断这个值受谁控制）】\n"
                          "  以下是本仓库里**与配置来源/分层**有关的真实代码行：\n"
                          f"{rows}\n"
-                         "  ★ 提示：若出现「项目内配置文件」（如 .sampleproj.json / .mcp.json）"
+                         "  ★ 提示：若出现「项目内配置文件」（如 .chunkhound.json / .mcp.json）"
                          "**在目标目录里被加载**、且它**能覆盖**别的层，\n"
                          "    那么运行者只是 clone/打开了这个仓库，**该文件由仓库作者控制**。\n\n")
 
@@ -395,26 +478,97 @@ def _build_user(fd: F.Finding, cache: dict) -> tuple[str, dict]:
     ), c
 
 
-def judge_one(fd: F.Finding, cache: dict, tag: str = "kernel_judge") -> dict:
-    """判一条。★ max_tokens 走「按需给额度」，见 MT_DEFAULT / MT_BIG 的说明。"""
-    user, _ = _build_user(fd, cache)
-    rt = rubric_text()
-    env = os.environ.get("AF_JUDGE_MT", "")
-    if env:                                   # 实验用：强制指定额度
-        r = LC.ask_json(rt, user, tag=tag, max_tokens=int(env))
-        r.pop("_raw", None)
-        return r
+@dataclass
+class Judgment:
+    """一次判定的完整留痕：模型原话 + 当时的证据快照 + 审计记录。
+
+    ★ 为什么要有这个类：实测 15 条 `vuln` 追上游后 7 条是假阳（47%），
+      而另一组三轮复判 15/15 全稳、却没有一条被推翻 —— **稳定 ≠ 正确**。
+      根因之一是复判时**没有当时那份源码**可对：文件一改，谁也说不清模型当年看的是哪版。
+      snapshot 就是那份可对照的东西；audit 记录输入哈希，使同输入同策略可复现。
+    """
+    response: object
+    snapshot: dict
+    audit: dict
+
+
+def judge_one(fd: F.Finding, cache: dict, tag: str = "kernel_judge") -> Judgment:
+    """判一条，返回 Judgment（原话 + 证据快照 + 审计）。
+
+    ★ max_tokens 仍走「按需给额度」，与合并前一致：默认 MT_DEFAULT；
+      失败（截断 / 不是合法 JSON）才升配 MT_BIG 重试一次；
+      `AF_JUDGE_MT` 强制指定额度时**不做升配**（实验口径要稳定）。
+    ★★ 解析一律 `strict=True`：缺括号、被数组包住、前面带解释文字，**都不许替模型修**。
+      修出来的 JSON 会变成模型没说过的结论 —— 那是自欺。失败就记 error。
+    ★ 所有失败原话进 audit（`retry_error` / `transport_error` 的 attempts），不静默丢。
+    """
+    user, snapshot = _build_user(fd, cache)
+    system = rubric_text()
+    policy = policy_stamp()
+    # ★★ 把「证据文件版本」和「审计版本」拼进**真正发给模型的那段 user**：
+    #    这样它们同时进了 input_sha256（= 缓存键），源码一变就不可能命中旧缓存，
+    #    也不会出现「窗口内没变、窗口外变了」被当成同一条的情况。
+    user += "\n【证据文件版本】\n" + json.dumps(snapshot["files"], sort_keys=True, ensure_ascii=False)
+    user += "\n【审计版本】\n" + json.dumps(policy, sort_keys=True, ensure_ascii=False)
+    audit = {"policy": policy, "user_prompt": user, "system_prompt": system,
+             "input_sha256": T.digest({"system": system + LC.JSON_SUFFIX, "user": user}),
+             "evidence_sha256": T.digest(snapshot), "source_snapshot": snapshot}
+    # ★ 把「当时告诉模型的形态」也存进审计：事后要能分清"结论不同是因为形态判得不一样"
+    #   还是"模型对同一个形态给了不同结论"。没有这一份，两种原因在记录里长得一样。
+    profile = getattr(fd, "entry_profile", None) or {}
+    if profile:
+        audit["entry_profile"] = {"kind": profile.get("kind", ""),
+                                  "reach": profile.get("reach", ""),
+                                  "exposure": profile.get("exposure", "")}
     try:
-        r = LC.ask_json(rt, user, tag=tag, max_tokens=MT_DEFAULT)
-    except (ValueError, RuntimeError):
-        # ★★ 必须同时捕 RuntimeError：`chat` 在 finish_reason=length 时抛的是
-        #    `RuntimeError("LLM 调用失败（重试 N 次）…")`，**不是 ValueError** ——
-        #    只捕 ValueError 的话升配路径永远走不到（踩过：验证时才撞出来）。
-        # 走到这里 = MT_DEFAULT（内部还试过 2×）都拿不到合法 JSON，多半是输出被截断。
-        # 升配重试一次；再失败就让它抛出去（上层记成 error，不许当成结论）。
-        r = LC.ask_json(rt, user, tag=f"{tag}-big", max_tokens=MT_BIG)
-    r.pop("_raw", None)
-    return r
+        env = os.environ.get("AF_JUDGE_MT", "")
+        tokens = int(env) if env else MT_DEFAULT
+        try:
+            transport = LC.ask_json(system, user, tag=tag, max_tokens=tokens,
+                                    return_meta=True, strict=True)
+        except LC.RequestBudgetExceeded:
+            raise
+        except (ValueError, RuntimeError) as first:
+            # ★ 必须同时捕 RuntimeError：`chat` 在 finish_reason=length 时抛的是
+            #   RuntimeError，不是 ValueError —— 只捕前者会让升配路径永远走不到。
+            if env:
+                raise
+            audit["retry_error"] = {"type": type(first).__name__, "message": str(first),
+                                    "attempts": getattr(first, "attempts", [])}
+            transport = LC.ask_json(system, user, tag=f"{tag}-big", max_tokens=MT_BIG,
+                                    return_meta=True, strict=True)
+        audit["transport"] = {k: v for k, v in transport.items() if k != "parsed"}
+        return Judgment(transport["parsed"], snapshot, audit)
+    except Exception as exc:                      # noqa: BLE001
+        audit["transport_error"] = {"type": type(exc).__name__, "message": str(exc),
+                                    "attempts": getattr(exc, "attempts", [])}
+        exc.triage_audit = audit
+        raise
+
+
+def _json_safe(value):
+    """把非法数值转成可序列化的形式，让审计记录永远能落盘；raw_text 保持原样。"""
+    if isinstance(value, float) and not math.isfinite(value):
+        return {"nonfinite_number": repr(value)}
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _error(fd: F.Finding, exc: Exception, raw=None, audit: dict | None = None) -> None:
+    """判不了就记 error，并**清掉旧结论**。
+
+    ★★ 清字段这一步是必须的：上一轮可能是 `not_vuln`，这一轮调用失败却留着旧标签，
+      等于把「没判」伪装成「判过且安全」。这个坑记过一次。
+    """
+    fd.ai_verdict, fd.ai_confidence = "error", 0.0
+    fd.by_design = fd.scope_exceeds = fd.arg_source = fd.guards_real = ""
+    fd.ai_reason = f"{type(exc).__name__}: {exc}"[:200]
+    fd.judge_json = {"_audit": {**(audit or {}), "raw_response": _json_safe(raw),
+                                "error": {"type": type(exc).__name__, "message": str(exc)},
+                                "effective": {"ai_verdict": "error"}}}
 
 
 def judge(findings: list[F.Finding], on_log=print, tag: str = "kernel_judge",
@@ -423,7 +577,7 @@ def judge(findings: list[F.Finding], on_log=print, tag: str = "kernel_judge",
 
     ★★ votes > 1：同一条**重复判 N 次再聚合**。
        为什么需要：实测同一条 finding 在温度 0 下重复判 5 次，**8 条里 4 条结论会翻**
-       。所以单次跑的 vuln 计数**不可复现**。
+       （实测）。所以单次跑的 vuln 计数**不可复现**。
        ★ 聚合策略**不是实现细节，它直接决定报什么**：
          · 多数票 → 保守（会丢掉那些"少数票才算 vuln"的真阳）
          · 任一票 → 激进（假阳性也进来）
@@ -432,37 +586,176 @@ def judge(findings: list[F.Finding], on_log=print, tag: str = "kernel_judge",
          聚合毫无意义（这是这个功能最容易踩的坑）。
     """
     cache: dict = {}
+    # ★★ 并发开关（**默认 1 = 行为与之前完全一致**）。
+    #   起因：实测单次判定 **9.7 秒/条**（51 条 493 秒，几乎全是等模型吐输出，不是 CPU），
+    #   而 new94 这一轮有 2747 条 → 串行要 7.4 小时，放不进一个工作时段。
+    #   ⇒ 只加"能在等待时多跑几条"的能力，**不改 rubric、不改 judge_one、不改聚合策略**，
+    #     所以判定语义不变（rubric 哈希在 meta.kernel_stamp 里可核对）。
+    #   ★ votes>1 时**强制串行**：那条路径要给每次投票换 tag，混并发会让聚合失真。
+    #   ★ 取值建议 3~4：再高容易触发上游限流，而熔断（连续失败 8 次硬停）会把整轮打断。
+    try:
+        workers = max(1, int(os.environ.get("AF_LLM_WORKERS", "1") or 1))
+    except ValueError:
+        workers = 1
+    if workers > 1 and votes <= 1 and len(findings) > 1:
+        _judge_concurrent(findings, cache, tag, workers, on_log)
+        return
     for i, fd in enumerate(findings, 1):
+        records: list[dict] = []
         try:
             if votes <= 1:
-                r = judge_one(fd, cache, tag=tag)
-                _apply(fd, r)
+                result = judge_one(fd, cache, tag=tag)
+                _apply(fd, result)
+                records.append(copy.deepcopy(fd.judge_json))
             else:
-                reps = []
                 for k in range(votes):
-                    reps.append(judge_one(fd, cache, tag=f"{tag}-v{k}"))
-                r = _aggregate(reps)
-                _apply(fd, r)
-                fd.judge_json["_votes"] = [x.get("ai_verdict") for x in reps]
-        except Exception as e:
-            fd.ai_verdict = "error"
-            fd.ai_reason = f"{type(e).__name__}: {e}"[:200]
-            on_log(f"  [{i}/{len(findings)}] ★ LLM 失败 {fd.sink_uri}:{fd.sink_line} — {e}")
+                    result = judge_one(fd, cache, tag=f"{tag}-v{k}")
+                    _apply(fd, result)
+                    records.append(copy.deepcopy(fd.judge_json))
+                # ★★ 先确认 N 次投票看的是**同一份证据 + 同一版策略**，否则聚合无意义：
+                #    源码在投票过程中被改、或环境变量变了，都得中止而不是硬凑多数票。
+                if len({r["_audit"]["input_sha256"] for r in records}) != 1:
+                    raise RuntimeError("evidence or policy changed between votes; aggregation aborted")
+                reps = [r["_audit"]["effective"] for r in records]
+                aggregate = _aggregate(reps)
+                representative = next((n for n, r in enumerate(reps)
+                                       if r["ai_verdict"] == aggregate["ai_verdict"]), 0)
+                audit = records[representative]["_audit"]
+                _apply(fd, aggregate, audit.get("source_snapshot"), audit)
+                fd.judge_json["_votes"] = [r["ai_verdict"] for r in reps]
+                fd.judge_json["_vote_records"] = records
+                fd.judge_json["_audit"]["raw_response"] = audit["raw_response"]
+                fd.judge_json["_audit"]["aggregation"] = "多数票；平票取 needs_human"
+        except Exception as e:                    # noqa: BLE001
+            # ContractError 已经由 _apply 内部记过 error 了，这里再记一次会把
+            # 审计记录覆盖成空壳，反而丢掉「模型到底回了什么」。
+            if not isinstance(e, T.ContractError):
+                _error(fd, e, audit=getattr(e, "triage_audit", None))
+            if records:
+                fd.judge_json["_vote_records"] = records
+            on_log(f"  [{i}/{len(findings)}] ★ LLM call failed "
+                   f"{fd.sink_uri}:{fd.sink_line} - {e}")
             continue
         on_log(f"  [{i}/{len(findings)}] {fd.ai_verdict:11} conf={fd.ai_confidence:.2f} "
                f"byd={fd.by_design:7} exc={fd.scope_exceeds:7} "
                f"{fd.sink_uri.split('/')[-1]}:{fd.sink_line}  {fd.ai_reason[:52]}")
 
 
-def _apply(fd: F.Finding, r: dict) -> None:
-    fd.ai_verdict = str(r.get("ai_verdict", "?"))
-    fd.ai_confidence = float(r.get("confidence") or 0.0)
-    fd.by_design = str(r.get("by_design", "?"))
-    fd.scope_exceeds = str(r.get("scope_exceeds", "?"))
-    fd.arg_source = str(r.get("arg_source", "?"))
-    fd.guards_real = str(r.get("guards_real", "?"))
-    fd.ai_reason = str(r.get("one_line", ""))[:200]
-    fd.judge_json = r
+def _judge_concurrent(findings: list[F.Finding], cache: dict, tag: str,
+                      workers: int, on_log) -> None:
+    """`AF_LLM_WORKERS>1` 时走的并发版本。
+
+    与串行版**唯一的区别**是"多条同时在等返回"；`judge_one` / `_apply` / 错误处置
+    逐字复用。失败的那条照旧记成 `error`（**不许当成 not_vuln**）。
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    total = len(findings)
+    lock = threading.Lock()
+    seen = [0]
+
+    def _tick() -> int:
+        with lock:
+            seen[0] += 1
+            return seen[0]
+
+    def _work(fd: F.Finding):
+        return judge_one(fd, cache, tag=tag)
+
+    on_log(f"[judge] ★ concurrent triage: {workers} worker(s) (AF_LLM_WORKERS), "
+               f"{total} candidate(s)")
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_work, fd): fd for fd in findings}
+        for fut in as_completed(futs):
+            fd = futs[fut]
+            try:
+                r = fut.result()
+            except Exception as e:              # noqa: BLE001
+                _error(fd, e, audit=getattr(e, "triage_audit", None))
+                i = _tick()
+                on_log(f"  [{i}/{total}] ★ LLM call failed {fd.sink_uri}:{fd.sink_line} - {e}")
+                continue
+            _apply(fd, r)
+            i = _tick()
+            on_log(f"  [{i}/{total}] {fd.ai_verdict:11} conf={fd.ai_confidence:.2f} "
+                   f"byd={fd.by_design:7} exc={fd.scope_exceeds:7} "
+                   f"{fd.sink_uri.split('/')[-1]}:{fd.sink_line}  {fd.ai_reason[:52]}")
+
+
+def policy_stamp() -> dict:
+    """这次判定用的是哪一版策略 —— 文件哈希 + 开关 + rubric 哈希。
+
+    ★ 纯读取：只算哈希、只读环境变量，**不参与判定**。加它是为了让每次判定的
+      输入可复现（同一份材料 + 同一版策略 ⇒ 才允许复用缓存/检查点）。
+    """
+    root = Path(__file__).resolve().parent.parent
+    names = ("core/llm_judge.py", "core/triage_contract.py", "core/judge_evidence.py",
+             "core/srcctx.py", "core/source_version.py", "core/source_index.py",
+             "core/investigation.py", "core/llm_budget.py", "core/static_verification.py",
+             "core/backend_context.py", "core/sarif_import.py", "core/inquiry.py",
+             "core/question_planner.py", "core/inquiry_run.py", "core/investigation_run.py",
+             "tools/llm_client.py")
+    files = {}
+    for name in names:
+        path = root / name
+        files[name] = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+    return {"version": getattr(T, "VERSION", ""), "context_version": getattr(E, "VERSION", ""),
+            "model": getattr(LC, "MODEL", ""),
+            "rubric_sha256": hashlib.sha256(rubric_text().encode("utf-8")).hexdigest(),
+            "files_sha256": files,
+            "switches": {name: os.environ.get(name, default) for name, default in (
+                ("AF_JUDGE_ARGSRC", "1"), ("AF_JUDGE_SCOPE2", "1"),
+                ("AF_JUDGE_OPARG", "0"), ("AF_JUDGE_REPOCFG", "0"),
+                ("AF_JUDGE_ARGCTX", "1"), ("AF_JUDGE_CFGSRC", "0"), ("AF_JUDGE_MT", ""))}}
+
+
+def _apply(fd: F.Finding, r, snapshot: dict | None = None,
+           audit: dict | None = None) -> None:
+    """把（已检过的）模型回答写进 Finding。
+
+    ★ 三种调用形态都收：
+      · `_apply(fd, dict)`                        —— 旧的纯 dict；走证据检查但无快照可对
+      · `_apply(fd, dict, snapshot, audit)`       —— 契约测试用
+      · `_apply(fd, Judgment(...))`               —— 正常判定路径
+    ★★ 判定字段的**来源只有一个**：`result`（= `apply_policy` 的输出）。
+      人的结论 `fd.verdict` 一律不碰 —— AI 分类不许预填人工列。
+    ★ `AF_JUDGE_STRICT=1` 时走证据检查（`apply_policy`），会把"引用对不上 / 缺证据"的
+      非 `needs_human` 结论降级；**默认 0 = 不降级，只做格式校验**。
+      ★★ 默认值为什么是 0 而不是 1（实测定的）：
+        · 15 条有答案的样本（已人工追上游分档：5 真 / 3 弱 / 7 假阳）
+        · 两臂同输入，只有这个开关不同：
+            strict 臂 → 12 条原判 vuln **全部**变 needs_human（含 4 条真洞），最终 vuln 数 0
+            loose  臂 → 12 条 vuln 保持 vuln（含 7 条已知假阳）
+        · 也就是说它**真假一起降，没有区分力**：挡住 7 条假阳的代价是把 4 条真洞一起埋了。
+        · 降级理由里 7 条是"函数超 120 行 ⇒ 只给局部窗口"，与实参来源无关；
+          这条对长函数里的真洞是**系统性**的，不是样本缺陷。
+      ⇒ 所以开关留着、默认关。要做对照就把两臂都跑一遍，别只跑一臂就下结论。
+    """
+    if isinstance(r, Judgment):
+        r, snapshot, audit = r.response, r.snapshot, r.audit
+    try:
+        if os.environ.get("AF_JUDGE_STRICT", "0") == "1":
+            result, adjustments = T.apply_policy(r, snapshot)
+        else:
+            result, adjustments = T.validate(r), []
+    except T.ContractError as exc:
+        _error(fd, exc, r, audit)
+        raise
+    fd.ai_verdict = result["ai_verdict"]
+    fd.ai_confidence = float(result["confidence"])
+    fd.by_design, fd.scope_exceeds = result["by_design"], result["scope_exceeds"]
+    fd.arg_source, fd.guards_real = result["arg_source"], result["guards_real"]
+    fd.ai_reason = result["one_line"][:200]
+    # ★★ judge_json 存**模型原话**（未经降级）；降级结果放 `_audit.effective`。
+    #    这样事后能分清「模型原判」和「证据检查后的采纳值」，也是复核页要展示的东西。
+    fd.judge_json = copy.deepcopy(r) if isinstance(r, dict) else {"raw": _json_safe(r)}
+    fd.judge_json["_audit"] = {**(audit or {}),
+                               "policy_version": T.VERSION,
+                               "source_snapshot": copy.deepcopy(snapshot or {}),
+                               "raw_response": copy.deepcopy(_json_safe(r)),
+                               "effective": result,
+                               "adjustments": adjustments}
 
 
 def _aggregate(reps: list[dict]) -> dict:

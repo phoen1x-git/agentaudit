@@ -1,0 +1,225 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phoen1x-git/agentaudit/schemas/candidates.v1.json",
+  "title": "candidates/v1",
+  "description": "One line of candidates.jsonl: a static-analysis candidate, positioned in a scanned commit. Carries no verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "candidate_id",
+    "repo",
+    "commit",
+    "file",
+    "file_sha256",
+    "line",
+    "sink",
+    "sink_call_text",
+    "entry",
+    "backend",
+    "trace_level"
+  ],
+  "properties": {
+    "schema": {
+      "const": "candidates/v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^c1:[0-9a-f]{16}$",
+      "description": "sha1(repo|file|line|sink.func)[:16]. Frozen algorithm: see contract 2.2."
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+      "description": "owner/name. A directory that is not a repository is labelled local/<dirname>."
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The scanned revision. Forty zeros means the version could not be resolved."
+    },
+    "file": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(^|/)\\.\\.(/|$)).+$",
+      "description": "Path relative to the repository root, forward slashes, no '..', no drive letter."
+    },
+    "file_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the file at the scanned revision. Sixty-four zeros means it could not be read."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based line of the sink call. Its meaning must not change: the id is built from it."
+    },
+    "sink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["func"],
+      "properties": {
+        "func": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Last segment of the callee: subprocess.run(...) -> run. The id uses this form."
+        },
+        "qualname": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dotted name as written at the call site. Absent means unresolved, not 'none'."
+        },
+        "arg_index": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Position of the dangerous argument. -1 means the backend could not tell."
+        }
+      }
+    },
+    "sink_call_text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source line as written, trimmed, not truncated. Survives line drift; can be pasted into a report."
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["http", "cli", "mcp", "library"],
+          "description": "Which form the project is. Required because it changes who can reach the sink."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "http: 'POST /chat'; mcp: tool name."
+        },
+        "auth": {
+          "enum": ["none", "required", "unknown"],
+          "description": "Whether the entry point is authenticated. Absent is not the same as 'unknown'."
+        }
+      }
+    },
+    "entry_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reach", "exposure", "who"],
+      "description": "How the entry form was judged, plus the parameters that judgement rests on. Optional, because a backend that cannot read the source cannot fill it; absent is not the same as 'library'. See contract 2.5.",
+      "properties": {
+        "kind": {
+          "enum": ["http", "cli", "mcp", "library"],
+          "description": "Must equal entry.kind. Repeated here so this block validates on its own."
+        },
+        "reach": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One sentence: who can reach this code, given this form."
+        },
+        "exposure": {
+          "enum": ["high", "medium", "low", "unknown"],
+          "description": "Coarse grade of the same thing reach says in words."
+        },
+        "who": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The party that can trigger it."
+        },
+        "sibling_entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "via", "strength"],
+          "description": "The file itself is a library, but an entry point elsewhere in the same repository takes it in. That entry, not the library, decides who can reach the sink. This is the 'thin entry, thick implementation' case: routes in routes/, logic in services/.",
+          "properties": {
+            "kind": {
+              "enum": ["http", "cli", "mcp"],
+              "description": "Form of the entry that imports this file. A library importing a library says nothing about reach, so it is not listed."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Repository-relative path of that entry file."
+            },
+            "via": {
+              "enum": ["import", "same_package"],
+              "description": "import = a real import statement exists (strong). same_package = only shares a directory, no call relationship (weak)."
+            },
+            "strength": {
+              "enum": ["strong", "weak"],
+              "description": "Redundant with via on purpose: a consumer that filters on strength does not have to know the via vocabulary."
+            },
+            "evidence": {
+              "type": "string",
+              "description": "The import statement as written, so the claim can be checked without rerunning the tool."
+            },
+            "reach": {
+              "type": "string",
+              "description": "Who can reach that entry point."
+            }
+          }
+        }
+      }
+    },
+    "static": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "arg_source": {
+          "type": "string",
+          "description": "Where the dangerous argument came from, as far as the static pass could see."
+        },
+        "guards": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Checks seen between the entry point and the sink, one per element."
+        },
+        "route_reachable": {
+          "type": "boolean",
+          "description": "Gate zero: can a request reach this at all."
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Static call chain, outermost function first."
+        },
+        "ql_rule": {
+          "type": "string",
+          "deprecated": true,
+          "description": "Kept for readers written against the draft. Superseded by backend.rule_id."
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rule_id"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which analyser produced this row, e.g. agentaudit-ast or codeql."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Analyser version. Absent when the analyser does not expose one."
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The rule that fired. When several rules hit one position they collapse to one row; the smallest id is kept."
+        }
+      }
+    },
+    "trace_level": {
+      "enum": ["full", "window", "none"],
+      "description": "How far upstream this language can be followed: full context, source window only, or not at all."
+    }
+  }
+}

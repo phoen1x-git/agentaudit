@@ -2,14 +2,15 @@
 
 要解决的问题
 ------------
- 的实战结论是「**库型项目没有对外端点，扫了也是 0**」，但它当时只能靠人读描述判断。
-第一批又验证了一遍：**描述里写着 web / api，不等于真有攻击面** ——
+一条实战结论是「**库型项目没有对外端点，扫了也是 0**」，但它当时只能靠人读描述判断。
+A1 第一批又验证了一遍：**描述里写着 web / api，不等于真有攻击面** ——
 那一批 12 个目标里，好几个本质是"工具脚本集合"，扫出来 0 条 vuln。
 
 本模块把那条经验做成**可执行的前检**：不看描述，直接读仓库的
   · **文件树** —— 有没有"执行原语"的痕迹（code_interpreter / executor / repl / sandbox / sql / browser）
   · **依赖清单** —— 有没有 LLM 客户端依赖、有没有 Web 层
-  · **夹带代码比例** —— 有多少文件在 vendor/third_party/node_modules 下
+  · **夹带代码比例** —— 有多少文件在 vendor/third_party/node_modules 下（这类副本会污染候选池，
+    夹带多的目标，后续 path-filter 的收益也大）
 
 ★ 它**不判断有没有漏洞**，只回答"这个目标值不值得建库去扫"。两次 API 调用/仓库，很便宜。
 
@@ -83,7 +84,7 @@ def probe(repo: str, branch: str, tok: str | None = None) -> dict:
     r["tree_truncated"] = bool(j.get("truncated"))
     # ★★ 工作树总字节：`git/trees` 每条 blob 都带 size。
     #    这是**下载体积的准确代理** —— GitHub 的 `size` 字段含 .git 历史，实测能差 7 倍
-    #    （sampleproj：size 16.7MB，真实 tarball 只有 2.3MB），拿它当门槛会大面积误杀。
+    #    （chunkhound：size 16.7MB，真实 tarball 只有 2.3MB），拿它当门槛会大面积误杀。
     r["tree_bytes"] = sum(int(x.get("size") or 0) for x in j.get("tree", [])
                           if x.get("type") == "blob")
     low = [p.lower() for p in paths]
@@ -114,11 +115,45 @@ def probe(repo: str, branch: str, tok: str | None = None) -> dict:
 # ---- 「真的在跑模型产出的代码吗」—— ★ 必须读内容，不能只看名字 ----
 # ★★ 依据：关键词命中的是**文件名和类名**
 #    （`shell_tool.py`、`class Executor`）。实测那 6 个"强信号"目标
-#    （sampleproj / overmind / marginalia / cascadeflow / openosint / synapse-ai）
+#    （chunkhound / overmind / marginalia / cascadeflow / openosint / synapse-ai）
 #    **实际产出 0 条 exec 类候选** —— 只靠名字会把它们当 Agent。
 _EXEC_CALL = re.compile(r"(?<![\w.])exec[ \t]*\(|(?<![\w.])eval[ \t]*\(")
 _EXECISH = ("code_exec", "executor", "sandbox", "interpreter", "repl")
 
+
+def probe_exec_content(repo: str, branch: str, tok: str | None = None,
+                       max_files: int = 6) -> dict:
+    """读「像执行器」的那些文件**内容**，数真实的 `exec(` / `eval(` 出现。
+
+    返回 `{ok, files, n_exec, samples}`。
+    ★ 这是 `probe()` 的补充：`probe()` 只看文件名（便宜，1 次 API），
+      本函数读内容（贵一些，N 次 API），用来**验证名字信号是真是假**。
+    """
+    out: dict = {"repo": repo, "ok": False, "files": [], "n_exec": 0, "samples": []}
+    tok = tok or gh.token()
+    t = gh.get_json(f"{gh.API}/repos/{repo}/git/trees/{branch}?recursive=1", tok=tok)
+    if not t or "tree" not in t:
+        return out
+    cands = [x["path"] for x in t["tree"]
+             if x.get("type") == "blob" and x["path"].endswith(".py")
+             and any(k in x["path"].lower() for k in _EXECISH)]
+    # 名字越像"真正的执行器"越靠前
+    cands.sort(key=lambda p: (0 if any(k in p.lower() for k in
+                                       ("code_exec", "executor", "sandbox", "interpreter"))
+                              else 1, len(p)))
+    out["ok"] = True
+    for p in cands[:max_files]:
+        code, body = gh.get(f"{gh.API}/repos/{repo}/contents/{p}?ref={branch}",
+                            raw=True, tok=tok)
+        if code != 200:
+            continue
+        out["files"].append(p)
+        for i, line in enumerate(body.splitlines(), 1):
+            if _EXEC_CALL.search(line):
+                out["n_exec"] += 1
+                if len(out["samples"]) < 5:
+                    out["samples"].append(f"{p}:{i}  {line.strip()[:100]}")
+    return out
 
 
 def remote_source_bytes(repo: str, branch: str, tok: str | None = None) -> int | None:

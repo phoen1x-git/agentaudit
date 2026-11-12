@@ -6,6 +6,130 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## 0.5.0 — 2026-11-11
+
+### Added
+
+- **The judgement now carries the evidence it was given.** It used to return a paragraph; it
+  returns a `Judgment` with the source snapshot, the lines it quoted, a hash of the input, and
+  `blocking_gaps` naming the evidence that was missing. A verdict can be checked against the
+  lines that produced it, and a judgement that could not be reached says why instead of
+  sounding certain.
+- **`agentaudit candidates <round>`** writes `candidates.jsonl` against a frozen schema
+  (`candidates/v1`). This is the interface another tool consumes, and it is the first release
+  where that interface exists at all. One position is one line: three rules on the same `eval`
+  collapse into one candidate, because they are one place to look at. No verdict may appear in
+  it. A candidate says where to look; what was concluded lives in a separate file.
+- **`agentaudit investigate <round>`** collects the source around each candidate offline: the
+  callers, the arguments bound to each parameter, the conditions guarding the call. It is
+  bounded on purpose (files, bytes, depth, seconds), and it writes a new round rather than
+  mutating the old one.
+- **`agentaudit import-sarif <file>`** brings another analyzer's results in as candidates,
+  keeping its rule id, so a CodeQL-only, Semgrep-only or commercial-backend result can be
+  triaged and adjudicated by the same pipeline.
+- **A second language.** `--codeql-language javascript` builds a JS database and runs a
+  window-level query. It stops at contract candidates, on purpose: window-level results have
+  no call chain and no argument source, and passing them to triage would mean judging half a
+  record.
+- **Rounds are resumable.** Findings are written incrementally, so a long run that is
+  interrupted keeps what it had instead of losing the whole round.
+- **`agentaudit doctor`** says what this machine can and cannot do: Python, dependencies,
+  CodeQL, the LLM key and its budget, where output lands, and what each missing piece would
+  unlock. Two of those fail quietly -- without CodeQL a scan degrades to the offline path,
+  without a key triage does not run -- so both used to look like "it worked, and found less".
+- **Screening takes a profile.** `agentaudit targets screen --profile your.yml` replaces the
+  built-in thresholds with yours: what form of project you want, what you intend to do with
+  it, which languages you can read, how stale and how popular it may be. Without a profile
+  every user batches to the same list, which is the one thing a screening tool should not do.
+  Unknown keys are an error rather than a shrug, because a config key that is silently
+  ignored makes the tool look like it answered.
+- **The report says what it dropped, and why.** `agentaudit targets report --excluded` adds a
+  table of the projects the filters rejected with the reason for each. Most of those reasons
+  are about the profile rather than the project, so seeing them is how you learn to write a
+  better one.
+- **A scan ends by saying what to do next**, and says plainly that a candidate is a place
+  worth looking at rather than a finding. Listing four output paths answered "where did it go",
+  which is not the question a first-time reader has.
+
+### Changed
+
+- **Every command answers `--help` as itself.** The usage line used to open with the file
+  behind the command (`usage: scan.py`, `export_candidates.py`): forwarding through `runpy`
+  points `sys.argv[0]` back at the script, and argparse takes its default program name from
+  there. Each command now states its own name, and a test walks all of them, because one
+  forgotten `prog=` is enough to bring the old line back.
+- **`agentaudit candidates out/round-x` works as written.** It required `--round`, so the
+  command in this README exited 2 before it looked at the directory. The round is a positional
+  argument now, as it is for `explain`, `report`, `index` and `sarif`; `--round` still works.
+- **`explain` opens with one candidate instead of all thirteen**, then says how to reach the
+  next one, how to print every one, and that a candidate is a place to look rather than a
+  finding. A misspelled path now says the directory does not exist instead of "no candidates
+  found", which sent the reader looking at the scanner.
+- **Five `candidates` options had no explanation at all**, `--out` among them, and `--out` is
+  required.
+- **`selftest --help` asks instead of running.** That suite is a top-level script, so the flag
+  reached nothing and the whole run started; `doctor --help` printed the report for the same
+  reason. Both answer the question now.
+- **Everything that reaches a terminal is English now.** 163 console lines, argument help, and
+  17 raised messages across 24 files. `agentaudit selftest` was half English and half Chinese
+  on alternating lines, and `agentaudit targets --help` was Chinese while every other page was
+  not. A test runs six commands and reads their output, because a rule about directories
+  cannot see a Chinese line printed from `core/`. The count above was low: two error messages
+  in `tools/export_candidates.py` were still Chinese, found by typing the documented command
+  and reading what came back.
+- **The queries write CSV, not SARIF.** The message field carries JSON, and SARIF escapes it a
+  second time, so parsing it back was lossy. One CSV row can hold several argument positions.
+- **`app/` and `tests/` are English, and now a test says so.** That layer is what a stranger
+  opens first; `core/` and `tools/` keep their Chinese notes, because they record what was
+  tried and why. The README says this out loud rather than leaving a reader to discover it.
+- **The internal-vocabulary guard lost three words.** "Criterion", "scope of a measurement"
+  and "red line" are ordinary Chinese technical words; banning them forced awkward prose and
+  protected nobody, because the sentence around them is Chinese either way.
+
+### Fixed
+
+- **CodeQL was looked for one directory above the checkout.** That was right in the directory
+  this code was extracted from and wrong everywhere else: `scripts/setup.sh` installs into the
+  repository, the frontend searched the parent, missed it, and fell back to the offline path.
+  A user who had just installed CodeQL got a quieter scan and no message. It now looks inside
+  the checkout, and `doctor` prints the path so the two can be compared.
+- **One CSV cell over 128 KiB aborted the whole run.** CodeQL writes an entire call chain into
+  a single message cell, and Python's `csv` module refuses a field past 131072 characters.
+  The failure surfaced as `_csv.Error`, which reads like a finished scan with less to report.
+  The ceiling is raised when the module is imported. The SARIF path never had this problem,
+  because long text sits in JSON there, so only the CSV path could hit it.
+- **The same CSV parsed into different paths on Windows and on Linux.**
+  `os.path.isabs("/web/server.py")` is true on Linux and false on Windows, and CodeQL emits
+  that shape on both platforms. On Windows the source prefix stayed in the key, so argument
+  source evidence was collected and then matched against nothing. A path is absolute here if
+  it starts with `/` or with a drive letter.
+- **Both CSV parsers are now pure functions with tests.** `parse_argsrc_rows` and
+  `parse_result_rows` take rows instead of a file, so the shapes CodeQL actually emits - two
+  arguments in one cell, CRLF, quoted commas, a 200k-character field - are checked without a
+  CodeQL install. The CSV path had no tests at all before, which is where the two bugs above
+  lived.
+- **`tools/llm_client.py` no longer falls back to a path on the author's machine.** On any
+  other machine that path does not exist, and a missing key surfaced later as "no response"
+  rather than "no key".
+- **Three switches that the code read were missing from `CONFIGURING.md`**, and `.github`
+  placeholders that survived the last release are gone, with a test for each class of mistake.
+
+### Known gaps
+
+- **The query rewrite has been compared on one target, and no further.** Same source tree
+  (TaskWeaver `33ccc5e`), same CodeQL 2.27.1, old CSV path against new: the new one returned
+  106 of the old 106 sink positions plus 24, all of them inside vendored third-party code
+  under `_targets_pylibs/`. A strict superset on positions; extra rows per position, because
+  one location can carry several call chains. That is one target, one commit, one CodeQL
+  version, so it settles "nothing was dropped here", not "nothing is ever dropped".
+- **Nothing on the CodeQL path runs in CI.** The comparison above needs a database and a real
+  source tree; the machines that run the tests have neither. The offline path is covered.
+- `sink.arg_index` is still `-1` on the AST frontend: that frontend cannot tell which argument
+  is the dangerous one.
+- `needs_human` remains the most common verdict, and the reason is almost always the same: the
+  argument's origin is not inside the code that was handed over. That is a tracing limit, not
+  a triage limit.
+
 ## 0.4.0 — 2026-10-16
 
 ### Added

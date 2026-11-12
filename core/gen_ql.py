@@ -1,19 +1,20 @@
-"""内核 · QL 代码生成器（把 sinks.yml 变成真的 QL）。
+"""内核 · QL 配置注入器（把 sinks.yml 的 extra 条目注进 call.qll）。
 
     python -m core.gen_ql
 
 做的事：
-  1. 读AgentFuzz的 `ql/call/call.qll`，把里面的 `predicate is_sink` **改名**成 `is_sink_paper`
-     （正文一个字不改 —— 基线必须原封不动）
-  2. 用 `core/config/sinks.yml` 里 `source: extra` 的条目**生成** `is_sink_config`
-  3. 追加 `predicate is_sink(cn) { is_sink_paper(cn) or is_sink_config(cn) }`
-  4. 连同 util.qll 与三条查询，输出成一个**我们自己的 ql pack**（core/ql/）
+  1. 读 `core/ql/call/call.qll` 的**手写部分**（到生成段标记为止），一个字节不动
+  2. 用 `core/config/sinks.yml` 里 `source: extra` 的条目生成 `is_sink_config`
+  3. 把生成段拼回去：`is_sink_config` + `is_sink = 形状表 ∪ 对象来源 ∪ 配置`
+  4. 顺带按 `filters.yml` 生成 util.qll 的路径过滤段、按 `sources.yml` 生成实参来源两个文件
+  5. 包名取内容哈希（配置一变就是新包，缓存天然隔离）
 
-★ 设计要点：**extra 为空时，is_sink 语义与AgentFuzz完全一致**。
-  这是"开关可信"的前提 —— 不然开关一拨，变的不只是你想变的那个变量。
+★ 改的：以前这里读参考实现的 `call.qll`，把 `is_sink` 改名成 `is_sink_paper`
+  再并上一段配置。现在 `call.qll` 是手写的（sink 判定拆成"形状表 + 对象来源"两层），
+  参考包整个不需要了 —— 这个脚本退化成**纯配置注入器**。
 
-★ 为什么用"改名 + 并集"而不是"直接改 is_sink"：
-  改了就没法回到基线了；并集可以（把 extra 清空即可）。
+★ 注入靠标记，不靠行号：找不到 `// ======== 以下由 core/gen_ql.py 生成` 就直接报错退出，
+  不会替你猜位置。手写段被误删时宁可失败，也不要把生成段贴到一半的地方。
 """
 from __future__ import annotations
 
@@ -24,11 +25,9 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
-# Reference QL pack from the AgentFuzz paper release. It is only needed to *regenerate*
-# the queries; the committed core/ql/*.ql work without it. Override with AF_PAPER_QL.
-PAPER_QL = Path(os.environ.get("AF_PAPER_QL", str(ROOT / "agentfuzz-official" / "ql")))
-OUT_QL = ROOT / "core" / "ql"
+ROOT = Path(__file__).resolve().parent.parent              # 个人项目_全自动挖掘
+PAPER_QL = ROOT.parent / "agentfuzz-official" / "ql"       # 论文原包
+OUT_QL = ROOT / "core" / "ql"                              # 我们生成的包
 QUERIES = ["get_callchain_and_location.ql", "get_if.ql",
            "get_dataflow_str_constraint.ql"]
 
@@ -38,10 +37,10 @@ def _rename_predicate(src: str, name: str, new_name: str) -> tuple[str, str]:
     marker = f"predicate {name}("
     i = src.find(marker)
     if i < 0:
-        raise SystemExit(f"[FAIL] AgentFuzz call.qll 里找不到 {marker}")
+        raise SystemExit(f"[FAIL] {marker} is not in the paper's call.qll")
     brace = src.find("{", i)
     if brace < 0:
-        raise SystemExit("[FAIL] 找不到谓词体起始 `{`")
+        raise SystemExit("[FAIL] cannot find the start of the predicate body")
     depth, j = 0, brace
     while j < len(src):
         if src[j] == "{":
@@ -62,27 +61,27 @@ def _rename_predicate(src: str, name: str, new_name: str) -> tuple[str, str]:
 # ---------- util.qll 的路径过滤（★ 接线）----------
 _UTIL_DOC_REL = """// ======== 路径过滤（由 core/gen_ql.py 生成，不要手改）========
 // ★ 修的是什么：
-//   AgentFuzz用 `s.matches("%test%")` 判路径（s = loc.toString()，**绝对路径**）
+//   论文用 `s.matches("%test%")` 判路径（s = loc.toString()，**绝对路径**）
 //   → **仓库目录名里含 "test" 就整仓被排除**。
-//   实证：目标 `firetix/vibe-coding-penetration-**tester**`
+//   实证：靶 `firetix/vibe-coding-penetration-**tester**`
 //     · 修前：`[parse] 原始结果 0 条`（主查询空，而 argsrc 仍报 36 个 sink 位置）→ **假 0**
 //     · 修后：`[parse] 原始结果 48 条` → 去重 11 条 → 判定层出 **vuln ×1**
 //   同批 TaintP2X 里被整仓杀掉的还有 `GreyDGL/PentestGPT`（名字含 "pentest"）。
 //   ★ 这是一整类：**任何取名带 pentest / tester / latest / contest 的 Agent 项目都会被静默跳过**。
 // ★ 最小单变量修复：**把黑名单作用在 `getRelativePath()` 上**（去掉仓库目录名那一段），
-//   其余语义（tests/ demo/ example/ 都排除）与AgentFuzz**逐字一致**。
+//   其余语义（tests/ demo/ example/ 都排除）与论文**逐字一致**。
 """
 
 _UTIL_DOC = """// ======== 路径过滤（由 core/gen_ql.py 从 core/config/filters.yml 生成，不要手改）========
-// ★ 为什么替换AgentFuzz的 isIncludeLocation2：
-//   AgentFuzz是**子串黑名单** ["test","miniconda","demo","example","qltracer","newrepo","Python39"]，
+// ★ 为什么替换论文的 isIncludeLocation2：
+//   论文是**子串黑名单** ["test","miniconda","demo","example","qltracer","newrepo","Python39"]，
 //   判法是 `s.matches("%test%")` → **路径里任何位置含 "test" 就整仓被排除**。
-//   ★ 实测踩到：目标 `firetix/vibe-coding-penetration-**tester**`（目录名含 "test"）
-//     → 该目标**每一个文件被过滤** → 主查询 `原始结果 0 条`（而 argsrc 仍报 36 个 sink 位置）
+//   ★ 实测踩到：靶 `firetix/vibe-coding-penetration-**tester**`（目录名含 "test"）
+//     → 该靶**每一个文件被过滤** → 主查询 `原始结果 0 条`（而 argsrc 仍报 36 个 sink 位置）
 //     → **一个整仓的假阴性（假 0）**，不是"漏一条"。
 //   ★ 改法就是 filters.yml 头部早写好的三层设计（只是从没接线）：
 //     ① 路径**段**精确匹配  ② 文件名正则  ③ 少数子串兜底（环境路径）。
-//   开关：`AF_PATH_FILTER=0`（或 paper）→ 原样拷AgentFuzz的 util.qll。
+//   开关：`AF_PATH_FILTER=0`（或 paper）→ 原样拷论文的 util.qll。
 """
 
 
@@ -118,10 +117,10 @@ def _util_qll() -> tuple[str, str]:
     """生成 util.qll 的【路径过滤】片段。返回 (QL 片段, 模式)。
 
     模式（`AF_PATH_FILTER`）：
-      · `paper` / `0`  → 原样拷AgentFuzz（**基线**）
-      · `rel`（**默认**）→ AgentFuzz那串子串黑名单，但**作用在 `getRelativePath()`** 上
+      · `paper` / `0`  → 原样拷论文（**基线**）
+      · `rel`（**默认**）→ 论文那串子串黑名单，但**作用在 `getRelativePath()`** 上
                           ★ 这是**最小单变量修复**：只去掉"仓库目录名"这一段，
-                            其余语义（tests/ demo/ example/ 一律排除）**与AgentFuzz逐字一致**。
+                            其余语义（tests/ demo/ example/ 一律排除）**与论文逐字一致**。
       · `yml`          → `filters.yml` 的三层规则（段/文件名/子串）—— 更精确，但会
                           *放开* `testing_util.py` 这类原本被误伤的文件 → 属另一变量。
     """
@@ -129,14 +128,14 @@ def _util_qll() -> tuple[str, str]:
     if mode in ("0", "paper", "off", "false"):
         return "", "paper"
 
-    # AgentFuzz原黑名单（小写，用于相对路径）
+    # 论文原黑名单（小写，用于相对路径）
     paper_subs = ["test", "miniconda", "demo", "example", "qltracer", "newrepo", "python39"]
 
     if mode != "yml":
         return _UTIL_DOC_REL + f'''
 string substringBlack() {{ result = {_qlist(paper_subs)} }}
 
-// ★ 兼容：AgentFuzz原列表
+// ★ 兼容：论文原列表
 string getBlacklist() {{ result = ["test", "miniconda", "demo", "example", "qltracer", "newrepo", "Python39"] }}
 
 predicate isIncludeLocation2(Location loc) {{
@@ -151,7 +150,7 @@ predicate isIncludeLocationStr(string s) {{
  }}
 
 predicate isIncludeLocation(Location loc) {{ isIncludeLocation2(loc) }}
-''', "rel(相对路径 + AgentFuzz原黑名单)"
+''', "rel(relative paths + the paper's blacklist)"
 
     cfg = yaml.safe_load(
         (ROOT / "core" / "config" / "filters.yml").read_text(encoding="utf-8")) or {}
@@ -170,7 +169,7 @@ string filenameRe() {{ result = {_qlist(res)} }}
 
 string substringBlack() {{ result = {_qlist(subs)} }}
 
-// ★ 兼容：AgentFuzz原列表（别的查询可能引用）
+// ★ 兼容：论文原列表（别的查询可能引用）
 string getBlacklist() {{ result = ["test", "miniconda", "demo", "example", "qltracer", "newrepo", "Python39"] }}
 
 predicate isIncludeLocation2(Location loc) {{
@@ -194,30 +193,25 @@ predicate isIncludeLocationStr(string s) {{
     forall(string black | black = substringBlack() | not s.matches("%" + black + "%"))
  }}
 
-// deprecated（AgentFuzz baseline，保留但换成同样的段规则）
+// deprecated（论文原样，保留但换成同样的段规则）
 predicate isIncludeLocation(Location loc) {{ isIncludeLocation2(loc) }}
 '''
     return ql, f"filters.yml(seg={len(segs)}/re={len(res)}/sub={len(subs)})"
 
 
 def _write_util_qll() -> str:
-    """AgentFuzz util.qll 去掉 3 个定义 + 追加 filters.yml 生成的过滤。"""
-    import re
-    src = (PAPER_QL / "util" / "util.qll").read_text(encoding="utf-8")
+    """按 filters.yml 重新生成 util.qll 的过滤段（幂等：靠标记切，不靠行号）。
+
+    以前这里读参考包的 util.qll、删掉四个定义块再追加生成段。现在 util.qll 本身
+    就是手写的（那四个块早就不在了），再按老办法删会删空 —— 改成只替换标记之后的部分。
+    """
     gen, mode = _util_qll()
-    if not gen:
-        (OUT_QL / "util" / "util.qll").write_text(src, encoding="utf-8")
-        return mode
-    for head in ("predicate isIncludeLocation2(Location loc)",
-                 "predicate isIncludeLocationStr(string s)",
-                 "predicate isIncludeLocation(Location loc)",
-                 "string getBlacklist()"):
-        src = _drop_block(src, head)
-    # ★ 删块后会留下**孤儿的 `bindingset[s]` 行** → 报 "'s' is not an argument to this predicate"
-    #   （实测踩到）。AgentFuzz那部分只用它标 isIncludeLocationStr，而那已被删 → 全清。
-    src = re.sub(r"[ \t]*bindingset\[s\][ \t]*\n", "", src)
-    src = re.sub(r"\n{3,}", "\n\n", src).rstrip() + "\n"
-    (OUT_QL / "util" / "util.qll").write_text(src + "\n" + gen, encoding="utf-8")
+    path = OUT_QL / "util" / "util.qll"
+    src = path.read_text(encoding="utf-8")
+    marker = "// ======== 路径过滤"
+    cut = src.find(marker)
+    head = (src[:cut] if cut >= 0 else src).rstrip() + "\n"
+    path.write_text(head + "\n" + gen if gen else head, encoding="utf-8")
     return mode
 
 
@@ -233,16 +227,16 @@ def _clause(s: dict) -> str:
         return f'cn.getFunction().(AttrNode).getNode().getName() = "{fn}"'
     # ★★ obj_suffix：对象名**以某串结尾**即可命中。用途：一条规则同时覆盖
     #    `conn.query(...)` 与 `self.conn.query(...)` —— 精确 `obj=` 只能匹配前者，
-    #    会把 bigquery_vector 那几条真阳漏掉。
+    # 会把 bigquery_vector 那几条真阳漏掉（踩过，见 ）。
     #    `getObject().getNode().toString()` 对 `self.conn.query` 给的是 "self.conn"，
     #    所以用 endsWith 而不是 =。
     osfx = s.get("obj_suffix")
     if osfx:
-        # ★★ 必须**两条路**都查：
+        # ★★ 必须**两条路**都查（机制证据，见 ）：
         #    `conn.query(...)` 的接收者是 Name 节点 → toString() = "conn"；
         #    但 `self.conn.query(...)` 的接收者是 Attribute 节点 →
         #    toString() 只给出类名 "Attribute"（不是 "self.conn"！）。
-        #    the baseline也只用 toString()，所以它同样认不出 `self.X.method(...)` ——
+        #    论文原版也只用 toString()，所以它同样认不出 `self.X.method(...)` ——
         #    这是它只硬编码 requests/os/subprocess 这类模块级名字的原因。
         #    对 Attribute 节点必须改用 `.getNode().getName()` 取属性名。
         return (f'(cn.getFunction().(AttrNode).getNode().getName() = "{fn}" and\n'
@@ -257,7 +251,7 @@ def _clause(s: dict) -> str:
         return (f'(cn.getFunction().(AttrNode).getNode().getName() = "{fn}" and\n'
                 f'   cn.getFunction().(AttrNode).getObject().getNode().toString() = "{obj}")')
     # ★★ obj2：**两层属性**的对象，形如 `os.path.join(...)`。
-    #   实测：对 `os.path.join`，
+    # 实测：对 `os.path.join`，
     #     getObject().getNode().toString()          = "Attribute"（类名！不是 "os.path"）
     #     getObject().(AttrNode).getNode().getName() = "path"     （外层属性名）
     #   所以 `obj: os.path` 永远匹配不上。正确形态要**往下再钻一层**：
@@ -285,7 +279,7 @@ def _method_objchk(s) -> str:
 
     ★ 为什么需要：`create` / `run` / `query` / `call` / `execute` 这类通用方法名到处都有，
       裸加会把 ORM 的 `Model.objects.create()`、`cursor.execute()` 也当成不可信输入，
-      刻度当场失控。加约束后只剩 LLM 客户端那一批。
+      刻度当场失控（`` §二）。加约束后只剩 LLM 客户端那一批。
 
     ★★ 三层踩过的坑（全部是「看起来对、结果静默为空」型）：
       ① 不能包 `exists(...)` 引用外层绑定变量 `c` —— 嵌套 exists 触发 CodeQL 变量提升 →
@@ -326,7 +320,7 @@ def _sources_qll() -> tuple[str, str, list]:
          （同一个 `@py_flow_node`），类型互通。
     """
     # ★ 可叠加的 source 表（开关 AF_SOURCES_FILE=<路径>，相对路径按仓库根解析）。
-    #   ★ 默认**不加载** → A 组行为与加此特性之前逐字一致。
+    # ★ 默认**不加载** → A 组行为与加此特性之前逐字一致（回归比对见 ）。
     #   用途：把外部知识（例：TaintP2X 的 94 条 LLM 接口定义）作为**单变量**加进来做 A/B。
     src_files = [ROOT / "core" / "config" / "sources.yml"]
     _extra_f = os.environ.get("AF_SOURCES_FILE", "").strip()
@@ -337,7 +331,7 @@ def _sources_qll() -> tuple[str, str, list]:
         if _p.exists():
             src_files.append(_p)
         else:
-            print(f"★ [sources] AF_SOURCES_FILE 指向的文件不存在，已忽略：{_p}")
+            print(f"★ [sources] AF_SOURCES_FILE points at a file that does not exist; ignored: {_p}")
     # ★ 按 id 去重（先加载者优先）—— 防止两个文件里出现同 id 导致条目重复计数。
     srcs, _seen_ids = [], set()
     for _fp in src_files:
@@ -412,7 +406,7 @@ predicate srcKindCfg(ControlFlowNode cn, string k) {{
 """
 
     # ★★ 开关 AF_ARGFLOW_ATTR（默认 **0 = 现状**）：
-    #    补「属性读取」污点步。为什么需要：
+    # 补「属性读取」污点步。为什么需要（实测定位）：
     #      · `x = llm.invoke(...)` → `sink(x)`          ✅ 能追到
     #      · `r = client.chat.completions.create(...)` → `sink(r)` ✅ 能追到
     #      · 但 `sink(r.choices)` / `sink(r.choices[0].message.content)` ❌ 追不到
@@ -448,12 +442,26 @@ module ArgFlow = TaintTracking::Global<AttrFlowX>;"""
 
 module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
 
-    # These queries do not read CodeQL's Models-as-Data. Bridging the two would be a real
-    # improvement -- a MaD model carries a type constraint (`openai.OpenAI`) which is more
-    # precise than a bare method name in sources.yml, so it would not catch an unrelated
-    # `Model.objects.create()` -- but it needs srcKind to consult
-    # `ModelOutput::getASourceNode(...)` (`API::Node::asSource()`), and nothing here passes
-    # `--model-packs`.
+    # ★★ 开关 AF_MAD（默认 **0 = 现状**）：让 srcKind 也读 CodeQL 的 MaD
+    #    （Models as Data，模型写在 core/modelpack/models/*.yml，跑查询时 --model-packs=af/python-model-pack）。
+    # 为什么需要（§四，实测）：
+    #      · MaD 本身**能被 CodeQL 读到**（探针查询在一个样本的库上命中 openai 调用）
+    #      · 但我们的 `srcKindCfg`/`isSinkArgCfg` 是**自定义谓词，不读 MaD** ⇒ 写了也"吃不到"
+    #      · 桥接 API 来自 CodeQL 自己的 DataFlowPrivate.qll:1084 ——
+    #        `source = ModelOutput::getASourceNode(_, model).asSource()`，即 `API::Node::asSource()`
+    #          → DataFlow::Node。
+    #    ★ 独立开关的理由：本改动与 source 表 / 属性传播都无关，**不能混进别的 A/B**（单变量原则）。
+    _mad = os.environ.get("AF_MAD", "0") == "1"
+    # ★★ 白名单（AF_MAD_KINDS，逗号分隔，默认只认 llm-output）—— **必须加**：
+    #    `ModelOutput::getASourceNode(k)` 返回的是**所有** MaD source，
+    #    **包括 CodeQL 标准库自带的**（实测：不带白名单时某个样本上多出 78 行，
+    #    新增 kind 是 `commandargs` / `environment`，**不是**我们要的 llm-output）。
+    #    ⇒ 不加白名单，A/B 的差异里会混进标准库的 source，**不干净**。
+    #    ★ 反过来说：`environment`（环境变量）是我们 sources.yml 里**没有**的一档，
+    #      想试就把它加进白名单（`AF_MAD_KINDS=llm-output,environment`）——那是一次独立实验。
+    _kinds = [x.strip() for x in os.environ.get("AF_MAD_KINDS", "llm-output").split(",") if x.strip()]
+    _kind_cond = " or ".join('k = "%s"' % x for x in _kinds)
+    _mad_import = ("import semmle.python.frameworks.data.ModelsAsData\n" if _mad else "")
     _mad_branch = (
         "  or\n"
         "  // ★ MaD（开关 AF_MAD）：只认白名单里的 kind（AF_MAD_KINDS，当前 %s）。\n"
@@ -467,30 +475,39 @@ module ArgFlow = TaintTracking::Global<ArgSourceCfg>;"""
 import python
 import semmle.python.dataflow.new.DataFlow
 import semmle.python.dataflow.new.TaintTracking
-""" + """import argsource_ast
+""" + _mad_import + """import argsource_ast
 
-/** 源头种类：AST 层能认的（见 argsource_ast.qll）+ 函数参数这一档。 */
+/** 源头种类：AST 层能认的（见 argsource_ast.qll）+ 函数参数这一档 + 可选的 MaD 一档。 */
 predicate srcKind(DataFlow::Node n, string k) {
   srcKindCfg(n.asCfgNode(), k)
   or
   (n instanceof DataFlow::ParameterNode and k = "param")
   // ★ 跨过程分析里，参数常常表现为**汇总节点**（toString 形如 "[summary param] position 1 in f"），
-  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：sample-toolkit exec 的 arg0 消失了）。
+  //   它们不是 ParameterNode。不认它们会**静默丢行**（踩过：某个样本 exec 的 arg0 消失了）。
   or
   (n.toString().matches("[summary param]%") and k = "param")
-""" + """}
+""" + _mad_branch + """}
 
 """ + _cfg_impl + "\n"
     return ast_qll, cfg_qll, ids
 
 
 def main() -> int:
-    paper_call = (PAPER_QL / "call" / "call.qll").read_text(encoding="utf-8")
-    renamed, body = _rename_predicate(paper_call, "is_sink", "is_sink_paper")
+    # call.qll 现在是**手写**的（sink 判定拆成"形状表 + 对象来源"两层），
+    # 这里只负责把 sinks.yml 的 extra 条目注入到生成段，手写部分一个字节都不碰。
+    call_qll = OUT_QL / "call" / "call.qll"
+    MARK = "// ======== 以下由 core/gen_ql.py 生成"
+    handwritten = call_qll.read_text(encoding="utf-8")
+    cut = handwritten.find(MARK)
+    if cut < 0:
+        raise SystemExit(
+            "[FAIL] %s 里找不到生成段标记 %r —— 注入需要锚点，不会替你猜位置"
+            % (call_qll, MARK))
+    head = handwritten[:cut].rstrip() + "\n"   # 生成段自带前导换行，这里削干净
 
     cfg = yaml.safe_load((ROOT / "core" / "config" / "sinks.yml").read_text(encoding="utf-8"))
     # ★ group 开关：每个 group 一类，默认**关**，用环境变量单独开 ——
-    #   这样"加某一类 sink"是一次可 A/B 的单变量改动。
+    # 这样"加某一类 sink"是一次可 A/B 的单变量改动（§四 / ）。
     #     group: fs   → AF_SINKS_FS=1    （文件 I/O 类）
     #     group: http → AF_SINKS_HTTP=1  （httpx/aiohttp 类，补 requests→httpx 迁移的缺口）
     _GROUP_ENV = {"fs": "AF_SINKS_FS", "http": "AF_SINKS_HTTP"}
@@ -505,44 +522,43 @@ def main() -> int:
               if s.get("source") == "extra" and s.get("enabled", True)
               and s.get("cls") == "direct" and s.get("id")
               and _group_on(s)]
-    # ★ AF_SINKS_EXTRA=0 → 生成"空 extra"，即**基线**（必须与AgentFuzz reference pack结果一致）
+    # ★ AF_SINKS_EXTRA=0 → 生成"空 extra"，即**基线**（必须与论文原包结果一致）
     if os.environ.get("AF_SINKS_EXTRA", "1") == "0":
         extras = []
 
     if extras:
         clauses = "\n  or\n  ".join(_clause(s) for s in extras)
         gen = f"""
-
 // ======== 以下由 core/gen_ql.py 生成，不要手改 ========
 // 来源：core/config/sinks.yml 里 source=extra 的 {len(extras)} 条
 predicate is_sink_config(CallNode cn) {{
   {clauses}
 }}
 
-predicate is_sink(CallNode cn) {{ is_sink_paper(cn) or is_sink_config(cn) }}
+predicate is_sink(CallNode cn) {{
+  sinkByShape(cn) or sinkByBoundObject(cn) or is_sink_config(cn)
+}}
 """
         ids = [s["id"] for s in extras]
     else:
         gen = """
-
 // ======== 以下由 core/gen_ql.py 生成，不要手改 ========
-// ★ extra 为空 → is_sink 与AgentFuzz**完全一致**（基线）
+// ★ extra 为空 → is_sink_config 恒假，只剩手写的形状表与对象来源（基线）
 predicate is_sink_config(CallNode cn) { none() }
 
-predicate is_sink(CallNode cn) { is_sink_paper(cn) }
+predicate is_sink(CallNode cn) { sinkByShape(cn) or sinkByBoundObject(cn) }
 """
         ids = []
 
     # 组装我们的包
     (OUT_QL / "call").mkdir(parents=True, exist_ok=True)
     (OUT_QL / "util").mkdir(parents=True, exist_ok=True)
-    (OUT_QL / "call" / "call.qll").write_text(renamed + gen, encoding="utf-8")
-    # ★★ 接线：util.qll 不再原样拷AgentFuzz —— 路径过滤改成 filters.yml 的**段/文件名/子串**三层，
-    #    修掉"仓库名含 test 就整仓被排除"的假 0。`AF_PATH_FILTER=0` 可回到AgentFuzz baseline。
+    call_qll.write_text(head + gen, encoding="utf-8")
+    # ★★ 接线：util.qll 不再原样拷论文 —— 路径过滤改成 filters.yml 的**段/文件名/子串**三层，
+    #    修掉"仓库名含 test 就整仓被排除"的假 0。`AF_PATH_FILTER=0` 可回到论文原样。
     filt_mode = _write_util_qll()
     util_txt = (OUT_QL / "util" / "util.qll").read_text(encoding="utf-8")
-    for q in QUERIES:
-        shutil.copy2(PAPER_QL / q, OUT_QL / q)
+    # 三条查询是手写的，不再从参考包拷贝 —— 拷了会把改动冲掉
 
     # ★ 跨过程实参来源（开关 dataflow-argsource）：两个文件由 sources.yml 生成，
     #   查询本体是手写模板（core/ql_src/），一起拷进包里。
@@ -557,26 +573,35 @@ predicate is_sink(CallNode cn) { is_sink_paper(cn) }
             own_queries.append(q.name)
 
     # ★★ 包名 = `py-qs-kernel-<内容哈希>`。两个理由，都是踩出来的：
-    #   ① 与AgentFuzz的 `py-qs` **不能同名** —— 同名会让两者结果缓存在数据库里
+    #   ① 与论文的 `py-qs` **不能同名** —— 同名会让两者结果缓存在数据库里
     #      同一个路径（`results/py-qs/...`）互相覆盖。
     #   ② 单纯改个固定名还不够 —— CodeQL 的缓存键是 (包名, 查询路径)，
     #      **不看库内容**。改了 call.qll 却仍报 "No need to rerun"，实验直接失效。
     #      → 把内容哈希写进包名：配置一变就是新包，缓存天然隔离；
-    #        配置没变则仍能复用缓存。相当于给规则打了版本戳。
+    #        配置没变则仍能复用缓存。相当于给判据打了版本戳。
     import hashlib
+    # ★★ 三条查询的内容也必须进哈希（踩到）：以前只算 call.qll / util / argsource，
+    #    改了查询本身包名不变 → CodeQL 认为"不必重跑"→ 拿到的还是上一版结果。
+    #    表现为"改了查询但输出一模一样"，和"没改"完全分不清。
+    query_txt = "".join((OUT_QL / q).read_text(encoding="utf-8")
+                        for q in QUERIES if (OUT_QL / q).exists())
     stamp = hashlib.sha1(
-        (renamed + gen + ast_qll + cfg_qll + util_txt).encode("utf-8")).hexdigest()[:8]
+        (head + gen + ast_qll + cfg_qll + util_txt + query_txt).encode("utf-8")).hexdigest()[:8]
     (OUT_QL / "qlpack.yml").write_text(
         f"library: false\nwarnOnImplicitThis: false\nname: py-qs-kernel-{stamp}\nversion: 0.0.2\n"
         "dependencies:\n  codeql/python-all: \"*\"\n  codeql/suite-helpers: \"*\"\n"
         "  codeql/util: \"*\"\n", encoding="utf-8")
-    print(f"  包名 py-qs-kernel-{stamp}（内容哈希，配置变则包名变 → 缓存不会串）")
+    print(f"  pack name py-qs-kernel-{stamp} (content hash: a config change changes "
+          f"the name, so caches cannot mix)")
 
-    print(f"生成 → {OUT_QL}")
-    print(f"  extra 条目 {len(extras)} 个：{ids or '（空 → 与AgentFuzz一致，即基线）'}")
-    print(f"  源头条目 {len(src_ids)} 个：{src_ids or '（空 → 只报 param，保守基线）'}")
-    print(f"  自带查询 {own_queries or '（无）'}")
-    print(f"  路径过滤 {filt_mode}（AF_PATH_FILTER=0 → 回到AgentFuzz的子串黑名单）")
+    print(f"generated -> {OUT_QL}")
+    print(f"  {len(extras)} extra entries: "
+          f"{ids or '(empty -> same as the paper, i.e. the baseline)'}")
+    print(f"  {len(src_ids)} source entries: "
+          f"{src_ids or '(empty -> param only, the conservative baseline)'}")
+    print(f"  own queries: {own_queries or '(none)'}")
+    print(f"  path filter {filt_mode} (AF_PATH_FILTER=0 falls back to the paper's "
+          f"substring blacklist)")
     return 0
 
 

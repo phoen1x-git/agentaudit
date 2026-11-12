@@ -20,6 +20,18 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# `agentaudit selftest --help` used to start the whole suite: this file is a top-level
+# script, so nothing parsed the flag. Answer the question instead of ignoring it.
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print("agentaudit selftest - run the rule self-tests")
+    print("")
+    print("  agentaudit selftest    run every suite; exits 1 if any of them fails")
+    print("")
+    print("Run it after changing a rule or the modules it depends on. The checks read")
+    print("synthetic cases, not the target: a green run means the rules still do what")
+    print("they were written to do, not that a scan will find anything.")
+    raise SystemExit(0)
+
 SUITES = [
     ("selftest_wrapper_forward.py", "wrapper forwarding chain"),
     ("selftest_auth.py", "authentication detection"),
@@ -31,6 +43,12 @@ SUITES = [
     ("selftest_wrapper_self.py", "wrappers must not count themselves as auth"),
     ("selftest_evidence_file.py", "evidence file field must be a path"),
     ("selftest_crossfile_alias.py", "cross-file type aliases"),
+    # The adjudication tools, which answer questions the scan cannot: is this worth a
+    # case at all, is there a guard upstream, and can anyone reach it.
+    ("selftest_triage_gate.py", "the three gates, with 'no' kept apart from 'cannot tell'"),
+    ("selftest_caller_status.py", "the five states of a position with no callers"),
+    ("selftest_guard_filler.py", "guard filling: str() is bogus, and unknown stays unknown"),
+    ("selftest_trace_entry_path.py", "tracing a sink back to an entry point"),
 ]
 
 PY = sys.executable

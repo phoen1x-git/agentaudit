@@ -187,7 +187,9 @@ def make_db(name: str, src: Path, db: Path, log) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        prog="agentaudit prepare",
+        description="fetch each target's source and build its CodeQL database")
     ap.add_argument("batch", help="batch1.json")
     ap.add_argument("--only", default="")
     ap.add_argument("--targets-out", default="",
