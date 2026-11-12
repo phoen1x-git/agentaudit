@@ -40,23 +40,6 @@ class Source extends PyFunctionObject {
       ",\"constraints\":" + constraints + "}"
   }
 
-  CallNode getACallNode(FunctionObject mid, FunctionObject next) {
-    exists(CallNode cn |
-        this.getAMid() = mid and
-        this.getAMid() = next and
-        (
-          calls_cn(mid, next, cn)
-          or
-          exists(FunctionInvocation fi | calls_fi(mid, next, fi) | fi.getCall() = cn)
-        )
-      |
-        result = cn
-    )
-  }
-
-  FunctionObject getAPrev(FunctionObject fo) {
-    exists(FunctionObject mid | this.getAMid() = mid and calls(mid, fo) | result = mid)
-  }
 }
 
 
@@ -73,8 +56,6 @@ class Source extends PyFunctionObject {
      direct_calls(caller, callee, _)
      or
      module_calls(caller, callee, _)
-     or 
-     add_calls(caller, callee, _)
    )
  }
  
@@ -108,15 +89,7 @@ class Source extends PyFunctionObject {
   exists(NameNode nn | cn.getAChild() = nn | nn.getId() = callee.getName())
   )
 }
-predicate add_calls(FunctionObject caller, FunctionObject callee, CallNode cn) {
-  (call_node(caller, cn) and
-  callee.getName() = "_sys_execute" and
-  cn.getFunction().(AttrNode).getNode().getName() = "Process" and
-  cn.getArgByName("target").(NameNode).getId() = callee.getName()
-  )
-}
-
- predicate module_calls(FunctionObject caller, FunctionObject callee, CallNode cn) {
+predicate module_calls(FunctionObject caller, FunctionObject callee, CallNode cn) {
    call_node(caller, cn) and
    exists(Class c |
      c.getAMethod() = caller.getFunction() and
@@ -213,8 +186,6 @@ predicate first_attrnode(ControlFlowNode cfn, AttrNode an) {
     direct_calls(caller, callee, cn)
     or
     module_calls(caller, callee, cn)
-    or
-    add_calls(caller, callee, cn)
   )
  }
 

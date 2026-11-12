@@ -82,6 +82,25 @@ case suites under `tools/selftest_*.py`:
 - `tests/test_suites.py::test_every_selftest_file_is_registered` fails if a suite exists on
   disk but is not being run.
 
+## Changing the CodeQL queries
+
+`core/ql/` is a mix: `call/call.qll` and the two query files are hand-written, while
+`argsource_*.qll`, `util/util.qll` and `qlpack.yml` are written by `core/gen_ql.py`.
+
+**After editing anything under `core/ql/`, run `python -m core.gen_ql`.** The pack name in
+`qlpack.yml` is `py-qs-kernel-<content hash>` and CodeQL caches compiled queries by pack name.
+Edit a query without regenerating, and the name does not change, so CodeQL reports
+"No need to rerun" and hands back the previous results — the edit looks like it did nothing,
+which is indistinguishable from a working edit that changed nothing.
+
+The check is in the log: a real compile prints `Compiling query plan for ...`. An answer in
+about ten seconds without that line came from cache.
+
+A recursion cannot be used to rebuild a call path: CodeQL rejects recursive functions
+(`There is a recursive cycle of relations that must be inlined`). Path construction here needs
+the depth-indexed shape it has, which is why the call-path relation is bounded by a depth
+argument rather than written as a loop over `calls`.
+
 ## Before you commit
 
 - `tests/test_no_leaks.py` fails if a local path, a secret, or a word from the private project

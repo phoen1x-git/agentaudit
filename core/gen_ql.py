@@ -28,8 +28,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent              # 个人项目_全自动挖掘
 PAPER_QL = ROOT.parent / "agentfuzz-official" / "ql"       # 论文原包
 OUT_QL = ROOT / "core" / "ql"                              # 我们生成的包
-QUERIES = ["get_callchain_and_location.ql", "get_if.ql",
-           "get_dataflow_str_constraint.ql"]
+QUERIES = ["get_if.ql", "get_dataflow_str_constraint.ql"]
 
 
 def _rename_predicate(src: str, name: str, new_name: str) -> tuple[str, str]:

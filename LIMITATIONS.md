@@ -21,7 +21,7 @@ model reading the evidence".
 | **Sinks that are not in `core/config/sinks.yml`** | By definition. If your project's dangerous function is not listed, it is invisible — this is the single easiest gap to close, see [CONFIGURING.md](CONFIGURING.md). |
 | **Non-Python code** | The frontend is bound to CodeQL's Python pack. Templates, a TypeScript frontend, shell scripts and YAML pipelines are all out of scope. |
 | **Python that is not in `.py` files** | Notebooks, code inside string literals, and generated sources that are not written to disk before the scan. |
-| **Async, thread and process boundaries** | A value passed through a queue or a future is a new root as far as the analysis is concerned. |
+| **Async, thread and process boundaries** | A value passed through a queue or a future is a new root as far as the analysis is concerned. A function handed over by name as an argument — `Process(target=fn)`, `Thread(target=fn)`, `map(fn, xs)` — is never linked back to the call site that ends up running it. |
 | **Anything requiring execution** | No input is ever sent, nothing is run, no container is started. "Exploitable" is never verified — a real vulnerability and a lookalike are indistinguishable here. |
 
 ## 2. Things it will report that you should expect to dismiss
