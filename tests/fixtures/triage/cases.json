@@ -1,0 +1,1146 @@
+{
+  "schema": "triage-replay-v1",
+  "scope": "fixed-response policy regression; not scanner or live-model accuracy",
+  "legacy_implementation": {
+    "core/llm_judge.py": "19e8e80f447f593f09fe4a13e3014cf6d150b401833dd425cea93bfd19ad7fc7",
+    "core/srcctx.py": "b9e725252e15a940e1aad27d6d87015f270d4374f791c61063e4060031a1016b",
+    "tools/llm_client.py": "6b95763b13bcd775ec6854b7c675561fd4d20ceaaa6f192d2d1e93b5d384b753",
+    "core/consistency.py": "90c3b55b3ce72ed97794212b49b7dbdb6add8c2adae722bd3033926eb7e6a245"
+  },
+  "legacy_rubric_sha256": "53267e05512e549f782229850dd2a422bc4e00bb58b4fdca6f1a7c452d125c0c",
+  "cases": [
+    {
+      "id": "request-exec",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "risky",
+      "expected": "vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "9be2ba09f52111844b031d6316bd5205c345ecb21dd96599e1f3207fd8d12b4a",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "literal-sql",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def query(conn):\n    value = \"SELECT 1\"\n    return conn.execute(value)\n",
+        "sha256": "ed37d6f6df1eeaf961c1a22b968a2f4966dd21f9cf87e803d76ee31467245c86"
+      },
+      "reference": "constrained",
+      "expected": "not_vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_sql",
+        "danger_arg": "value",
+        "arg_source": "constant",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "trusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = \"SELECT 1\""
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "5ed4ae62ba1ed77e554c74afaa61aebf794d7581d08a457b453c08f464baecb5",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "unresolved-local",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "unknown",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "unknown",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "4d4c3445034723636438902e7582192232cf554c4fe39e55db3f2013c493010c",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "config-controller-unknown",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def fetch(cfg):\n    value = cfg[\"endpoint\"]\n    return client.get(value)\n",
+        "sha256": "2a3f0f57805409c873af10253a5c29457c9db1ecebffebf9ec2431585d97e9fd"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "http",
+        "danger_arg": "value",
+        "arg_source": "config",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "unknown",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = cfg[\"endpoint\"]"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "522435a0c8afd765e1607489b2eb04a962cef6ea86c82da57a416771484ac555",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "project-config-is-not-trusted",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def fetch(project_cfg):\n    value = project_cfg[\"endpoint\"]\n    return client.get(value)\n",
+        "sha256": "d7cb0da387f1301f092c05ed15e6aa3953f51742381f842314225c8236c28c7b"
+      },
+      "reference": "risky",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "http",
+        "danger_arg": "value",
+        "arg_source": "config",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = project_cfg[\"endpoint\"]"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "c61b6b4f97a1ac0ae211d3a22fdd6ae1d6595063cd98348270a4de99fdc37dd8",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "validator-not-expanded",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    validate(value)\n    return exec(value)\n",
+        "sha256": "cfdb49cc3c452932a97bbc5b945654cf56a7ac2dca3b3484da6ffbbe943bd25b"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "yes",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [
+          "未提供验证器实现，不能确定约束效果"
+        ],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [
+            {
+              "file": "sample.py",
+              "line": 3,
+              "quote": "validate(value)"
+            }
+          ],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "c3a07a8d65d56ffc3d59e45639f8f71eb689dd4b8299cf119fc959328e35b3d3",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "guard-on-other-value",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    if request.user:\n        return exec(value)\n",
+        "sha256": "003f583c0351c7d1ea8674dd9bb96140284eb842ee09962ff116c1aa5c62603e"
+      },
+      "reference": "risky",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "yes",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [
+          "当前检查未限制危险实参"
+        ],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [
+            {
+              "file": "sample.py",
+              "line": 3,
+              "quote": "if request.user:"
+            }
+          ],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "a4c1e8f8609ba54486dce3b8c61c9b0fbcc36a703af1c9a6102d5a666863c38c",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "designed-is-not-bounded",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "yes",
+        "scope_exceeds": "no",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "488bb3fc26f9cb3e3dc4e0e96e4fdce3bdbc739e0a400d276d146fff1a96734f",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "bound-sql-parameters",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def query(request, conn):\n    value = request.args[\"id\"]\n    return conn.execute(\"SELECT * FROM records WHERE id = ?\", (value,))\n",
+        "sha256": "7c5fe812c07c5f5ce2bd1eef716973bd301182109872728128d3710224ce4fa6"
+      },
+      "reference": "constrained",
+      "expected": "not_vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_sql",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "yes",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.args[\"id\"]"
+            }
+          ],
+          "guard": [
+            {
+              "file": "sample.py",
+              "line": 3,
+              "quote": "return conn.execute(\"SELECT * FROM records WHERE id = ?\", (value,))"
+            }
+          ],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "eead5235b0ce06e5dbd87302ab63a5cb84e3df780a0065ddf5c6640fd3a21bb8",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "guard-uncertain",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "unclear",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "950e82f2f30c9d9f4ab03c58826f6630529dc6886fb34932e331fcfb178a9b80",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "source-unknown-positive",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "unresolved",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "unknown",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "unknown",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "c1893467f455067d4bf1cdce7e482fa93e2035f4b3c88ff0798ec6a22a0e65f8",
+      "legacy_result": {
+        "ai_verdict": "needs_human",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "unexpected-verdict",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "invalid",
+      "expected": "error",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "不构成漏洞",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "ee08a83c40a1c544170015567123665f45ae33020d8d5561ed0f78f60b894c1b",
+      "legacy_result": {
+        "ai_verdict": "不构成漏洞",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "text-confidence",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "invalid",
+      "expected": "error",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": "0.9",
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "f5453fa508b367fb0d3c1901e0ab206e7dbcfbdbceaeac6a0ea82854b6205f44",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.9
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "missing-contract-field",
+      "split": "dev",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "invalid",
+      "expected": "error",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "925c5ccbef02073d0e9f31bc26ac3ac2903d80af535574f8d6dad9e18e95e9ec",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "literal-subprocess",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def run():\n    value = [\"printf\", \"ok\"]\n    return subprocess.run(value, shell=False)\n",
+        "sha256": "439f2a3bfb3462908ebfad1075d86fc0edd63c01cc602e7476f3a20170ddcc5c"
+      },
+      "reference": "constrained",
+      "expected": "not_vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "subprocess",
+        "danger_arg": "value",
+        "arg_source": "constant",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "trusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = [\"printf\", \"ok\"]"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "c6d35208869a8bf215a1f03aee995d1a39b29988fe72ab56c8203a0338f15e73",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "model-output-exec",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def run(model):\n    value = model.generate()\n    return exec(value)\n",
+        "sha256": "d512500e029d3330c789f3be5e16abac1792bddfbc5957e3cb60855651621072"
+      },
+      "reference": "risky",
+      "expected": "vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "llm_output",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = model.generate()"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "0e643210a0ed3d3164bb044c49f0a01b8fcda62084428cc9594df84505d247b9",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "config-endpoint-override",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def fetch(project_cfg, token):\n    value = project_cfg[\"endpoint\"]\n    return client.get(value, headers={\"Authorization\": token})\n",
+        "sha256": "fddaf6c9e4ea70cd435e0beb5bf96bef496965dc3a67e7e699544ca00bc7da57"
+      },
+      "reference": "risky",
+      "expected": "vuln",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "http",
+        "danger_arg": "value",
+        "arg_source": "config",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = project_cfg[\"endpoint\"]"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = project_cfg[\"endpoint\"]"
+            }
+          ]
+        }
+      },
+      "response_sha256": "c115d3dce7ffec07de84d461b5c39e041ef4e5ee11044bbfe970d53e04f02ae6",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "fabricated-source-citation",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "risky",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "constant",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "trusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "not_vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = \"fixed\""
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "562f4b019f9fa9a78af303bf6df072edfd99bd183b1a8c47a26c4407c85dadff",
+      "legacy_result": {
+        "ai_verdict": "not_vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "confidence-out-of-range",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def handle(request):\n    value = request.body\n    return exec(value)\n",
+        "sha256": "007e5c9fc79b81348abb85a44dbe783362e6a33758b9c9d8a4ee108cece12786"
+      },
+      "reference": "invalid",
+      "expected": "error",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_code",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "no",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 1.9,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.body"
+            }
+          ],
+          "guard": [],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "a75153752cef1dbd3e547155622d637567c72ba7f88640ce6b78c16d6da7c0e6",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 1.9
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    },
+    {
+      "id": "positive-despite-effective-guard",
+      "split": "heldout",
+      "origin": {
+        "kind": "synthetic",
+        "historical_verdict": "not used",
+        "agent_opinion": "not used",
+        "observation": "source and fixed response only; target code was not executed"
+      },
+      "source": {
+        "file": "sample.py",
+        "text": "def query(request, conn):\n    value = request.args[\"id\"]\n    return conn.execute(\"SELECT * FROM records WHERE id = ?\", (value,))\n",
+        "sha256": "7c5fe812c07c5f5ce2bd1eef716973bd301182109872728128d3710224ce4fa6"
+      },
+      "reference": "constrained",
+      "expected": "needs_human",
+      "response": {
+        "by_design": "no",
+        "scope_exceeds": "unclear",
+        "by_design_evidence": "用途依据仅限此合成场景",
+        "scope_exceeds_evidence": "未提供独立的资源边界证明",
+        "sink_action": "exec_sql",
+        "danger_arg": "value",
+        "arg_source": "user_input",
+        "arg_source_evidence": "实参赋值见 source 引用；控制者按本案例假设",
+        "source_trust": "untrusted",
+        "source_trust_evidence": "控制者按本案例假设，非运行观测",
+        "guards_real": "yes",
+        "guards_evidence": "按固定响应声明当前防护状态，测试程序对声明的处理",
+        "ai_verdict": "vuln",
+        "confidence": 0.8,
+        "one_line": "固定响应，用于输出策略回放，不代表真实项目结论",
+        "missing_evidence": [],
+        "evidence": {
+          "source": [
+            {
+              "file": "sample.py",
+              "line": 2,
+              "quote": "value = request.args[\"id\"]"
+            }
+          ],
+          "guard": [
+            {
+              "file": "sample.py",
+              "line": 3,
+              "quote": "return conn.execute(\"SELECT * FROM records WHERE id = ?\", (value,))"
+            }
+          ],
+          "scope": [],
+          "trust": []
+        }
+      },
+      "response_sha256": "1d573529ff6380564d4aac6e4b2f278083325e87bb7221378329afc9d1022f07",
+      "legacy_result": {
+        "ai_verdict": "vuln",
+        "ai_confidence": 0.8
+      },
+      "assumptions": [
+        "仅测试输出校验与调整；源码不执行，控制者和运行边界是合成场景的假设"
+      ]
+    }
+  ]
+}

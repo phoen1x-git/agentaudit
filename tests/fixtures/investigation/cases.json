@@ -1,0 +1,339 @@
+{
+ "schema": "investigation-eval-v1",
+ "scope": "frozen retrieval expectations; no vulnerability labels",
+ "cases": [
+  {
+   "id": "nested-return-list",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def normalize(values):\n    result=[]\n    for value in values:\n        number=float(value)\n        result.append(number)\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    return result\ndef run(request):\n    return eval(str(normalize(request.values)))\n",
+     "sha256": "a0707c85d62c64956ba80006d000b1a8ca6bab9d67e580ea0b745c2cb39daa8a"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 148,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 4,
+     "quote": "        number=float(value)"
+    },
+    {
+     "file": "api.py",
+     "line": 5,
+     "quote": "        result.append(number)"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "assigned-callback",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def parse(value):\n    number=float(value)\n    return str([number])\nclass Worker:\n    def __init__(self):\n        self.parser=parse\n    def run(self,request):\n        value=self.parser(request.body)\n        return eval(value)\n",
+     "sha256": "9435e07d4c11ee10af3bfe029ebf52ac11099178c2dda88f3f28603cd55f8aef"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 9,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 2,
+     "quote": "    number=float(value)"
+    },
+    {
+     "file": "api.py",
+     "line": 6,
+     "quote": "        self.parser=parse"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "validator-before-sink",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def validate(value):\n    if value not in (\"one\",\"two\"):\n        raise ValueError()\ndef run(value):\n    validate(value)\n    return eval(value)\n",
+     "sha256": "08571dd44be7bbfa9394598be127c2be0bdb2021cb30c88696aae844f2fcf10b"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 6,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 2,
+     "quote": "    if value not in (\"one\",\"two\"):"
+    },
+    {
+     "file": "api.py",
+     "line": 3,
+     "quote": "        raise ValueError()"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "long-assignment",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def run(request):\n    value=request.body\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    if value is not None:\n        return eval(value)\n",
+     "sha256": "f48e76b71b596363ab3fbefa31b0b53b05ce29e95d4007a2ff2aa0601df93aa1"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 144,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 2,
+     "quote": "    value=request.body"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "imported-argument",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "worker.py": {
+     "text": "def run(value):\n    return eval(value)\n",
+     "sha256": "b891922fcd65c306a006f4591b0bceba51d7ddb2a77feac95a50eccecbc6e664"
+    },
+    "api.py": {
+     "text": "from worker import run as execute\ndef endpoint(request):\n    return execute(request.body)\n",
+     "sha256": "5aeacd46f906d9093f020153b42aafd313cff5837491993321f6acb5f64e0fe3"
+    }
+   },
+   "finding": {
+    "file": "worker.py",
+    "line": 2,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 3,
+     "quote": "    return execute(request.body)"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "module-input",
+   "split": "dev",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "script.py": {
+     "text": "def read_value():\n    return input()\nvalue=read_value()\nresult=eval(value)\n",
+     "sha256": "b7cb8a3d12303b5ad9349ecf229a9ee3fb4ef71d3eea78ab7bbc34a60f324995"
+    }
+   },
+   "finding": {
+    "file": "script.py",
+    "line": 4,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "script.py",
+     "line": 2,
+     "quote": "    return input()"
+    },
+    {
+     "file": "script.py",
+     "line": 3,
+     "quote": "value=read_value()"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "reserved-route-dependency",
+   "split": "reserved",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "security.py": {
+     "text": "def require_user(request):\n    if not request.user:\n        raise PermissionError()\n    return request.user\n",
+     "sha256": "0222149b8d0d931fc42443a4f6651918c9c75bbd6f6e8f43bacd4309f7455229"
+    },
+    "api.py": {
+     "text": "from fastapi import Depends\nfrom security import require_user\n@app.post(\"/run\")\ndef endpoint(body,user=Depends(require_user)):\n    return eval(body.expression)\n",
+     "sha256": "38c5ffe5d3b18ec97896f2f0bf05ffe4721eed9644afc82d6b9c95776651ea79"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 5,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "security.py",
+     "line": 3,
+     "quote": "        raise PermissionError()"
+    },
+    {
+     "file": "api.py",
+     "line": 3,
+     "quote": "@app.post(\"/run\")"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "reserved-service-builder",
+   "split": "reserved",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "service.py": {
+     "text": "def build(values):\n    output=[]\n    for item in values:\n        x=int(item)\n        output.append(x)\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    pass\n    return output\nclass Service:\n    def __init__(self):\n        self.convert=build\n    def execute(self,body):\n        data=self.convert(body)\n        return eval(str(data))\n",
+     "sha256": "bd3eb3f4c87f9a5acc43aefb5299bec3c7814f0062a883d443087548dc319bb1"
+    }
+   },
+   "finding": {
+    "file": "service.py",
+    "line": 132,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "service.py",
+     "line": 4,
+     "quote": "        x=int(item)"
+    },
+    {
+     "file": "service.py",
+     "line": 5,
+     "quote": "        output.append(x)"
+    },
+    {
+     "file": "service.py",
+     "line": 129,
+     "quote": "        self.convert=build"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "reserved-finite-gate",
+   "split": "reserved",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def run(value):\n    if value not in (\"1\",\"2\"):\n        raise ValueError()\n    return eval(value)\n",
+     "sha256": "438cf53f6cac0ab53700b7f4e7cbe35961df5c581f592de2882b136d586494d7"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 4,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 2,
+     "quote": "    if value not in (\"1\",\"2\"):"
+    },
+    {
+     "file": "api.py",
+     "line": 3,
+     "quote": "        raise ValueError()"
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  },
+  {
+   "id": "reserved-mutual-calls",
+   "split": "reserved",
+   "origin": "anonymous synthetic; same development author; not an independent blind evaluation",
+   "sources": {
+    "api.py": {
+     "text": "def left(value):\n    return right(value)\ndef right(value):\n    if value:\n        return left(value[1:])\n    return \"1\"\ndef run(value):\n    return eval(left(value))\n",
+     "sha256": "f2e7a4929fc3c37728d81afb3236aeca23bfcc7a70e703a7b3aa0c7829bedc04"
+    }
+   },
+   "finding": {
+    "file": "api.py",
+    "line": 8,
+    "sink": "eval"
+   },
+   "expected_material": [
+    {
+     "file": "api.py",
+     "line": 4,
+     "quote": "    if value:"
+    },
+    {
+     "file": "api.py",
+     "line": 6,
+     "quote": "    return \"1\""
+    }
+   ],
+   "reference_label": null,
+   "reference_basis": {
+    "independent_review": false,
+    "scope": "retrieval targets, not exploitability labels"
+   }
+  }
+ ]
+}
