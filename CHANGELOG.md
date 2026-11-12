@@ -6,6 +6,89 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## 0.5.1 — 2026-11-12
+
+A patch release: the human-review bench 0.5.0 shipped without documenting, the tests it
+shipped without, and three places where a saved result described something other than what
+was actually done.
+
+### Added
+
+- **Human review, from a round to a reviewer's answer and back.** Four scripts and
+  `core/review_pack.py`. `tools/build_external_review_records.py` turns a round that carries
+  backend evidence into records with no verdict in them. `tools/build_review_pack.py` masks
+  the historical model opinions and the project labels, shuffles case order by a seed, and
+  writes a packet of three files: `packet.json`, a blank `review-template.json`, and
+  `review.html`, which is an offline form that makes no network request and keeps its
+  progress in the browser tab. `tools/validate_review_pack.py` then checks packet identity,
+  required fields, timezone-aware timestamps, and that every cited evidence id exists in
+  that case. `tools/merge_review_submission.py` joins validated submissions back to the
+  private identities in a separate file and reports how often two reviewers agreed and how
+  long each said they took.
+- **What the validation does not do is part of the design, and both tools say so when they
+  print.** A confident wrong review passes exactly as well as a correct one: the result file
+  is a record of what two people concluded from the same packet, not a measurement of
+  accuracy. Masking the model's opinion is also not blindness. Source text, file names and
+  anything quoted inside the evidence can still identify the project, so what is removed is
+  the opinion, not the identity.
+- **Two offline replays for the judgement layer.** `tools/eval_triage.py` replays a fixed set
+  of recorded model responses through the triage policy, with no API call and no target
+  execution, and checks each response against its recorded hash first. `tools/eval_investigation.py`
+  runs each case under three retrieval strategies (no investigator, broad, focused), counts how
+  much of the expected source each reached, and calls a focused pass that finds less than the
+  broad one a regression. It is offline unless `--llm` is given, and that switch carries its own
+  call and spend caps.
+- **The tests 0.5.0 shipped without.** The suite collects 473 tests, of which 472 pass and one
+  is skipped, up from 195. Most of the new ones cover modules that had none: the CSV parser
+  (two arguments in one cell, CRLF, quoted commas, a 200k-character field), `candidates`,
+  `investigate`, `import-sarif`, and the review bench end to end. The triage and investigation
+  replays read their cases from `tests/fixtures/`, including a real ESLint 10.14.0 SARIF file
+  with its URIs rewritten to relative paths.
+
+### Changed
+
+- **The query pack lost a query and a special case.** `get_callchain_and_location.ql` was the
+  SARIF-era query; nothing imports it any more and the CSV path asks `get_arg_source.ql`, so
+  every compile was paying for a query nobody ran. `add_calls` matched `Process(...)` whose
+  target named one particular library function. That is a calling convention written into a
+  general query, and it only ever fired on the project it came from; it is gone from all
+  three predicates. Regenerating `qlpack.yml` changed the pack name, so CodeQL cannot answer
+  from a cached result for the old one.
+- **`--evidence` printed nothing useful, and the saved snapshot was never read.** `explain`
+  rebuilt its evidence from the file as it is now, so editing a file between the scan and the
+  explanation silently changed the evidence under a verdict that was already fixed. It reads
+  the snapshot saved in `verdicts.json` instead, and `--evidence` prints that whole passage
+  rather than a window around the sink.
+- **The rubric stamp ignored the switches.** `run_round` hashed `llm_judge.RUBRIC`, which is
+  only the fixed body of the prompt; the argument-source, scope and repository sections are
+  appended when their switch is on, so two different rubrics carried the same hash. It now
+  hashes `rubric_text()` and records a digest of the triage policy beside it.
+- **LLM usage was the process total.** Two rounds in one process each claimed the sum of
+  both. The record is the delta around the call.
+
+### Fixed
+
+- **Every snippet was fenced as `python`.** One round can hold `.py`, `.ts` and `.java`, and
+  the fence follows the candidate's language now.
+- **An imported result printed its rule id where a callee belongs.** When an external result
+  has no resolved call name, the report says the backend reported this rule at this line
+  instead of putting the rule name in the position the call chain occupies.
+
+### Known gaps
+
+- **The human review measures agreement, not correctness.** Two reviewers who share a
+  misreading agree, and the file records that agreement without comment. It is evidence about
+  the packet, not about the tool.
+- **The query narrowing has not been re-measured.** Removing the special case narrows what
+  `add_calls` links, and the comparison in 0.5.0 was one target on one CodeQL version. There
+  is no CodeQL on the machine these tests run on, so nothing here would notice a lost row.
+- **`eval_triage` and `eval_investigation` have small case sets, and the replay set records
+  what the policy should do rather than what it does.** On the day this was written the replay
+  matched 6 of the 14 `dev` cases, so neither script runs in CI: their exit codes are a reading
+  for whoever is editing the policy, not a gate. The investigation set is ten cases and
+  nineteen expected source lines under three strategies, which shows the shape of a regression
+  and does not size one.
+
 ## 0.5.0 — 2026-11-11
 
 ### Added

@@ -461,6 +461,49 @@ core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳�
 
 ---
 
+## 人审：让别人重判一遍
+
+模型给出的判定，是这套工具里唯一没法靠读代码核对的部分。它对不对是个经验问题，能回答它的
+办法只有一个：把同一份证据去掉模型意见之后交给两个不相干的人，看他们各自判成什么。
+
+这套流程的形状是为了去掉一种偏差。把模型结论摆在同一份证据旁边再问人，量到的是「人和模型
+像不像」，不是「人和证据对不对」，而且模型越确信，这个数字越好看。所以判定在评审人看到任何
+东西之前就被剥掉，两边只在最后才合回来，各存一个文件。
+
+```bash
+# 1) 取一轮带后端证据的结果，转成每条一份、不含任何判定的记录
+python tools/build_external_review_records.py out/round-imported --out review/records
+
+# 2) 遮掉模型意见和项目标签，生成离线的评审页
+python tools/build_review_pack.py review/records \
+    --out review/packet --mapping-out private/mapping.json
+
+# 3) 评审人打开 review/packet/review.html 填模板，然后校验这份提交
+python tools/validate_review_pack.py --packet review/packet/packet.json \
+    --submission review/submission.json --out review/validated.json
+
+# 4) 合回私有身份，看两位评审人判得一样不一样
+python tools/merge_review_submission.py --packet review/packet/packet.json \
+    --mapping private/mapping.json --validated review/validated.json --out review/merged.json
+```
+
+映射文件是唯一写着「这一条是哪个项目」的地方，第二步不会把它写进评审人拿到的目录。评审人看到
+的是一串证据编号、每条编号下面的源码行，以及扫描器回答不了的那些问题。`review.html` 是单个
+文件，不发任何网络请求，所以在一台出不了网的机器上也能打开。
+
+有两件事它不做，工具在输出里会把这两句话说出来。校验查的是表单填全没有、引用的证据在不在，
+不查结论对不对：一条自信的错判和一条正确的判定，通过方式完全一样。遮蔽去掉的是模型意见和
+项目标签，不是源码文本里的人名和路径，熟悉这份代码的评审人仍然认得出它。
+
+判定层另有两个更便宜的检查，都不需要 API key。`tools/eval_triage.py` 把一批记录下来的模型
+响应放进当前策略里重放，报出多少条落在用例声明的那一个结果上，有一条对不上就以非零退出。这批
+用例记的是策略「应该」怎么做，不是它今天做到了什么，所以这个工具靠人手动跑，不当门禁用。
+`tools/eval_investigation.py` 对每条用例跑三种取源策略（不调查、宽、窄），数各自够到多少条
+预期源码行，窄的这一遍比宽的少就算回归，以非零退出。不加 `--llm` 不发模型请求，加了它自带
+调用次数和花费上限。
+
+---
+
 ## 仓库结构
 
 ```

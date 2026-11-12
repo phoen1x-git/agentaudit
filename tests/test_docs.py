@@ -21,7 +21,7 @@ EN = ROOT / "README.md"
 ZH = ROOT / "README.zh-CN.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
 # The floor CONTRIBUTING.md claims. Raise it when the suite grows past it.
-FLOOR_TESTS = 120
+FLOOR_TESTS = 400
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 
 H2 = re.compile(r"^## (.+)$", re.M)

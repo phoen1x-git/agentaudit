@@ -1,23 +1,11 @@
 #!/usr/bin/env python
 """One command for the whole tool.
 
-    agentaudit doctor                     what this machine can and cannot do
-    agentaudit scan --demo                 scan a target (--demo / --path / --repo)
-    agentaudit explain out/round-x         show why a candidate was reported
-    agentaudit serve  out/round-x          read the results in a browser
-    agentaudit report out/round-x          render the report draft
-    agentaudit index  out/round-x          render the HTML index
-    agentaudit round  --tag r1             run one round over a target table
-    agentaudit all    --tag r1             prepare -> scan -> report
-    agentaudit selftest                    run the rule self-tests
-    agentaudit validate                    check core/config/*.yml
-    agentaudit log                         show or export the local scan log
+Every subcommand forwards to one script under `app/` or `tools/`; without an install,
+`python app/scan.py ...` and the other scripts work exactly the same. The list of commands
+lives in `COMMANDS` below and nowhere else, so `agentaudit --help` is the one place to read it.
 
-Without an install, `python app/scan.py ...` and the other scripts work exactly the same;
-every subcommand here just forwards to one of them.
-
-    agentaudit --help        list the commands
-    agentaudit scan --help   help for one command
+    agentaudit <command> --help   the options of one command
 """
 from __future__ import annotations
 

@@ -492,6 +492,58 @@ makes them worth reading: they are how you learn to write a better one.
 
 ---
 
+## Reviewing the verdicts by hand
+
+The triage verdict is the one part of this tool that cannot be checked by reading the code.
+Whether it is right is an empirical question, and the way to answer it is to hand two people
+the same evidence with the model's opinion stripped out, then compare what they concluded.
+
+The shape of this flow exists to remove one bias. Show a reviewer the model's verdict next to
+the evidence and you measure agreement with the model rather than agreement with the evidence,
+and the number improves the more confident the model is. So the verdict is stripped before the
+reviewer sees anything, and the two are only brought back together at the end, in separate
+files.
+
+```bash
+# 1) a round with backend evidence -> one record per case, with no verdict in it
+python tools/build_external_review_records.py out/round-imported --out review/records
+
+# 2) mask the model's opinions and the project labels; write the offline review form
+python tools/build_review_pack.py review/records \
+    --out review/packet --mapping-out private/mapping.json
+
+# 3) the reviewer opens review/packet/review.html, fills the template, and it is checked
+python tools/validate_review_pack.py --packet review/packet/packet.json \
+    --submission review/submission.json --out review/validated.json
+
+# 4) join it back to the private identities, and see whether the two reviewers agreed
+python tools/merge_review_submission.py --packet review/packet/packet.json \
+    --mapping private/mapping.json --validated review/validated.json --out review/merged.json
+```
+
+The mapping file is the only thing that names a case, and step 2 refuses to write it inside
+the packet directory. What a reviewer sees is a set of evidence ids, the source lines under
+each one, and the questions the scanner could not answer. `review.html` is a single file that
+makes no network request, so it opens on a machine with no route out.
+
+Two things this does not do, and both tools say so when they print. Validation checks the
+form and the citations, not the conclusion: a confident wrong review validates exactly as well
+as a correct one, and the file records what two people concluded rather than how often anyone
+was right. And masking removes the model's opinion and the project labels, not the identities
+inside the source text, so a reviewer who knows the codebase can still recognise it.
+
+The judgement layer has two cheaper checks, and neither needs an API key.
+`tools/eval_triage.py` replays a fixed set of recorded model responses through the current
+policy and reports how many of them land on the outcome the case declares, exiting non-zero
+when one does not. The case set records what the policy is supposed to do, not what it does
+today, which is why this runs by hand rather than as a gate.
+`tools/eval_investigation.py` runs each case under three retrieval strategies (no investigator,
+broad, focused), counts how much of the expected source each one reached, and exits non-zero
+when the focused pass finds less than the broad one. It makes no model call unless `--llm` is
+given, and that switch carries its own call and spend caps.
+
+---
+
 ## Repository layout
 
 ```
