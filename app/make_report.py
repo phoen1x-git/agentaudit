@@ -386,14 +386,30 @@ def main() -> int:
             f"({t['by_design']}: {r.get('by_design')}; {t['scope']}: {r.get('scope_exceeds')})"
             if (r.get("ai_verdict") or "").strip() else
             f"**{t['judge']}**: {t['no_verdict']}")
+        # The fence language follows the candidate. One report can hold .py, .ts and .java
+        # candidates at once; labelling them all ```python tells the reader something false.
+        # `full` is findings.json (the tsv has no language column).
+        source_row = full.get(r["fingerprint"], {})
+        language = source_row.get("language", "python") or "python"
+        # The tsv snippet is truncated; snippet_full in the json keeps the original indentation.
+        snippet = source_row.get("snippet_full") or r.get("snippet", "")
+        fact = t["fact"].format(sink=r.get("sink"), line=r["line"])
+        if (source_row.get("analysis_provenance", {}).get("adapter") == "sarif-import-v1"
+                and not r.get("sink")):
+            # The backend gave a rule and a line, not a call name. Say so -- printing the rule
+            # name where a callee belongs would read as if the call had been resolved here.
+            fact = (f"后端在第 {r['line']} 行报告了规则 `{r.get('rule')}`；"
+                    "此处未独立解析出调用名称。" if a.lang == "zh" else
+                    f"The backend reported rule `{r.get('rule')}` at line {r['line']}; "
+                    "no call name was independently resolved here.")
         L += [
             f"## {i}. {r['project']} - `{r['file']}:{r['line']}` - {kind}", "",
             f"**{t['rule_hdr']}**: `{r.get('rule', '')}`  |  **{t['fingerprint']}**: `{r['fingerprint']}` "
             f"({t['fingerprint_note']})",
             verdict_line,
-            "", t["verified_h"], "", "```python",
-            f"{r['line']}: {r.get('snippet', '')}", "```", "",
-            t["fact"].format(sink=r.get("sink"), line=r["line"]), "",
+            "", t["verified_h"], "", "```" + language,
+            f"{r['line']}: {snippet}", "```", "",
+            fact, "",
             t["unverified_h"], "", t["unverified_note"], "",
         ] + [
             f"- **{lbl}**: {claim}" + (f"\n  - {t['evidence']}: {ev}" if ev else "")

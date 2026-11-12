@@ -114,7 +114,8 @@ def _read_span(src_root: str, rel: str, line: int, before: int = 2, after: int =
     return [(i, lines[i - 1]) for i in range(lo, hi + 1)]
 
 
-def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
+def explain_one(n: int, total: int, fp: str, row: dict, src_root: str,
+                audit: dict | None = None, show_evidence: bool = False) -> str:
     rule = row.get("rule", "")
     rel = row.get("file", "")
     try:
@@ -130,9 +131,18 @@ def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
         L.append(f"this check   {doc}")
 
     snippet = row.get("snippet", "") or _read_line(src_root, rel, line)
-    span = _read_span(src_root, rel, line)
+    saved = (audit or {}).get("source_snapshot", {})
+    if not saved:
+        saved = row.get("backend_evidence") or {}
+    saved_lines = saved.get("lines", [])
+    has_snapshot = "lines" in saved
+    if has_snapshot:
+        span = [(r["line"], r["text"]) for r in saved_lines
+                if r["file"] == rel.replace("\\", "/") and line - 2 <= r["line"] <= line + 2]
+    else:
+        span = _read_span(src_root, rel, line)
     if span:
-        L += ["", "surrounding source"]
+        L += ["", "surrounding source (saved triage snapshot)" if saved_lines else "surrounding source"]
         for ln, text in span:
             mark = ">" if ln == line else " "
             L.append(f"  {mark} {ln:>4}: {text.rstrip()[:110]}")
@@ -155,7 +165,22 @@ def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
     if guards:
         L += ["", f"guards on the path ({len(guards)})"]
         for g in guards:
-            L.append(f"  {_guard_line(src_root, g)}")
+            if saved_lines:
+                file, _, loc = g.rpartition("#")
+                number = loc.split(":")[0]
+                if Path(file).is_absolute() and src_root:
+                    try:
+                        file = Path(file).resolve().relative_to(Path(src_root).resolve()).as_posix()
+                    except ValueError:
+                        pass
+                match = next((r for r in saved_lines if r["file"] == file.replace("\\", "/")
+                              and str(r["line"]) == number), None)
+                L.append(f"  {file}:{number}  {match['text'].strip()}" if match else
+                         f"  {g} (not available in saved context)")
+            else:
+                L.append(f"  {_guard_line(src_root, g)}")
+    elif (row.get("analysis_provenance") or {}).get("adapter") == "sarif-import-v1":
+        L += ["", "guard evidence  -- this backend result does not establish guards or their absence"]
     else:
         L += ["", "guards on the path (0)  -- nothing between the entry and this call was seen"]
 
@@ -166,6 +191,58 @@ def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
             L.append(f"  {a}")
     else:
         L += ["", "where the argument comes from  -- not determined by this scan"]
+    provenance = row.get("analysis_provenance") or {}
+    if provenance.get("adapter") == "sarif-import-v1":
+        L += ["", f"external backend   {provenance.get('backend')} {provenance.get('backend_version') or ''}",
+              f"  language: {row.get('language')}; source status: {provenance.get('source_version_status')}",
+              "  backend relations are candidate data; separate threads are not one proven path"]
+        for loc in provenance.get("locations", [])[:24]:
+            L.append(f"  {loc['role']}: {loc['file']}:{loc['line']} [artifact hash {loc['hash_status']}]")
+        if show_evidence:
+            for saved_row in saved_lines:
+                L.append(f"  {saved_row['file']}:{saved_row['line']}: {saved_row['text']}")
+
+    investigation = row.get("investigation") or {}
+    if investigation:
+        usage = investigation.get("usage", {})
+        L += ["", f"static investigation   {investigation.get('status', '?')}; "
+              f"{usage.get('items', 0)} items / {usage.get('lines', 0)} lines / "
+              f"{len(investigation.get('pending', []))} pending",
+              "  source syntax only; collection does not prove runtime binding, reachability or safety"]
+        if investigation.get("stop_reason"):
+            L.append(f"  stopped: {investigation['stop_reason']}")
+        if not investigation.get("index_complete"):
+            L.append("  incomplete source index: " + str(investigation.get("index_issues", [])))
+        for item in investigation.get("items", []):
+            passage = investigation.get("passages", {}).get(item.get("passage"), {})
+            L.append(f"  {item['kind']}: {passage.get('file', '?')}:{passage.get('start_line', '?')}"
+                     f"-{passage.get('end_line', '?')} [{item.get('resolution', 'source')}] ")
+            for binding in item.get("call", {}).get("bindings", []):
+                L.append(f"    {binding['parameter']} <- {binding.get('expression', '(missing)')} "
+                         f"({binding['origin']})")
+        if investigation.get("limits"):
+            L.append("  search limits: " + json.dumps(investigation["limits"], ensure_ascii=False))
+        for question in investigation.get("inquiry", {}).get("questions", []):
+            L.append(f"  question [{question['topic']}; {question['status']}]: {question['question']}")
+            L.append("    next actions: " + ", ".join(question["actions"]))
+            L.append("    material items: " + str(len(question["evidence_items"])) + "; semantic answer remains unknown")
+        if show_evidence:
+            for passage in investigation.get("passages", {}).values():
+                L += ["", f"saved investigation source: {passage['file']} (sha256 {passage['sha256']})"]
+                for source_row in passage["lines"]:
+                    L.append(f"  {source_row['line']:>5}: {source_row['text']}")
+
+    verification = row.get("verification") or {}
+    if verification:
+        L += ["", f"local static probes   {verification.get('status', '?')}",
+              "  Python syntax / local statement order only; target code not executed"]
+        for observation in verification.get("observations", []):
+            L.append(f"  {observation['kind']}: {observation['observed']}")
+            if observation.get("probe"):
+                L.append(f"    parsed only: {observation['probe']}")
+            L.append(f"    limit: {observation['limitation']}")
+        for limit in verification.get("limits", []):
+            L.append(f"  limit: {limit}")
 
     verdict = (row.get("ai_verdict") or "").strip()
     if verdict:
@@ -174,6 +251,14 @@ def explain_one(n: int, total: int, fp: str, row: dict, src_root: str) -> str:
             L.append(f"  {row['ai_reason']}")
     else:
         L += ["", "triage       not run for this round"]
+    if audit:
+        raw = audit.get("raw_response")
+        if isinstance(raw, dict) and raw.get("ai_verdict") != verdict:
+            L += ["", f"raw model label   {raw.get('ai_verdict', '(missing)')} (before policy checks)"]
+        for adjustment in audit.get("adjustments", []):
+            L.append(f"  evidence check: {adjustment}")
+        if audit.get("error"):
+            L.append(f"  triage error: {audit['error']['message']}")
 
     L.append("-" * 78)
     return "\n".join(L)
@@ -189,6 +274,8 @@ def main() -> int:
     ap.add_argument("--all", action="store_true",
                     help="print every candidate instead of only the first")
     ap.add_argument("--src", default="", help="source root (default: recorded in the round)")
+    ap.add_argument("--evidence", action="store_true",
+                    help="show all saved investigation source passages")
     a = ap.parse_args()
 
     rd = Path(a.round_dir)

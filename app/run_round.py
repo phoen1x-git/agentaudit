@@ -68,7 +68,13 @@ def _cfg_stamp() -> dict:
     # so the run has to record which version of the rubric produced it.
     try:
         from core import llm_judge as _LJ
-        out["rubric"] = hashlib.sha1(_LJ.RUBRIC.encode("utf-8")).hexdigest()[:12]
+        # Hash `rubric_text()`, not `RUBRIC`. `RUBRIC` is only the fixed body; the argument
+        # source / scope / op-arg / repo-config sections are appended when their switch is on.
+        # Hashing the body alone means flipping a switch leaves the stamp unchanged -- two runs
+        # with different rubrics would carry the same hash and could not be told apart later.
+        out["rubric"] = hashlib.sha1(_LJ.rubric_text().encode("utf-8")).hexdigest()[:12]
+        from core.triage_contract import digest
+        out["triage_policy"] = digest(_LJ.policy_stamp())[:12]
     except Exception:
         pass
     return out
@@ -240,10 +246,13 @@ def main() -> int:
             if _v > 1:
                 lg.log(f"[judge] N>1: cost x{_v}; each vote uses a fresh tag to bypass the cache "
                        "(otherwise all N votes return the same cached answer)")
+            # Record what THIS round spent (delta before/after), not the process total.
+            # Two rounds in one process would otherwise report the sum of both in meta.json.
+            before_usage = (LJ.LC.USAGE.calls, LJ.LC.USAGE.hit_cache, LJ.LC.USAGE.cny)
             LJ.judge(all_findings, on_log=lg.log, votes=_v)
-            llm_calls = LJ.LC.USAGE.calls
-            llm_cost = round(LJ.LC.USAGE.cny, 4)
-            llm_cache_hits = LJ.LC.USAGE.hit_cache
+            llm_calls = LJ.LC.USAGE.calls - before_usage[0]
+            llm_cache_hits = LJ.LC.USAGE.hit_cache - before_usage[1]
+            llm_cost = round(LJ.LC.USAGE.cny - before_usage[2], 4)
             lg.log("[judge] " + LJ.cost_report().replace("\n", " | "))
             from collections import Counter
             lg.log("[judge] distribution " + str(dict(Counter(f.ai_verdict for f in all_findings))))
