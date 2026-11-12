@@ -14,11 +14,15 @@ from core.review_pack import validate_review_submissions  # noqa: E402
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--packet", type=Path, required=True)
-    parser.add_argument("--submission", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--allow-partial", action="store_true")
+    parser = argparse.ArgumentParser(prog="agentaudit review-validate", description=__doc__)
+    parser.add_argument("--packet", type=Path, required=True,
+                        help="the packet.json the reviewer was given")
+    parser.add_argument("--submission", type=Path, required=True,
+                        help="the filled review template")
+    parser.add_argument("--out", type=Path, required=True,
+                        help="where to write the validated submission")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help="accept a submission that covers only some of the packet's cases")
     args = parser.parse_args(argv)
     try:
         packet = json.loads(args.packet.read_text(encoding="utf-8"))

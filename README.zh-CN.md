@@ -215,6 +215,10 @@ agentaudit serve out/round-x
 | `agentaudit explain <轮次>` | 解释某条候选为什么被标出来 |
 | `agentaudit investigate <轮次>` | 离线把每条候选周围的源码收拢到新一轮 |
 | `agentaudit import-sarif <文件>` | 把别的分析器的结果当候选导进来 |
+| `agentaudit review-records <轮次>` | 把一轮转成每条一份、不含判定的评审记录 |
+| `agentaudit review-pack <记录目录>` | 遮掉模型意见，生成离线评审包和私有映射 |
+| `agentaudit review-validate` | 查一份填好的评审提交：表单填全没有、引用的证据在不在 |
+| `agentaudit review-merge` | 把校验过的评审合回私有身份 |
 | `agentaudit serve <轮次>` | 在浏览器里看整轮（只绑本机） |
 | `agentaudit report <轮次>` | 生成报告草稿 |
 | `agentaudit index <轮次>` | 生成 HTML 清单页 |
@@ -472,20 +476,22 @@ core/config/targets.yml` 可以把上面这些串起来，已经做完的会跳�
 
 ```bash
 # 1) 取一轮带后端证据的结果，转成每条一份、不含任何判定的记录
-python tools/build_external_review_records.py out/round-imported --out review/records
+agentaudit review-records out/round-imported --out review/records
 
 # 2) 遮掉模型意见和项目标签，生成离线的评审页
-python tools/build_review_pack.py review/records \
+agentaudit review-pack review/records \
     --out review/packet --mapping-out private/mapping.json
 
 # 3) 评审人打开 review/packet/review.html 填模板，然后校验这份提交
-python tools/validate_review_pack.py --packet review/packet/packet.json \
+agentaudit review-validate --packet review/packet/packet.json \
     --submission review/submission.json --out review/validated.json
 
 # 4) 合回私有身份，看两位评审人判得一样不一样
-python tools/merge_review_submission.py --packet review/packet/packet.json \
+agentaudit review-merge --packet review/packet/packet.json \
     --mapping private/mapping.json --validated review/validated.json --out review/merged.json
 ```
+
+这四个命令背后是 `tools/` 下的四个脚本，也可以直接 `python tools/...` 跑，行为与命令一致。
 
 映射文件是唯一写着「这一条是哪个项目」的地方，第二步不会把它写进评审人拿到的目录。评审人看到
 的是一串证据编号、每条编号下面的源码行，以及扫描器回答不了的那些问题。`review.html` 是单个

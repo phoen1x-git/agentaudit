@@ -138,12 +138,15 @@ def merge(packet: dict, mapping: dict, validated: dict | list[dict]) -> dict:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--packet", type=Path, required=True)
-    parser.add_argument("--mapping", type=Path, required=True)
+    parser = argparse.ArgumentParser(prog="agentaudit review-merge", description=__doc__)
+    parser.add_argument("--packet", type=Path, required=True,
+                        help="the packet.json the reviewers were given")
+    parser.add_argument("--mapping", type=Path, required=True,
+                        help="the private mapping written by review-pack")
     parser.add_argument("--validated", type=Path, action="append", required=True,
                         help="validated JSON submission; repeat for multiple reviewers")
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--out", type=Path, required=True,
+                        help="where to write the merged result; it names the projects, so keep it private")
     args = parser.parse_args(argv)
     try:
         validated = [_load(path) for path in args.validated]

@@ -226,6 +226,10 @@ One command, several subcommands:
 | `agentaudit explain <round>` | show why a candidate was reported |
 | `agentaudit investigate <round>` | collect the source around each candidate, offline, into a new round |
 | `agentaudit import-sarif <file>` | bring another analyzer's results in as candidates |
+| `agentaudit review-records <round>` | turn a round into review records with no verdict in them |
+| `agentaudit review-pack <records>` | mask the opinions and write the offline review packet |
+| `agentaudit review-validate` | check a filled review submission for form and cited evidence |
+| `agentaudit review-merge` | join validated reviews back to their private identities |
 | `agentaudit serve <round>` | read a round in a browser (localhost only) |
 | `agentaudit report <round>` | render the report draft |
 | `agentaudit index <round>` | render the HTML index |
@@ -506,20 +510,23 @@ files.
 
 ```bash
 # 1) a round with backend evidence -> one record per case, with no verdict in it
-python tools/build_external_review_records.py out/round-imported --out review/records
+agentaudit review-records out/round-imported --out review/records
 
 # 2) mask the model's opinions and the project labels; write the offline review form
-python tools/build_review_pack.py review/records \
+agentaudit review-pack review/records \
     --out review/packet --mapping-out private/mapping.json
 
 # 3) the reviewer opens review/packet/review.html, fills the template, and it is checked
-python tools/validate_review_pack.py --packet review/packet/packet.json \
+agentaudit review-validate --packet review/packet/packet.json \
     --submission review/submission.json --out review/validated.json
 
 # 4) join it back to the private identities, and see whether the two reviewers agreed
-python tools/merge_review_submission.py --packet review/packet/packet.json \
+agentaudit review-merge --packet review/packet/packet.json \
     --mapping private/mapping.json --validated review/validated.json --out review/merged.json
 ```
+
+The four scripts behind those commands also run on their own, as
+`python tools/build_review_pack.py` and so on, for a workflow that already forwards to them.
 
 The mapping file is the only thing that names a case, and step 2 refuses to write it inside
 the packet directory. What a reviewer sees is a set of evidence ids, the source lines under

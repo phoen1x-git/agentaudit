@@ -6,6 +6,35 @@ Notable changes, newest first. This project follows [Keep a Changelog][kac] and
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## 0.6.0 — 2026-11-12
+
+### Added
+
+- **The review bench is four commands, not four scripts.** `agentaudit review-records`,
+  `review-pack`, `review-validate` and `review-merge`. They arrived in 0.5.1 under `tools/`,
+  where `agentaudit --help` does not look, so the only way to learn they existed was to read
+  the section of the README that explains them. That is backwards: the help output is the
+  list of what this tool does, and a capability missing from that list has to be found by
+  accident first. Each command now names itself in `--help` the way every other one does,
+  takes the positional argument the README shows, and says in its option help what it writes
+  and where. The scripts still run directly, unchanged.
+- **`review-validate --allow-partial`** is documented as what it is: accepting a submission
+  that covers some of the packet's cases, which is how a reviewer who ran out of time gets a
+  usable partial record instead of an error.
+
+### Changed
+
+- **The command table is 21 entries, and still has one home.** `app/cli.py` lists them;
+  `usage()`, the tests and both README tables read from there. The four new descriptions are
+  short on purpose, because the help output is a column, not a paragraph.
+
+### Known gaps
+
+- Nothing about the bench changed except how it is reached. The limits stated under 0.5.1
+  still hold: a validated submission records agreement between two people, not accuracy, and
+  masking removes the model's opinion and the project labels rather than the identities
+  inside the source text.
+
 ## 0.5.1 — 2026-11-12
 
 A patch release: the human-review bench 0.5.0 shipped without documenting, the tests it

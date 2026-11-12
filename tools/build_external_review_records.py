@@ -116,12 +116,13 @@ def build(round_dir: Path, out_dir: Path) -> int:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("round_dir", type=Path)
-    parser.add_argument("--out", type=Path, required=True)
+    parser = argparse.ArgumentParser(prog="agentaudit review-records", description=__doc__)
+    parser.add_argument("round", type=Path, help="round directory holding findings.json and backend evidence")
+    parser.add_argument("--out", type=Path, required=True,
+                        help="directory for the per-case records; it must not exist yet")
     args = parser.parse_args(argv)
     try:
-        build(args.round_dir, args.out)
+        build(args.round, args.out)
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"build_external_review_records: {exc}", file=sys.stderr)

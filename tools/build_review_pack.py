@@ -15,11 +15,15 @@ from tools.render_review_page import render as render_review_page  # noqa: E402
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("records_dir", type=Path, help="directory containing case JSON evidence records")
-    parser.add_argument("--out", type=Path, required=True, help="directory for the opinion-free packet")
-    parser.add_argument("--mapping-out", type=Path, required=True, help="separate private case/source mapping file")
-    parser.add_argument("--seed", type=int, default=0, help="deterministic case order seed")
+    parser = argparse.ArgumentParser(prog="agentaudit review-pack", description=__doc__)
+    parser.add_argument("records", type=Path,
+                        help="directory containing case-*.json review records")
+    parser.add_argument("--out", type=Path, required=True,
+                        help="directory for the packet; it must not exist yet")
+    parser.add_argument("--mapping-out", type=Path, required=True,
+                        help="where to write the private case mapping, outside the packet directory")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="shuffle the case order deterministically; the same seed gives the same packet")
     args = parser.parse_args(argv)
     try:
         output = args.out.resolve()
@@ -31,7 +35,7 @@ def main(argv=None):
         if mapping_output == output or output in mapping_output.parents:
             raise ValueError("private mapping must be outside the public packet directory")
         records = [json.loads(path.read_text(encoding="utf-8"))
-                   for path in sorted(args.records_dir.glob("case-*.json"))]
+                   for path in sorted(args.records.glob("case-*.json"))]
         packet, mapping = build_review_pack(records, seed=args.seed)
         template = review_template(packet)
         page = render_review_page(packet, template)
