@@ -6,6 +6,7 @@ These tests check that promise holds, including for a round where no triage ran.
 from __future__ import annotations
 
 import csv
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -127,3 +128,38 @@ def test_explain_works_from_the_table_alone(round_dir, tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "this check" in p.stdout
     assert "surrounding source" in p.stdout
+
+
+def test_explain_evidence_flag_actually_prints_the_saved_passage(tmp_path):
+    """`--evidence` was declared and wired to nothing: the flag parsed, and the argument that
+    carried it was never passed on, so it printed the same page as without it.
+
+    The saved passage is the point of the snapshot -- it is what the model saw, kept after the
+    file may have changed. A flag that silently does nothing is worse than no flag, because
+    the reader concludes there was nothing saved.
+    """
+    rd = tmp_path / "round"
+    rd.mkdir()
+    fp = "app/main.ts:2"
+    (rd / "findings.json").write_text(json.dumps({fp: {
+        "project": "p", "language": "typescript", "rule": "r", "file": "app/main.ts",
+        "line": 2, "snippet": "return blocks[index];", "sink": "",
+        "analysis_provenance": {"adapter": "sarif-import-v1", "backend": "B",
+                                "backend_version": "1", "locations": []},
+        "backend_evidence": {"lines": [
+            {"file": "app/main.ts", "line": 1, "text": "export function run(i: string) {"},
+            {"file": "app/main.ts", "line": 2, "text": "return blocks[index];"},
+            {"file": "app/main.ts", "line": 40, "text": "SENTINEL-SAVED-LINE"},
+        ]},
+    }}), encoding="utf-8")
+
+    plain = _run("explain.py", str(rd))
+    assert plain.returncode == 0, plain.stdout + plain.stderr
+    # Line 1 is within the two-line context and shows either way; line 40 is far from the
+    # sink, so only the flag can bring it into view.
+    assert "export function run(i: string) {" in plain.stdout
+    assert "SENTINEL-SAVED-LINE" not in plain.stdout
+
+    shown = _run("explain.py", str(rd), "--evidence")
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    assert "SENTINEL-SAVED-LINE" in shown.stdout, shown.stdout

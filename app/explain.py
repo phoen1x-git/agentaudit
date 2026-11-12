@@ -301,6 +301,13 @@ def main() -> int:
         print(f"{a.round_dir} has no findings.json and no findings.tsv; run a scan first")
         return 1
 
+    # The audit record lives beside the findings, not inside them: judge_json goes to
+    # verdicts.json so the table stays readable. Read it here, or every block below that
+    # asks what the model actually returned is unreachable code.
+    verdicts = {}
+    if (rd / "verdicts.json").exists():
+        verdicts = json.loads((rd / "verdicts.json").read_text(encoding="utf-8")) or {}
+
     meta = {}
     if (rd / "meta.json").exists():
         meta = json.loads((rd / "meta.json").read_text(encoding="utf-8"))
@@ -328,7 +335,9 @@ def main() -> int:
     total = len(rows)
     for i, (fp, row) in enumerate(order, 1):
         idx = a.index or ([k for k, _ in sorted(rows.items(), key=lambda kv: (kv[1].get("file", ""), kv[1].get("line", 0)))].index(fp) + 1)
-        print(explain_one(idx, total, fp, row, src_root))
+        print(explain_one(idx, total, fp, row, src_root,
+                          audit=(verdicts.get(fp) or {}).get("_audit"),
+                          show_evidence=a.evidence))
 
     if not (a.fp or a.index):
         if len(order) < total:
